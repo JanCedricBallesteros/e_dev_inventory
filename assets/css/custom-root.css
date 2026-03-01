@@ -1,0 +1,25 @@
+/* change based on need */
+:root {
+    /* global colors [usually main colors]*/
+    --g-custom: #1e3a8a;
+    --g-rgb-custom: 30, 58, 138;
+    --g-sidebar-color: #dddddd;
+    --g-sidebar-color-active: #f5f5f5;
+
+    /* color palette */
+    --dark-blue: #1e3a8a;
+    --green: #006c40;
+    --red: #891811;
+    --black: #000000;
+    --white: #ffffff;
+
+    /*  */
+    --muted: #6b7280;
+    --bg: #f5f7fb;
+    --card-bg: #ffffff;
+
+    --dark: #1f1f1f;
+    --blue: #0b5fa5;
+    --light: #ffffff;
+    --gray: #f2f2f2;
+}

@@ -1,0 +1,8 @@
+# Custom Error Pages
+ErrorDocument 401 /error_page/401.php
+ErrorDocument 403 /error_page/403.php
+ErrorDocument 404 /error_page/404.php
+ErrorDocument 500 /error_page/500.php
+
+# Disable directory listing
+Options -Indexes

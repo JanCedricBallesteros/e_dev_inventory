@@ -1,0 +1,30 @@
+# Default index page
+DirectoryIndex index.php
+
+# Custom error pages
+ErrorDocument 404 /error_page/404.php
+ErrorDocument 403 /error_page/404.php
+
+# Enable mod_rewrite
+RewriteEngine On
+RewriteOptions InheritBefore
+
+# Clean URLs: redirect /index.php to /
+RewriteCond %{THE_REQUEST} \s/index\.php [NC]
+RewriteRule ^index\.php(/.*)?$ /$1 [R=301,L]
+
+# Block direct access to static files (PDF, images, CSS, JS, etc.)
+# Allow PHP scripts to read and serve them internally (e.g., using readfile)
+RewriteCond %{REQUEST_URI} \.(pdf|jpe?g|png|gif|css|js|svg|woff2?|ttf|eot|webp|ico)$ [NC]
+RewriteRule ^.*$ - [F,L]
+
+# Route everything else through index.php
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.php [QSA,L]
+
+# Deny access to .htaccess
+<Files .htaccess>
+    Order allow,deny
+    Deny from all
+</Files>

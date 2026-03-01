@@ -1,0 +1,4 @@
+ErrorDocument 404 /error_page/404.php
+ErrorDocument 403 /error_page/404.php
+
+Require all denied

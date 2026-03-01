@@ -1,0 +1,126 @@
+.popup-modal-container {
+  background: hsla(0deg, 0%, 0%, 0.55) !important;
+}
+
+.popup-modal {
+  width: 30rem !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+.popup-modal .popup-modal-icon {
+  margin: 2.25rem auto 0 !important;
+}
+
+.popup-modal .title-ff {
+  font-size: 1.8rem !important;
+  padding: 1.2rem !important;
+}
+
+.popup-modal .popup-modal-description {
+  font-size: 1.8rem !important;
+  margin: 0 !important;
+  padding: 0 1.6rem 2rem !important;
+  line-height: 1.5 !important;
+}
+
+.popup-modal .popup-modal-actions {
+  padding: 0.7rem !important;
+  margin: 1rem 0 0 !important;
+  border-top: 1px solid hsl(0deg, 0%, 85%) !important;
+  background-color: hsl(0deg, 0%, 95%) !important;
+}
+
+.popup-modal .popup-modal-actions .actions-confirm,
+.popup-modal .popup-modal-actions .actions-cancel {
+  font-size: 1rem !important;
+}
+
+.popup-modal .popup-modal-actions .actions-confirm,
+.popup-modal .popup-modal-actions .actions-cancel {
+  padding: 0.6em 2rem !important;
+}
+
+.colored-toast .swal2-title {
+  color: white;
+}
+
+.colored-toast .swal2-close {
+  color: white;
+}
+
+.colored-toast .swal2-html-container {
+  color: white;
+}
+
+.swal-popup-modal {
+  display: none;
+  position: relative;
+  box-sizing: border-box;
+  flex-direction: column;
+  justify-content: center;
+  width: 32em;
+  max-width: 100%;
+  padding: 1em 0 0;
+  border: none;
+  border-radius: 5px;
+  background: #fff;
+  font-family: inherit;
+  font-size: 1rem;
+}
+
+.swal-popup-modal .swal-footer-timein,
+.swal-popup-modal .swal-footer-breakout,
+.swal-popup-modal .swal-footer-breakin,
+.swal-popup-modal .swal-footer-timeout {
+  justify-content: center;
+  margin: 1.25em 0 0;
+  padding: 0.5em;
+  border-top: 1px solid #eee;
+  color: #fff;
+  font-size: 1.1em;
+  font-weight: 500;
+  border-radius: 0 0 5px 5px;
+}
+
+.swal-popup-modal .swal-footer-timein {
+  background: #337ca0;
+}
+.swal-popup-modal .swal-footer-breakout {
+  background: #EAB308;
+}
+.swal-popup-modal .swal-footer-breakin {
+  background: #059669;
+}
+.swal-popup-modal .swal-footer-timeout {
+  background: #c33c54;
+}
+
+.tooltiptext {
+  visibility: hidden;
+  width: 170px;
+  background-color: #555;
+  color: #fff;
+  text-align: center;
+  border-radius: 6px;
+  padding: 8px 6px;
+  position: absolute;
+  z-index: 1;
+  bottom: 150%;
+  left: 50%;
+  margin-left: -86px;
+  opacity: 0;
+  transition: opacity 0.3s;
+  white-space: nowrap;
+}
+
+.tooltiptext::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  margin-left: -5px;
+  border-width: 5px;
+  border-style: solid;
+  border-color: #555 transparent transparent transparent;
+}
