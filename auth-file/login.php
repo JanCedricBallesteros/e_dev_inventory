@@ -41,11 +41,7 @@ if (isset($_GET['token']) && $_GET['token'] != '') {
     $img = "";
     $user_role = "";
     $position = "";
-    $assign_id = "";
-    $office_id = "";
-    $office_name = "";
-    $sign_id = "";
-    $school_year_id = "";
+    $sex = "";
 
     if (empty($ref_id) || empty($role) || empty($token_date) || empty($token_auth) || empty($token_id) || empty($device)) {
         $response = base64_encode("Invalid Token Data. Please log in again to continue.");
@@ -87,9 +83,6 @@ if (isset($_GET['token']) && $_GET['token'] != '') {
                 $img = !empty($data['img']) ? $data['img'] : DEFAULT_IMG;
                 $user_role = $data['user_role'];
                 $position = $data['position'];
-                $office_id = $data['office_id'];
-                $office_name = $data['name'];
-                $sign_id = $data['user_sign'];
                 $sex = $data['sex'];
             }
         }
@@ -100,16 +93,6 @@ if (isset($_GET['token']) && $_GET['token'] != '') {
         $response = base64_encode("Invalid Token Access. Please log in again to continue.");
         header('Location: ' . $targerLink . '?token-response=' . $response);
         exit();
-    }
-
-    ##flagged FY
-    $default_query = "SELECT * FROM school_year WHERE flag_used = 1 LIMIT 1";
-    if ($query = call_mysql_query($default_query)) {
-        if ($num = call_mysql_num_rows($query)) {
-            while ($data = call_mysql_fetch_array($query)) {
-                $school_year_id = $data['school_year_id'];
-            }
-        }
     }
     
     try {
