@@ -11,20 +11,12 @@ if (!isset($g_user_role) || empty($g_user_role)) {
 }
 
 if (role_has("SUPER_ADMIN") || role_has("ADMIN")) {
-	header("Location: " . BASE_URL . "admin/modules/nonconsumable/ast_inventory.php");
+	header("Location: " . BASE_URL . "admin/dashboard/main_admin.php");
 	exit();
 }
 
 if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) {
-	if (user_has_access(array("AST", "PO"))) {
-		header("Location: " . BASE_URL . "admin/modules/nonconsumable/ast_inventory.php");
-		exit();
-	}
-	if (user_has_access("CSM")) {
-		header("Location: " . BASE_URL . "admin/modules/consumable/csm_manage_inventory.php");
-		exit();
-	}
-	header("Location: " . BASE_URL . "admin/modules/transactions/requisition.php?type=AST");
+	header("Location: " . BASE_URL . "admin/dashboard/main_admin_staff.php");
 	exit();
 }
 

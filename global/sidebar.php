@@ -88,8 +88,17 @@ function staff_has_any_access($codes)
                 </li>
 
                 <?php if (role_has("SUPER_ADMIN") || role_has("ADMIN")) { ?>
-                    <li class="nav-item <?php echo navigation_active("ast_inventory"); ?>">
-                        <a href="<?php echo BASE_URL . "admin/modules/nonconsumable/ast_inventory.php"; ?>">
+                    <li class="nav-item <?php echo navigation_active("main_admin"); ?>">
+                        <a href="<?php echo BASE_URL . "admin/dashboard/main_admin.php"; ?>">
+                            <i class="fas fa-home"></i>
+                            <p>Dashboard</p>
+                        </a>
+                    </li>
+                <?php } ?>
+
+                <?php if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) { ?>
+                    <li class="nav-item <?php echo navigation_active("main_admin_staff"); ?>">
+                        <a href="<?php echo BASE_URL . "admin/dashboard/main_admin_staff.php"; ?>">
                             <i class="fas fa-home"></i>
                             <p>Dashboard</p>
                         </a>
