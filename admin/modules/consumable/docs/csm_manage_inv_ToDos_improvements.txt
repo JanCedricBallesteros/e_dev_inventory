@@ -1,0 +1,32 @@
+UI/UX Improvements:
+
+DONE Add visual status indicators - Show stock level warnings (Critical/Low/Adequate) with color badges in tables
+Breadcrumb navigation - Add breadcrumbs at the top for better navigation context
+DONE Empty state handling - Show friendly messages when tables are empty instead of blank space
+DONE Tab persistence - Remember which tab the user was on when they refresh the page (localStorage)
+DONE Search clearing - Add a "Clear filters" button for the QR scanner results
+
+Functional Improvements:
+DONE Batch operations (BULK IS CALLED) - Allow admins to add quantity to multiple items at once and even update it
+IN PROGRESS History/Audit log - Show when items were last added/modified and by whom
+DONE Export functionality - Let admins export the item list to CSV/PDF
+DONE Item templates - Pre-populate common items to speed up the "Add New Item" process
+IN PROGRESS Photo upload - Replace the placeholder with actual photo upload in Add New Item tab
+IN PROGRESS Quantity validation - Warn if adding quantity would exceed storage capacity or if below critical level
+??? Keyboard shortcuts - Add support for quick actions (e.g., Enter to submit form)
+
+Code/Performance:
+IN PROGRESS Separate JS into modules - Move QR scanner logic and table setup into separate functions for maintainability
+IN PROGRESS Add loading states - Show spinners when data is being processed
+IN PROGRESS Error boundaries - Add try-catch blocks around table operations
+IN PROGRESS Debounce search filters - Prevent excessive filtering calls while typing
+
+Accessibility:
+IN PROGRESS Keyboard navigation - Make sure all buttons and forms are tab-accessible
+IN PROGRESS ARIA labels - Add proper ARIA labels to scanner sections
+IN PROGRESS Form validation messages - Show specific error messages (e.g., "Quantity must be > 0")
+
+Data-related:
+IN PROGRESS Real-time sync - Refresh table data periodically to catch updates from other admins
+IN PROGRESS Item deduplication - Prevent duplicate item codes when adding new items
+IN PROGRESS Unit standardization - Define a standard list of units instead of free text

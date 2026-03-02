@@ -275,6 +275,91 @@ function xml($string)
 	return htmlspecialchars($string, ENT_QUOTES | ENT_XML1, 'UTF-8');
 }
 
+// Backward compatibility helpers for migrated module pages.
+function role_has($role)
+{
+	global $g_user_role;
+	$target = strtoupper(trim((string)$role));
+
+	$normalizeRole = function ($value) {
+		if (is_numeric($value) && isset(SYSTEM_ACCESS['E-INVENTORY']['role'][(string)$value])) {
+			return strtoupper(trim((string)SYSTEM_ACCESS['E-INVENTORY']['role'][(string)$value]));
+		}
+		return strtoupper(trim((string)$value));
+	};
+
+	if (is_array($g_user_role)) {
+		foreach ($g_user_role as $entry) {
+			if ($normalizeRole($entry) === $target) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	return $normalizeRole($g_user_role) === $target;
+}
+
+function get_user_access_list($user_id = null)
+{
+	global $s_user_id;
+	if ($user_id === null) {
+		$user_id = $s_user_id ?? 0;
+	}
+
+	static $cache = array();
+	if (isset($cache[$user_id])) {
+		return $cache[$user_id];
+	}
+
+	$list = array();
+	$sql = "SELECT access_code FROM user_access WHERE user_id = " . (int)$user_id . " AND is_active = 1";
+	$res = call_mysql_query($sql);
+	if ($res) {
+		while ($row = call_mysql_fetch_array($res)) {
+			if (!empty($row['access_code'])) {
+				$list[] = strtoupper(trim($row['access_code']));
+			}
+		}
+		$cache[$user_id] = $list;
+		return $list;
+	}
+
+	$cache[$user_id] = null;
+	return null;
+}
+
+function user_has_access($required)
+{
+	global $s_user_id;
+
+	if (role_has("SUPER_ADMIN") || role_has("ADMIN")) {
+		return true;
+	}
+
+	if (!(role_has("ADMIN_STAFF") || role_has("ADMINSTAFF"))) {
+		return false;
+	}
+
+	$requiredList = is_array($required) ? $required : array($required);
+	$requiredList = array_map(function ($value) {
+		return strtoupper(trim((string)$value));
+	}, $requiredList);
+
+	$accessList = get_user_access_list($s_user_id);
+	if ($accessList === null) {
+		return true;
+	}
+
+	foreach ($requiredList as $code) {
+		if (in_array($code, $accessList, true)) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 function converToTz($time = "", $toTz = '', $fromTz = '', $format = 'Y-m-d H:i:s')
 {
 	$time = ($time == "") ? date('Y-m-d H:i:s') : $time;

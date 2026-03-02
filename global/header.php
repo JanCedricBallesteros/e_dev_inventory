@@ -98,9 +98,7 @@
                                     </a>
                                     <a href="#">
                                         <div class="notif-img">
-                                            <img
-                                                src="../assets/dashboard/img/chadengle.jpg"
-                                                alt="Img Profile" />
+                                            <img src="<?php echo IMG_PATH . $g_photo; ?>" alt="Img Profile" />
                                         </div>
                                         <div class="notif-content">
                                             <span class="subject">Chad</span>
@@ -110,9 +108,7 @@
                                     </a>
                                     <a href="#">
                                         <div class="notif-img">
-                                            <img
-                                                src="../assets/dashboard/img/mlane.jpg"
-                                                alt="Img Profile" />
+                                            <img src="<?php echo IMG_PATH . $g_photo; ?>" alt="Img Profile" />
                                         </div>
                                         <div class="notif-content">
                                             <span class="subject">Jhon Doe</span>
@@ -124,9 +120,7 @@
                                     </a>
                                     <a href="#">
                                         <div class="notif-img">
-                                            <img
-                                                src="../assets/dashboard/img/talha.jpg"
-                                                alt="Img Profile" />
+                                            <img src="<?php echo IMG_PATH . $g_photo; ?>" alt="Img Profile" />
                                         </div>
                                         <div class="notif-content">
                                             <span class="subject">Talha</span>
@@ -181,9 +175,7 @@
                                     </a>
                                     <a href="#">
                                         <div class="notif-img">
-                                            <img
-                                                src="../assets/dashboard/img/profile2.jpg"
-                                                alt="Img Profile" />
+                                            <img src="<?php echo IMG_PATH . $g_photo; ?>" alt="Img Profile" />
                                         </div>
                                         <div class="notif-content">
                                             <span class="block">

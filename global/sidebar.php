@@ -1,47 +1,41 @@
 <?php
 
-/** 
+/**
 ==================================================================
  File name   : sidebar.php
  Version     : 1.0.0
  Begin       : 2026-02-26
- Last Update : 
- Author      : 
+ Last Update :
+ Author      :
  Description : sidebar (FOR ADMINS UI).
- =================================================================
- **/
+==================================================================
+**/
 
-## activation on each pages
-// function navigation_active($page, $class = 'active')
-// {
-//     global $active_page;
+$active_page = ACTIVE_PAGE;
 
-//     $pageArray = array_map('trim', explode(',', $page));
-//     return in_array($active_page, $pageArray) ? $class : '';
-// }
+if (!isset($g_user_role)) {
+    include DOMAIN_PATH . "/404.php";
+    exit();
+}
 
-function navigation_active($pages, $class = 'active', $conditions = [])
+function navigation_active($pages, $class = 'active', $conditions = array())
 {
     global $active_page;
 
     $pageArray = array_map('trim', explode(',', $pages));
-
-    // Check if current page matches
     if (!in_array($active_page, $pageArray)) {
         return '';
     }
 
-    // If no GET conditions required
     if (empty($conditions)) {
         return $class;
     }
 
-    // Check GET conditions
     foreach ($conditions as $key => $values) {
         if (!isset($_GET[$key])) {
             return '';
         }
-        $values = (array) $values; // ensure array
+        $values = (array)$values;
         if (!in_array($_GET[$key], $values)) {
             return '';
         }
@@ -49,10 +43,22 @@ function navigation_active($pages, $class = 'active', $conditions = [])
 
     return $class;
 }
+
+function staff_has_any_access($codes)
+{
+    if (role_has("SUPER_ADMIN") || role_has("ADMIN")) {
+        return true;
+    }
+    foreach ((array)$codes as $code) {
+        if (user_has_access($code)) {
+            return true;
+        }
+    }
+    return false;
+}
 ?>
 <div class="sidebar" data-background-color="dark">
     <div class="sidebar-logo">
-        <!-- Logo Header -->
         <div class="logo-header" data-background-color="dark">
             <a href="<?php echo BASE_URL . 'index.php'; ?>" class="logo pt-2">
                 <img src="<?php echo DISPLAY_LOGO; ?>" alt="navbar brand" class="navbar-brand" height="100%">
@@ -69,173 +75,134 @@ function navigation_active($pages, $class = 'active', $conditions = [])
                 <i class="gg-more-vertical-alt"></i>
             </button>
         </div>
-        <!-- End Logo Header -->
     </div>
 
     <div class="sidebar-wrapper scrollbar scrollbar-inner">
         <div class="sidebar-content">
             <ul class="nav nav-secondary">
-                <?php if ($g_user_role == 'SUPER_ADMIN') { ?>
-                    <!-- navigation section (remove if not needed) -->
-                    <li class="nav-section">
-                        <span class="sidebar-mini-icon">
-                            <i class="fa fa-ellipsis-h"></i>
-                        </span>
-                        <h4 class="text-section"><?php echo ACCESS_NAME[$g_user_role]; ?></h4> <!-- change based on role -->
-                    </li>
+                <li class="nav-section">
+                    <span class="sidebar-mini-icon">
+                        <i class="fa fa-ellipsis-h"></i>
+                    </span>
+                    <h4 class="text-section"><?php echo ACCESS_NAME[$g_user_role] ?? $g_user_role; ?></h4>
+                </li>
 
-                    <!-- start navigation -->
-
-                    <li class="nav-item <?php echo navigation_active("main_admin"); ?>">
-                        <a href="<?php echo BASE_URL . "admin/main_admin.php" ?>">
+                <?php if (role_has("SUPER_ADMIN") || role_has("ADMIN")) { ?>
+                    <li class="nav-item <?php echo navigation_active("ast_inventory"); ?>">
+                        <a href="<?php echo BASE_URL . "admin/modules/nonconsumable/ast_inventory.php"; ?>">
                             <i class="fas fa-home"></i>
                             <p>Dashboard</p>
                         </a>
                     </li>
+                <?php } ?>
 
-                    <li class="nav-item <?php echo navigation_active("user_information"); ?>">
-                        <a href="<?php echo BASE_URL . "admin/user_information.php" ?>">
-                            <i class="fas fa-users"></i>
-                            <p>User Information</p>
+                <?php if (role_has("SUPER_ADMIN") || role_has("ADMIN") || ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && staff_has_any_access(array("CSM", "PO")))) { ?>
+                    <li class="nav-item <?php echo navigation_active("csm_category,csm_manage_inventory,csm_manage_invtest,csm_available_items,csm_physical_checking,csm_qrcode", "active submenu"); ?>">
+                        <a class="collapsed" aria-expanded="false" data-bs-toggle="collapse" href="#csm_nav">
+                            <i class="fas fa-cubes"></i>
+                            <p>Consumable (CSM)</p>
+                            <span class="caret"></span>
                         </a>
+                        <div class="collapse <?php echo navigation_active("csm_category,csm_manage_inventory,csm_manage_invtest,csm_available_items,csm_physical_checking,csm_qrcode", "show"); ?>" id="csm_nav">
+                            <ul class="nav nav-collapse">
+                                <li class="<?php echo navigation_active("csm_category"); ?>">
+                                    <a href="<?php echo BASE_URL . "admin/modules/consumable/csm_category.php"; ?>">
+                                        <span class="sub-item">Item Category</span>
+                                    </a>
+                                </li>
+                                <li class="<?php echo navigation_active("csm_manage_inventory"); ?>">
+                                    <a href="<?php echo BASE_URL . "admin/modules/consumable/csm_manage_inventory.php"; ?>">
+                                        <span class="sub-item">Inventory</span>
+                                    </a>
+                                </li>
+                                <li class="<?php echo navigation_active("csm_qrcode"); ?>">
+                                    <a href="<?php echo BASE_URL . "admin/modules/consumable/csm_qrcode.php"; ?>">
+                                        <span class="sub-item">QR Code</span>
+                                    </a>
+                                </li>
+                                <li class="<?php echo navigation_active("csm_physical_checking"); ?>">
+                                    <a href="<?php echo BASE_URL . "admin/modules/consumable/csm_physical_checking.php"; ?>">
+                                        <span class="sub-item">Physical Checking</span>
+                                    </a>
+                                </li>
+                            </ul>
+                        </div>
+                    </li>
+                <?php } ?>
+
+                <?php if (role_has("SUPER_ADMIN") || role_has("ADMIN") || ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && staff_has_any_access(array("AST", "PO")))) { ?>
+                    <li class="nav-item <?php echo navigation_active("ast_category,ast_inventory,ast_manage_inventory,ast_qrcode,ast_physical_checking", "active submenu"); ?>">
+                        <a class="collapsed" aria-expanded="false" data-bs-toggle="collapse" href="#ast_nav">
+                            <i class="fas fa-boxes"></i>
+                            <p>Non-Consumable (AST)</p>
+                            <span class="caret"></span>
+                        </a>
+                        <div class="collapse <?php echo navigation_active("ast_category,ast_inventory,ast_manage_inventory,ast_qrcode,ast_physical_checking", "show"); ?>" id="ast_nav">
+                            <ul class="nav nav-collapse">
+                                <li class="<?php echo navigation_active("ast_category"); ?>">
+                                    <a href="<?php echo BASE_URL . "admin/modules/nonconsumable/ast_category.php"; ?>">
+                                        <span class="sub-item">Item Category</span>
+                                    </a>
+                                </li>
+                                <li class="<?php echo navigation_active("ast_inventory"); ?>">
+                                    <a href="<?php echo BASE_URL . "admin/modules/nonconsumable/ast_inventory.php"; ?>">
+                                        <span class="sub-item">Inventory</span>
+                                    </a>
+                                </li>
+                                <li class="<?php echo navigation_active("ast_manage_inventory"); ?>">
+                                    <a href="<?php echo BASE_URL . "admin/modules/nonconsumable/ast_manage_inventory.php"; ?>">
+                                        <span class="sub-item">Add New Item</span>
+                                    </a>
+                                </li>
+                                <li class="<?php echo navigation_active("ast_qrcode"); ?>">
+                                    <a href="<?php echo BASE_URL . "admin/modules/nonconsumable/ast_qrcode.php"; ?>">
+                                        <span class="sub-item">QR Code</span>
+                                    </a>
+                                </li>
+                                <li class="<?php echo navigation_active("ast_physical_checking"); ?>">
+                                    <a href="<?php echo BASE_URL . "admin/modules/nonconsumable/ast_physical_checking.php"; ?>">
+                                        <span class="sub-item">Physical Checking</span>
+                                    </a>
+                                </li>
+                            </ul>
+                        </div>
+                    </li>
+                <?php } ?>
+
+                <?php if (role_has("SUPER_ADMIN") || role_has("ADMIN") || role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) { ?>
+                    <li class="nav-item <?php echo navigation_active("requisition,manage_issuance,manage_returns", "active submenu"); ?>">
+                        <a class="collapsed" aria-expanded="false" data-bs-toggle="collapse" href="#tx_nav">
+                            <i class="fas fa-exchange-alt"></i>
+                            <p>Transactions</p>
+                            <span class="caret"></span>
+                        </a>
+                        <div class="collapse <?php echo navigation_active("requisition,manage_issuance,manage_returns", "show"); ?>" id="tx_nav">
+                            <ul class="nav nav-collapse">
+                                <li class="<?php echo navigation_active("requisition", "active", array("type" => array("AST", "CSM"))); ?>">
+                                    <a href="<?php echo BASE_URL . "admin/modules/transactions/requisition.php?type=AST"; ?>">
+                                        <span class="sub-item">Requisition Item</span>
+                                    </a>
+                                </li>
+                                <li class="<?php echo navigation_active("manage_issuance"); ?>">
+                                    <a href="<?php echo BASE_URL . "admin/modules/transactions/manage_issuance.php"; ?>">
+                                        <span class="sub-item">Property Report</span>
+                                    </a>
+                                </li>
+                                <li class="<?php echo navigation_active("manage_returns"); ?>">
+                                    <a href="<?php echo BASE_URL . "admin/modules/transactions/manage_returns.php"; ?>">
+                                        <span class="sub-item">Property Return</span>
+                                    </a>
+                                </li>
+                            </ul>
+                        </div>
                     </li>
 
-                    <li class="nav-item <?php echo navigation_active("activity_log", "active submenu", ["user" => ["super_admin", "admin"]]); ?>">
-                        <a class="collapsed" aria-expanded="false" data-bs-toggle="collapse" href="#activity_log_nav">
+                    <li class="nav-item <?php echo navigation_active("activity_logs"); ?>">
+                        <a href="<?php echo BASE_URL . "admin/modules/logs/activity_logs.php"; ?>">
                             <i class="fas fa-list"></i>
-                            <p>Activity Log</p>
-                            <span class="caret"></span>
-                        </a>
-                        <div class="collapse <?php echo navigation_active("activity_log", "show", ["user" => ["super_admin", "admin"]]); ?>" id="activity_log_nav">
-                            <ul class="nav nav-collapse">
-                                <li class="<?php echo navigation_active("activity_log", "active", ["user" => ["super_admin"]]); ?>">
-                                    <a href="<?php echo BASE_URL . "admin/activity_log.php?user=super_admin" ?>">
-                                        <span class="sub-item">Super Administrator</span>
-                                    </a>
-                                </li>
-                                <li class="<?php echo navigation_active("activity_log", "active", ["user" => ["admin"]]); ?>">
-                                    <a href="<?php echo BASE_URL . "admin/activity_log.php?user=admin"; ?>">
-                                        <span class="sub-item">Administrator</span>
-                                    </a>
-                                </li>
-                            </ul>
-                        </div>
-                    </li>
-
-                    <li class="nav-item <?php echo navigation_active("user_log", "active submenu", ["user" => ["super_admin", "admin"]]); ?>">
-                        <a class="collapsed" aria-expanded="false" data-bs-toggle="collapse" href="#user_log_nav">
-                            <i class="fas fa-list"></i>
-                            <p>User Log</p>
-                            <span class="caret"></span>
-                        </a>
-                        <div class="collapse <?php echo navigation_active("user_log", "show", ["user" => ["super_admin", "admin"]]); ?>" id="user_log_nav">
-                            <ul class="nav nav-collapse">
-                                <li class="<?php echo navigation_active("user_log", "active", ["user" => ["super_admin"]]); ?>">
-                                    <a href="<?php echo BASE_URL . "admin/user_log.php?user=super_admin" ?>">
-                                        <span class="sub-item">Super Administrator</span>
-                                    </a>
-                                </li>
-                                <li class="<?php echo navigation_active("user_log", "active", ["user" => ["admin"]]); ?>">
-                                    <a href="<?php echo BASE_URL . "admin/user_log.php?user=admin"; ?>">
-                                        <span class="sub-item">Administrator</span>
-                                    </a>
-                                </li>
-                            </ul>
-                        </div>
-                    </li>
-
-
-                    <!-- for sub menu, change href and id (it should be unique id) -->
-                    <li class="nav-item <?php echo navigation_active("other,admin", "active submenu"); ?>">
-                        <a class="collapsed" aria-expanded="false" data-bs-toggle="collapse" href="#sub_nav">
-                            <i class="fas fa-layer-group"></i>
-                            <p>Parent Nav</p>
-                            <span class="caret"></span>
-                        </a>
-                        <div class="collapse <?php echo navigation_active("other,admin", "show"); ?>" id="sub_nav">
-                            <ul class="nav nav-collapse">
-                                <li class="<?php echo navigation_active("other"); ?>">
-                                    <a href="<?php echo BASE_URL . "admin/other.php" ?>">
-                                        <span class="sub-item">Sub Parent Nav 1</span>
-                                    </a>
-                                </li>
-                                <li class="<?php echo navigation_active("admin"); ?>">
-                                    <a href="<?php echo BASE_URL . "admin/admin.php" ?>">
-                                        <span class="sub-item">Sub Parent Nav 2</span>
-                                    </a>
-                                </li>
-                            </ul>
-                        </div>
-                    </li>
-
-
-                    <li class="nav-item <?php echo navigation_active("other"); ?>">
-                        <a href="<?php echo BASE_URL . "admin/other.php" ?>">
-                            <i class="fas fa-desktop"></i>
-                            <p>With bagdes Nav</p>
-                            <span class="badge badge-success">4</span>
+                            <p>Activity Logs</p>
                         </a>
                     </li>
-
-
-                    <li class="nav-item <?php echo navigation_active("other"); ?>">
-                        <a href="<?php echo BASE_URL . "admin/other.php" ?>">
-                            <i class="fas fa-file"></i>
-                            <p>Single Nav</p>
-                        </a>
-                    </li>
-
-                <?php } else if ($g_user_role == 'ADMIN') { ?>
-                    <!-- navigation section (remove if not needed) -->
-                    <li class="nav-section">
-                        <span class="sidebar-mini-icon">
-                            <i class="fa fa-ellipsis-h"></i>
-                        </span>
-                        <h4 class="text-section"><?php echo ACCESS_NAME[$g_user_role]; ?></h4> <!-- change based on role -->
-                    </li>
-
-                    <!-- start navigation -->
-
-                    <!-- for sub menu, change href and id (it should be unique id) -->
-                    <li class="nav-item <?php echo navigation_active("main_admin,admin", "active submenu"); ?>">
-                        <a class="collapsed" aria-expanded="false" data-bs-toggle="collapse" href="#sub_nav">
-                            <i class="fas fa-layer-group"></i>
-                            <p>Parent Nav</p>
-                            <span class="caret"></span>
-                        </a>
-                        <div class="collapse <?php echo navigation_active("main_admin,admin", "show"); ?>" id="sub_nav">
-                            <ul class="nav nav-collapse">
-                                <li class="<?php echo navigation_active("main_admin"); ?>">
-                                    <a href="<?php echo BASE_URL . "admin/main_admin.php" ?>">
-                                        <span class="sub-item">Sub Parent Nav 1</span>
-                                    </a>
-                                </li>
-                                <li class="<?php echo navigation_active("admin"); ?>">
-                                    <a href="<?php echo BASE_URL . "admin/admin.php" ?>">
-                                        <span class="sub-item">Sub Parent Nav 2</span>
-                                    </a>
-                                </li>
-                            </ul>
-                        </div>
-                    </li>
-
-
-                    <li class="nav-item <?php echo navigation_active("other"); ?>">
-                        <a href="<?php echo BASE_URL . "admin/other.php" ?>">
-                            <i class="fas fa-desktop"></i>
-                            <p>With bagdes Nav</p>
-                            <span class="badge badge-success">4</span>
-                        </a>
-                    </li>
-
-
-                    <li class="nav-item <?php echo navigation_active("other"); ?>">
-                        <a href="<?php echo BASE_URL . "admin/other.php" ?>">
-                            <i class="fas fa-file"></i>
-                            <p>Single Nav</p>
-                        </a>
-                    </li>
-
                 <?php } ?>
             </ul>
         </div>

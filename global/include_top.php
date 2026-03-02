@@ -36,3 +36,23 @@
 
 <!-- DASHBOARD CSS Files -->
 <link rel="stylesheet" href="<?php echo BASE_URL; ?>assets/dashboard/css/custom.min.css?v=<?php echo FILE_VERSION; ?>">
+
+<style>
+/* Legacy module pages: make #main behave like .main-panel > .container */
+.main-panel > #main.main {
+    min-height: calc(100% - 123px);
+    margin-top: 69px;
+    overflow: visible;
+    width: 100%;
+    max-width: unset;
+    padding: 24px 30px;
+}
+
+@media (max-width: 991.5px) {
+    .main-panel > #main.main {
+        margin-top: 69px;
+        padding: 16px 15px;
+        transition: all .5s;
+    }
+}
+</style>

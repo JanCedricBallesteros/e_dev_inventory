@@ -127,7 +127,7 @@ define('PASSWORD_HELPER', DOMAIN_PATH . '/call_func/password_helper.php');
 define('API_PATH', DOMAIN_PATH . '/config/api_data.php');
 define('JWT_PATH', DOMAIN_PATH . '/jwt/autoload.php');
 define('UPLOAD_HANDLER', DOMAIN_PATH . '/call_func/UploaderHandler.php');
-// define('FOOTER_PATH', DOMAIN_PATH . '/global/footer.php');
+define('FOOTER_PATH', DOMAIN_PATH . '/global/footer.php');
 
 ## upload path
 define("UPLOAD_FILE_PATH", DOMAIN_PATH . '/upload/file/');
