@@ -28,31 +28,48 @@ if ($w <= 0 || $h <= 0) {
     exit();
 }
 
-$scale = min($size / $w, $size / $h, 1);
-$newW = (int)floor($w * $scale);
-$newH = (int)floor($h * $scale);
+$canResize = function_exists('imagecreatetruecolor') && function_exists('imagecopyresampled');
+$loader = null;
+$saver = null;
 
 switch ($mime) {
     case 'image/jpeg':
-        $src = imagecreatefromjpeg($path);
+        $loader = 'imagecreatefromjpeg';
+        $saver = 'imagejpeg';
         break;
     case 'image/png':
-        $src = imagecreatefrompng($path);
+        $loader = 'imagecreatefrompng';
+        $saver = 'imagepng';
         break;
     case 'image/gif':
-        $src = imagecreatefromgif($path);
+        $loader = 'imagecreatefromgif';
+        $saver = 'imagegif';
         break;
     case 'image/webp':
-        if (function_exists('imagecreatefromwebp')) {
-            $src = imagecreatefromwebp($path);
-            break;
-        }
-        http_response_code(415);
-        exit();
+        $loader = 'imagecreatefromwebp';
+        $saver = 'imagewebp';
+        break;
     default:
         http_response_code(415);
         exit();
 }
+
+// Fallback: if GD or specific codec is unavailable, return the original image.
+if (
+    !$canResize ||
+    !function_exists($loader) ||
+    !function_exists($saver)
+) {
+    header('Cache-Control: public, max-age=86400');
+    header('Content-Type: ' . $mime);
+    readfile($path);
+    exit();
+}
+
+$scale = min($size / $w, $size / $h, 1);
+$newW = (int)floor($w * $scale);
+$newH = (int)floor($h * $scale);
+$src = $loader($path);
 
 if (!$src) {
     http_response_code(500);
@@ -74,18 +91,16 @@ header('Content-Type: ' . $mime);
 
 switch ($mime) {
     case 'image/jpeg':
-        imagejpeg($dst, null, 80);
+        $saver($dst, null, 80);
         break;
     case 'image/png':
-        imagepng($dst, null, 6);
+        $saver($dst, null, 6);
         break;
     case 'image/gif':
-        imagegif($dst);
+        $saver($dst);
         break;
     case 'image/webp':
-        if (function_exists('imagewebp')) {
-            imagewebp($dst, null, 80);
-        }
+        $saver($dst, null, 80);
         break;
 }
 
