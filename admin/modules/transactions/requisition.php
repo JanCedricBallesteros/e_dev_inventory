@@ -32,7 +32,7 @@ if (!in_array($type, ['AST', 'CSM'], true)) {
 
 <head>
     <?php
-    include_once DOMAIN_PATH . '/global/meta_data.php';
+    include_once META_PATH;
     include_once DOMAIN_PATH . '/global/include_top.php';
     ?>
     <link href="<?= BASE_URL ?>assets/css/tabulator_bootstrap.min.css" rel="stylesheet">

@@ -26,7 +26,7 @@ if (!(
 
 <head>
     <?php
-    include_once DOMAIN_PATH . '/global/meta_data.php';
+    include_once META_PATH;
     include_once DOMAIN_PATH . '/global/include_top.php';
     ?>
 </head>

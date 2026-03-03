@@ -138,7 +138,7 @@ $json_table = output($table_array);
 <html lang="en" class="h-100">
 <head>
     <?php
-    include_once DOMAIN_PATH . '/global/meta_data.php';
+    include_once META_PATH;
     include_once DOMAIN_PATH . '/global/include_top.php';
     ?>
     <style>

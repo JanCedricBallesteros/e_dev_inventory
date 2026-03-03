@@ -129,6 +129,14 @@ define('JWT_PATH', DOMAIN_PATH . '/jwt/autoload.php');
 define('UPLOAD_HANDLER', DOMAIN_PATH . '/call_func/UploaderHandler.php');
 define('FOOTER_PATH', DOMAIN_PATH . '/global/footer.php');
 
+## global path
+define('META_PATH', DOMAIN_PATH . '/global/meta_data.php');
+define('SIDEBAR_PATH', DOMAIN_PATH . '/global/sidebar.php');
+define('HEADER_PATH', DOMAIN_PATH . '/global/header.php');
+define('PAGE_HEADER_PATH', DOMAIN_PATH . '/global/page_header.php');
+define('LINK_PATH', DOMAIN_PATH . '/global/include_top.php');
+define('SCRIPT_PATH', DOMAIN_PATH . '/global/include_bottom.php');
+
 ## upload path
 define("UPLOAD_FILE_PATH", DOMAIN_PATH . '/upload/file/');
 define("UPLOAD_IMG_PATH", DOMAIN_PATH . '/upload/img/');

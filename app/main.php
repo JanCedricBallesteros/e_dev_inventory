@@ -26,7 +26,7 @@ if (!($g_user_role == "ADMIN" || $g_user_role == "REGISTRAR" || $g_user_role == 
 
 <head>
     <?php
-    include_once DOMAIN_PATH . '/global/meta_data.php'; ## meta
+    include_once META_PATH; ## meta
     include_once DOMAIN_PATH . '/global/include_top.php'; ## links
     ?>
 </head>
