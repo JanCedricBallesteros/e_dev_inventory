@@ -22,6 +22,7 @@ function staff_dashboard_count($sql, $field = 'cnt')
 
 $has_ast = user_has_access(array("AST", "PO"));
 $has_csm = user_has_access(array("CSM", "PO"));
+$has_any_access = user_has_access(array("PO", "CSM", "AST"));
 
 $kpis = array(
     array('label' => 'Pending Requisitions', 'value' => staff_dashboard_count("SELECT COUNT(*) AS cnt FROM requisition_items WHERE status='pending'"), 'icon' => 'bi-hourglass-split'),
@@ -45,8 +46,10 @@ if ($has_csm) {
     $quick_actions[] = array('label' => 'CSM Inventory', 'href' => BASE_URL . 'admin/modules/consumable/csm_manage_inventory.php', 'icon' => 'bi-box');
     $quick_actions[] = array('label' => 'CSM Category', 'href' => BASE_URL . 'admin/modules/consumable/csm_category.php', 'icon' => 'bi-tags');
 }
-$quick_actions[] = array('label' => 'Requisition', 'href' => BASE_URL . 'admin/modules/transactions/requisition.php?type=AST', 'icon' => 'bi-list-check');
-$quick_actions[] = array('label' => 'Activity Logs', 'href' => BASE_URL . 'admin/modules/logs/activity_logs.php', 'icon' => 'bi-journal-text');
+if ($has_any_access) {
+    $quick_actions[] = array('label' => 'Requisition', 'href' => BASE_URL . 'admin/modules/transactions/requisition.php?type=AST', 'icon' => 'bi-list-check');
+    $quick_actions[] = array('label' => 'Activity Logs', 'href' => BASE_URL . 'admin/modules/logs/activity_logs.php', 'icon' => 'bi-journal-text');
+}
 ?>
 <!DOCTYPE html>
 <html lang="en" class="h-100">
@@ -88,6 +91,11 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                         <i class="bi bi-graph-up-arrow"></i>&ensp;Key Metrics
                     </div>
                     <div class="card-body mt-3 bg-white">
+                        <?php if (!$has_any_access) { ?>
+                            <div class="alert alert-warning mb-3">
+                                No module access is assigned to your account yet. Please ask Admin to assign `PO`, `CSM`, or `AST` access.
+                            </div>
+                        <?php } ?>
                         <div class="kpi-grid">
                             <?php foreach ($kpis as $kpi) { ?>
                                 <div class="kpi-card">

@@ -56,6 +56,17 @@ function staff_has_any_access($codes)
     }
     return false;
 }
+
+$staffHasAnyModuleAccess = false;
+$staffHasPO = false;
+$staffHasCSM = false;
+$staffHasAST = false;
+if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) {
+    $staffHasPO = user_has_access("PO");
+    $staffHasCSM = user_has_access("CSM");
+    $staffHasAST = user_has_access("AST");
+    $staffHasAnyModuleAccess = ($staffHasPO || $staffHasCSM || $staffHasAST);
+}
 ?>
 <div class="sidebar" data-background-color="dark">
     <div class="sidebar-logo">
@@ -136,7 +147,7 @@ function staff_has_any_access($codes)
                     </li>
                 <?php } ?>
 
-                <?php if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) { ?>
+                <?php if ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && $staffHasAnyModuleAccess) { ?>
                     <li class="nav-item <?php echo navigation_active("main_admin_staff"); ?>">
                         <a href="<?php echo BASE_URL . "admin/dashboard/main_admin_staff.php"; ?>">
                             <i class="fas fa-home"></i>
@@ -145,7 +156,7 @@ function staff_has_any_access($codes)
                     </li>
                 <?php } ?>
 
-                <?php if (role_has("ADMIN") || ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && staff_has_any_access(array("CSM", "PO")))) { ?>
+                <?php if (role_has("ADMIN") || ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && ($staffHasCSM || $staffHasPO))) { ?>
                     <li class="nav-item <?php echo navigation_active("csm_category,csm_manage_inventory,csm_manage_invtest,csm_available_items,csm_physical_checking,csm_qrcode", "active submenu"); ?>">
                         <a class="collapsed" aria-expanded="false" data-bs-toggle="collapse" href="#csm_nav">
                             <i class="fas fa-cubes"></i>
@@ -179,7 +190,7 @@ function staff_has_any_access($codes)
                     </li>
                 <?php } ?>
 
-                <?php if (role_has("ADMIN") || ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && staff_has_any_access(array("AST", "PO")))) { ?>
+                <?php if (role_has("ADMIN") || ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && ($staffHasAST || $staffHasPO))) { ?>
                     <li class="nav-item <?php echo navigation_active("ast_category,ast_inventory,ast_manage_inventory,ast_qrcode,ast_physical_checking", "active submenu"); ?>">
                         <a class="collapsed" aria-expanded="false" data-bs-toggle="collapse" href="#ast_nav">
                             <i class="fas fa-boxes"></i>
@@ -218,7 +229,7 @@ function staff_has_any_access($codes)
                     </li>
                 <?php } ?>
 
-                <?php if (role_has("ADMIN") || role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) { ?>
+                <?php if (role_has("ADMIN") || ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && ($staffHasAST || $staffHasCSM))) { ?>
                     <li class="nav-item <?php echo navigation_active("requisition,manage_issuance,manage_returns", "active submenu"); ?>">
                         <a class="collapsed" aria-expanded="false" data-bs-toggle="collapse" href="#tx_nav">
                             <i class="fas fa-exchange-alt"></i>
@@ -232,16 +243,18 @@ function staff_has_any_access($codes)
                                         <span class="sub-item">Requisition Item</span>
                                     </a>
                                 </li>
-                                <li class="<?php echo navigation_active("manage_issuance"); ?>">
-                                    <a href="<?php echo BASE_URL . "admin/modules/transactions/manage_issuance.php"; ?>">
-                                        <span class="sub-item">Property Report</span>
-                                    </a>
-                                </li>
-                                <li class="<?php echo navigation_active("manage_returns"); ?>">
-                                    <a href="<?php echo BASE_URL . "admin/modules/transactions/manage_returns.php"; ?>">
-                                        <span class="sub-item">Property Return</span>
-                                    </a>
-                                </li>
+                                <?php if (role_has("ADMIN") || $staffHasAST) { ?>
+                                    <li class="<?php echo navigation_active("manage_issuance"); ?>">
+                                        <a href="<?php echo BASE_URL . "admin/modules/transactions/manage_issuance.php"; ?>">
+                                            <span class="sub-item">Property Report</span>
+                                        </a>
+                                    </li>
+                                    <li class="<?php echo navigation_active("manage_returns"); ?>">
+                                        <a href="<?php echo BASE_URL . "admin/modules/transactions/manage_returns.php"; ?>">
+                                            <span class="sub-item">Property Return</span>
+                                        </a>
+                                    </li>
+                                <?php } ?>
                             </ul>
                         </div>
                     </li>

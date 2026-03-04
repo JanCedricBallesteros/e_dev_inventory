@@ -6,7 +6,7 @@ require CONNECT_PATH;
 require VALIDATOR_PATH;
 require ISLOGIN;
 
-$staffAccess = (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && user_has_access(array("PO", "AST", "CSM"));
+$staffAccess = (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && user_has_access(array("AST", "CSM"));
 if (!(
     role_has("ADMIN") ||
     $staffAccess
@@ -16,14 +16,33 @@ if (!(
 }
 
 $type = isset($_GET['type']) ? strtoupper(trim($_GET['type'])) : '';
+$canAST = role_has("ADMIN") || user_has_access('AST');
+$canCSM = role_has("ADMIN") || user_has_access('CSM');
+
 if (!in_array($type, ['AST', 'CSM'], true)) {
-    if (user_has_access('AST') && !user_has_access('CSM')) {
+    if ($canAST && !$canCSM) {
         $type = 'AST';
-    } elseif (user_has_access('CSM') && !user_has_access('AST')) {
+    } elseif ($canCSM && !$canAST) {
+        $type = 'CSM';
+    } elseif ($canAST) {
+        $type = 'AST';
+    } elseif ($canCSM) {
         $type = 'CSM';
     } else {
-        $type = 'AST';
+        header("Location: " . BASE_URL);
+        exit();
     }
+}
+
+if (($type === 'AST' && !$canAST) || ($type === 'CSM' && !$canCSM)) {
+    if ($canAST) {
+        header("Location: " . BASE_URL . "admin/modules/transactions/requisition.php?type=AST");
+    } elseif ($canCSM) {
+        header("Location: " . BASE_URL . "admin/modules/transactions/requisition.php?type=CSM");
+    } else {
+        header("Location: " . BASE_URL);
+    }
+    exit();
 }
 ?>
 <!DOCTYPE html>

@@ -8,7 +8,7 @@ require ISLOGIN;
 
 header('Content-Type: application/json; charset=utf-8');
 
-$staffAccess = (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && user_has_access(array("PO", "AST", "CSM"));
+$staffAccess = (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && user_has_access(array("AST", "CSM"));
 if (!(
     role_has("ADMIN") ||
     $staffAccess

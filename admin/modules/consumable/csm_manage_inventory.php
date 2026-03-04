@@ -8,11 +8,13 @@ require CONNECT_PATH;
 require VALIDATOR_PATH;
 require ISLOGIN;
 
-/**
- * ACCESS CONTROL (FIXED)
- */
-$allowedRoles = ['ADMIN', 'ADMINSTAFF'];
-if (!isset($g_user_role) || !in_array($g_user_role, $allowedRoles, true)) {
+if (!(
+    role_has("ADMIN") ||
+    (
+        (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) &&
+        user_has_access(array("CSM", "PO"))
+    )
+)) {
     header("Location: " . BASE_URL);
     exit();
 }

@@ -7,8 +7,8 @@ require CONNECT_PATH;
 require VALIDATOR_PATH;
 require ISLOGIN;
 
-$allowedRoles = ["ADMIN", "ADMIN_STAFF", "ADMINSTAFF"];
-if (!isset($g_user_role) || !in_array($g_user_role, $allowedRoles, true)) {
+$isStaffCsm = ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && user_has_access(array("CSM", "PO")));
+if (!(role_has("ADMIN") || $isStaffCsm)) {
     http_response_code(403);
     header('Content-Type: application/json; charset=utf-8');
     echo json_encode(['success'=>false,'message'=>'Access denied.']);

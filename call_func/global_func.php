@@ -430,7 +430,7 @@ function user_has_access($required)
 
 	$accessList = get_user_access_list($s_user_id);
 	if ($accessList === null) {
-		return true;
+		return false;
 	}
 
 	foreach ($requiredList as $code) {

@@ -9,7 +9,7 @@ require ISLOGIN;
 
 header('Content-Type: application/json; charset=utf-8');
 
-$isStaffAst = ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && user_has_access("AST"));
+$isStaffAst = ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && user_has_access(array("AST", "PO")));
 $isAdmin = role_has("ADMIN");
 if (!isset($g_user_role) || (!$isAdmin && !$isStaffAst)) {
     http_response_code(403);

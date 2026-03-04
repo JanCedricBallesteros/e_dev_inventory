@@ -6,7 +6,13 @@ require CONNECT_PATH;
 require VALIDATOR_PATH;
 require ISLOGIN;
 
-if (!($g_user_role == "ADMIN" || "ADMINSTAFF")) {
+if (!(
+    role_has("ADMIN") ||
+    (
+        (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) &&
+        user_has_access(array("CSM", "PO"))
+    )
+)) {
     header("Location: " . BASE_URL);
     exit();
 }

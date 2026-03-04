@@ -10,7 +10,7 @@ require ISLOGIN;
 header('Content-Type: application/json; charset=utf-8');
 
 // Access control
-$isStaffAst = ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && user_has_access("AST"));
+$isStaffAst = ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && user_has_access(array("AST", "PO")));
 if (!isset($g_user_role) || (!role_has("ADMIN") && !$isStaffAst)) {
     http_response_code(403);
     echo json_encode(['success' => false, 'message' => 'Access denied.']);
