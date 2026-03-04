@@ -19,7 +19,37 @@ if ($check && mysqli_num_rows($check) > 0) {
     $has_events = true;
 }
 
+// Pick the fresher log source:
+// - If user_log has newer entries than user_log_events, use legacy source.
+// - Otherwise use user_log_events.
+$use_events_source = $has_events;
 if ($has_events) {
+    $maxEventTime = '';
+    $maxLegacyTime = '';
+
+    $qEvent = call_mysql_query("SELECT MAX(event_time) AS max_event_time FROM user_log_events");
+    if ($qEvent && ($rEvent = call_mysql_fetch_array($qEvent))) {
+        $maxEventTime = trim((string)($rEvent['max_event_time'] ?? ''));
+    }
+
+    $qLegacy = call_mysql_query("
+        SELECT
+            GREATEST(
+                COALESCE(MAX(login_date), '0000-00-00 00:00:00'),
+                COALESCE(MAX(logout_date), '0000-00-00 00:00:00')
+            ) AS max_legacy_time
+        FROM user_log
+    ");
+    if ($qLegacy && ($rLegacy = call_mysql_fetch_array($qLegacy))) {
+        $maxLegacyTime = trim((string)($rLegacy['max_legacy_time'] ?? ''));
+    }
+
+    if (_is_valid_log_date($maxLegacyTime) && (!_is_valid_log_date($maxEventTime) || $maxLegacyTime > $maxEventTime)) {
+        $use_events_source = false;
+    }
+}
+
+if ($use_events_source) {
     $select = "
         SELECT
             e.event_id,
@@ -109,7 +139,7 @@ if ($query = call_mysql_query($select)) {
                 }
             }
 
-            if ($has_events) {
+            if ($use_events_source) {
                 $row = $data;
                 $row['action_display'] = strtoupper(trim((string)($data['action'] ?? '')));
                 $row['log_datetime'] = $data['event_time'] ?? '';

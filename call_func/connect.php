@@ -206,6 +206,61 @@ function  user_log($data = array())
 
 	unset($data);
 
+	// Normalize user role to inventory role id for storage consistency.
+	$role_value = $input['USER_ROLE'];
+	$role_id = 0;
+	$role_map = SYSTEM_ACCESS[GLOBAL_SYSTEM_ACCESS]['role'];
+	if (is_numeric($role_value) && isset($role_map[(string)((int)$role_value)])) {
+		$role_id = (int)$role_value;
+	} else {
+		$role_candidates = extract_role_values($role_value);
+		if (empty($role_candidates)) {
+			$role_candidates = array($role_value);
+		}
+		foreach ($role_candidates as $candidate) {
+			$candidate = trim((string)$candidate);
+			if ($candidate === '') continue;
+			if (is_numeric($candidate) && isset($role_map[(string)((int)$candidate)])) {
+				$role_id = (int)$candidate;
+				break;
+			}
+			$candidate_norm = normalize_role_label($candidate);
+			foreach ($role_map as $rid => $rname) {
+				if (normalize_role_label($rname) === $candidate_norm) {
+					$role_id = (int)$rid;
+					break 2;
+				}
+			}
+		}
+	}
+	$input['USER_ROLE'] = $role_id;
+	if ((int)$input['USER_ROLE'] === 0) {
+		// Fallback: derive role from users.user_role (handles JSON arrays like ["1","2"]).
+		$user_id_int = (int)$input['ID_USER'];
+		if ($user_id_int > 0) {
+			$role_res = mysqli_query($db_connect, "SELECT user_role FROM users WHERE user_id = {$user_id_int} LIMIT 1");
+			if ($role_res && ($role_row = mysqli_fetch_assoc($role_res))) {
+				$db_role_raw = $role_row['user_role'] ?? '';
+				$db_roles = extract_role_values($db_role_raw);
+				foreach ($db_roles as $db_role) {
+					$db_role = trim((string)$db_role);
+					if ($db_role === '') continue;
+					if (is_numeric($db_role) && isset($role_map[(string)((int)$db_role)])) {
+						$input['USER_ROLE'] = (int)$db_role;
+						break;
+					}
+					$db_norm = normalize_role_label($db_role);
+					foreach ($role_map as $rid => $rname) {
+						if (normalize_role_label($rname) === $db_norm) {
+							$input['USER_ROLE'] = (int)$rid;
+							break 2;
+						}
+					}
+				}
+			}
+		}
+	}
+
 	$sql_query = '';
 	if (empty($user_login_id)) { #not existing
 		$input['TOKEN'] =  "JSON_ARRAY('" . $input['TOKEN'] . "')";
@@ -228,6 +283,24 @@ function  user_log($data = array())
 	}
 
 	if (mysqli_query($db_connect, $sql_query)) { #error log
+		// Also write to user_log_events when available so superadmin user logs stay current.
+		$has_event_table = false;
+		$tbl = mysqli_query($db_connect, "SHOW TABLES LIKE 'user_log_events'");
+		if ($tbl && mysqli_num_rows($tbl) > 0) {
+			$has_event_table = true;
+		}
+		if ($has_event_table) {
+			$action = strtoupper(trim((string)$input['ACTION']));
+			$user_id = (int)$input['ID_USER'];
+			$ip = escape($db_connect, (string)$input['IP']);
+			$device = escape($db_connect, (string)$input['AGENTS']);
+			$session_token = escape($db_connect, (string)$token_id);
+			$level = escape($db_connect, (string)$input['USER_ROLE']);
+			$source = 'legacy_sync';
+			$event_sql = "INSERT INTO user_log_events (user_id, action, event_time, ip_address, device, session_token, user_level, source)
+				VALUES ({$user_id}, '{$action}', '" . DATE_TIME . "', '{$ip}', '{$device}', '{$session_token}', '{$level}', '{$source}')";
+			@mysqli_query($db_connect, $event_sql);
+		}
 		return true;
 	}
 

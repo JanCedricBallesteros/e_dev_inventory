@@ -46,23 +46,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         ## set each array data into string [('sample')]
         $array_token_ids = $token_ids[0];
 
-        $role = 0;
-        if ($g_user_role == "ADMIN"){
-            $role = 1;
-        }elseif ($g_user_role == "REGISTRAR"){
-            $role = 2;
-        }elseif ($g_user_role == "VPAA"){
-            $role = 3;
-        }elseif ($g_user_role == "OFFICIAL"){
-            $role = 4;
-        }elseif ($g_user_role == "FACULTY"){
-            $role = 5;
-        }elseif ($g_user_role == "STUDENT"){
-            $role = 6;
-        }
+        $role = $g_user_role;
 
         ## update login_flag
-        $default_query = user_log(array("ID_USER" => $user_id, "IP" => $ip, "TOKEN" => $array_token_ids, "ACTION" => "LOGOUT", "AGENTS" => "", "SUMMARY" => "", "USER_ROLE" => $role));
+        $default_query = user_log(array("ID_USER" => $user_id, "IP" => $ip, "TOKEN" => $array_token_ids, "ACTION" => "LOGOUT", "AGENTS" => $g_agent_browser, "SUMMARY" => "", "USER_ROLE" => $role));
         if ($default_query) {
             echo json_encode(['response_status' => 1, 'msg_response' => 'success']);
             exit();
