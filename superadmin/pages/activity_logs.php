@@ -178,7 +178,7 @@ $json_table = output($table_array);
             <div class="card">
                 <div class="card-header bg-eclearance text-white fw-semibold d-flex align-items-center justify-content-between">
                     <div>
-                        <i class="bi bi-clock-history"></i>&ensp;Activity Logs
+                        <i class="fas fa-history"></i>&ensp;Activity Logs
                     </div>
                 </div>
                 <div class="card-body mt-3 bg-white">

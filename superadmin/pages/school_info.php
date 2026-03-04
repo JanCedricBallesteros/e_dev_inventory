@@ -34,7 +34,7 @@ if (!role_has("SUPER_ADMIN")) {
         <section class="section">
             <div class="card">
                 <div class="card-header bg-eclearance text-white fw-semibold">
-                    <i class="bi bi-building"></i>&ensp;School Information
+                    <i class="fas fa-school"></i>&ensp;School Information
                 </div>
                 <div class="card-body mt-3 bg-white">
                     <!-- Your content here dito mo lagay ha, LABYU -->

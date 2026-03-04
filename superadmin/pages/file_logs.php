@@ -34,7 +34,7 @@ if (!role_has("SUPER_ADMIN")) {
         <section class="section">
             <div class="card">
                 <div class="card-header bg-eclearance text-white fw-semibold">
-                    <i class="bi bi-folder2-open"></i>&ensp;File Logs
+                    <i class="fas fa-file-alt"></i>&ensp;File Logs
                 </div>
                 <div class="card-body mt-3 bg-white">
                     <!-- Your content here dito mo lagay ha, LABYU -->

@@ -169,7 +169,7 @@ $json_table = output($table_array);
             <div class="card">
                 <div class="card-header bg-eclearance text-white fw-semibold d-flex align-items-center justify-content-between">
                     <div>
-                        <i class="bi bi-person-badge-fill"></i>&ensp;User Information
+                        <i class="fas fa-user"></i>&ensp;User Information
                     </div>
                 </div>
                 <div class="card-body mt-3 bg-white">

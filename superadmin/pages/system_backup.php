@@ -34,7 +34,7 @@ if (!role_has("SUPER_ADMIN")) {
         <section class="section">
             <div class="card">
                 <div class="card-header bg-eclearance text-white fw-semibold">
-                    <i class="bi bi-hdd-fill"></i>&ensp;System Backup
+                    <i class="fas fa-database"></i>&ensp;System Backup
                 </div>
                 <div class="card-body mt-3 bg-white">
                     <!-- Your content here dito mo lagay ha, LABYU -->
