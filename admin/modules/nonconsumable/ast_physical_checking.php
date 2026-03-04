@@ -8,7 +8,6 @@ require VALIDATOR_PATH;
 require ISLOGIN;
 
 if (!(
-    role_has("SUPER_ADMIN") ||
     role_has("ADMIN") ||
     (
         (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) &&
@@ -18,7 +17,7 @@ if (!(
     header("Location: " . BASE_URL);
     exit();
 }
-$isAdmin = (role_has("SUPER_ADMIN") || role_has("ADMIN"));
+$isAdmin = role_has("ADMIN");
 ?>
 <!DOCTYPE html>
 <html lang="en" class="h-100">

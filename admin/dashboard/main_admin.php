@@ -6,7 +6,7 @@ require CONNECT_PATH;
 require VALIDATOR_PATH;
 require ISLOGIN;
 
-if (!(role_has("SUPER_ADMIN") || role_has("ADMIN"))) {
+if (!role_has("ADMIN")) {
     header("Location: " . BASE_URL);
     exit();
 }

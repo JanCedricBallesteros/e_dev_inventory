@@ -1,5 +1,5 @@
 <?php
-require 'config/config.php';
+require_once dirname(__DIR__) . '/config/config.php';
 require GLOBAL_FUNC;
 require CL_SESSION_PATH;
 require CONNECT_PATH;

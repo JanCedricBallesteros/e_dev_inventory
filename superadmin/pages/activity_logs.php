@@ -1,12 +1,12 @@
-<?php
-require_once dirname(__DIR__, 3) . '/config/config.php';
+﻿<?php
+require_once dirname(__DIR__, 2) . '/config/config.php';
 require GLOBAL_FUNC;
 require CL_SESSION_PATH;
 require CONNECT_PATH;
 require VALIDATOR_PATH;
 require ISLOGIN;
 
-if (!role_has('ADMIN')) {
+if (!role_has("SUPER_ADMIN")) {
     header("Location: " . BASE_URL);
     exit();
 }
@@ -75,15 +75,9 @@ $select = "
         u.l_name,
         u.suffix,
         u.email_address,
-        u.position,
-        u.employment_status_id,
-        u.user_role
+        u.position
     FROM activity_log a
     LEFT JOIN users u ON u.user_id = a.user_id
-    WHERE (
-        u.user_role IN ('ADMIN', 'ADMIN_STAFF', 'ADMINSTAFF')
-        OR a.user_level IN ('2', '3', 'ADMIN', 'ADMIN_STAFF', 'ADMINSTAFF')
-    )
     ORDER BY a.activity_log_id DESC
 ";
 
@@ -136,9 +130,10 @@ $json_table = output($table_array);
 ?>
 <!DOCTYPE html>
 <html lang="en" class="h-100">
+
 <head>
     <?php
-    include_once META_PATH;
+    include_once DOMAIN_PATH . '/global/meta_data.php';
     include_once DOMAIN_PATH . '/global/include_top.php';
     ?>
     <style>
@@ -210,7 +205,7 @@ $json_table = output($table_array);
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                        <div id="cellDetailContent" class="detail-modal-content" style="word-break: break-word;"></div>
+                    <div id="cellDetailContent" class="detail-modal-content" style="word-break: break-word;"></div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>

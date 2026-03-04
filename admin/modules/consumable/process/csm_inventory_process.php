@@ -11,7 +11,7 @@ require ISLOGIN;
 header('Content-Type: text/plain; charset=utf-8');
 
 // -------------------- ACCESS CONTROL --------------------
-$allowedRoles = ['SUPER_ADMIN', 'ADMIN', 'ADMINSTAFF'];
+$allowedRoles = ['ADMIN', 'ADMINSTAFF'];
 if (!isset($g_user_role) || !in_array($g_user_role, $allowedRoles, true)) {
     http_response_code(403);
     echo "Access denied.";

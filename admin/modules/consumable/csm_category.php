@@ -15,7 +15,7 @@ require CONNECT_PATH;
 require VALIDATOR_PATH;
 require ISLOGIN;
 
-if (!($g_user_role == "SUPER_ADMIN" || $g_user_role == "ADMIN" || $g_user_role == "ADMIN_STAFF")) {
+if (!($g_user_role == "ADMIN" || $g_user_role == "ADMIN_STAFF" || $g_user_role == "ADMINSTAFF")) {
     header("Location: " . BASE_URL);
     exit();
 }

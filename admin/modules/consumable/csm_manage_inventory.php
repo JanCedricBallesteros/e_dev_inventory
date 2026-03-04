@@ -11,7 +11,7 @@ require ISLOGIN;
 /**
  * ACCESS CONTROL (FIXED)
  */
-$allowedRoles = ['SUPER_ADMIN', 'ADMIN', 'ADMINSTAFF'];
+$allowedRoles = ['ADMIN', 'ADMINSTAFF'];
 if (!isset($g_user_role) || !in_array($g_user_role, $allowedRoles, true)) {
     header("Location: " . BASE_URL);
     exit();

@@ -1,16 +1,12 @@
 <?php
-require_once dirname(__DIR__, 3) . '/config/config.php';
+require_once dirname(__DIR__, 2) . '/config/config.php';
 require GLOBAL_FUNC;
 require CL_SESSION_PATH;
 require CONNECT_PATH;
 require VALIDATOR_PATH;
 require ISLOGIN;
 
-$staffAccess = (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && user_has_access(array("PO", "AST"));
-if (!(
-    role_has("ADMIN") ||
-    $staffAccess
-)) {
+if (!role_has("SUPER_ADMIN")) {
     header("Location: " . BASE_URL);
     exit();
 }
@@ -22,7 +18,7 @@ if (!(
 
 <head>
     <?php
-    include_once META_PATH;
+    include_once DOMAIN_PATH . '/global/meta_data.php';
     include_once DOMAIN_PATH . '/global/include_top.php';
     ?>
 </head>
@@ -38,7 +34,7 @@ if (!(
         <section class="section">
             <div class="card">
                 <div class="card-header bg-eclearance text-white fw-semibold">
-                    <i class="bi bi-journal-bookmark-fill"></i>&ensp;Manage Issuance
+                    <i class="bi bi-folder2-open"></i>&ensp;File Logs
                 </div>
                 <div class="card-body mt-3 bg-white">
                     <!-- Your content here dito mo lagay ha, LABYU -->

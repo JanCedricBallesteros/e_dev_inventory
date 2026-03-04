@@ -10,7 +10,6 @@ header('Content-Type: application/json; charset=utf-8');
 
 $staffAccess = (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && user_has_access(array("PO", "AST", "CSM"));
 if (!(
-    role_has("SUPER_ADMIN") ||
     role_has("ADMIN") ||
     $staffAccess
 )) {

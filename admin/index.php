@@ -11,7 +11,12 @@ if (!isset($g_user_role) || empty($g_user_role)) {
 	exit();
 }
 
-if (role_has("SUPER_ADMIN") || role_has("ADMIN")) {
+if (role_has("SUPER_ADMIN")) {
+	header("Location: " . BASE_URL . "superadmin/pages/main_superadmin.php");
+	exit();
+}
+
+if (role_has("ADMIN")) {
 	header("Location: " . BASE_URL . "admin/dashboard/main_admin.php");
 	exit();
 }
@@ -22,7 +27,7 @@ if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) {
 }
 
 if (role_has("USER") || role_has("USERS")) {
-	header("Location: " . BASE_URL . "app/main.php");
+	header("Location: " . BASE_URL . "app/main_users.php");
 	exit();
 }
 

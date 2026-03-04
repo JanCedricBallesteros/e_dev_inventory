@@ -7,7 +7,7 @@ require CONNECT_PATH;
 require VALIDATOR_PATH;
 require ISLOGIN;
 
-$allowedRoles = ["SUPER_ADMIN", "ADMIN", "ADMIN_STAFF"];
+$allowedRoles = ["ADMIN", "ADMIN_STAFF", "ADMINSTAFF"];
 if (!isset($g_user_role) || !in_array($g_user_role, $allowedRoles, true)) {
     http_response_code(403);
     header('Content-Type: application/json; charset=utf-8');

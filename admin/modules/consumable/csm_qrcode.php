@@ -24,7 +24,6 @@ require ISLOGIN;
 
 // ACCESS CONTROL
 if (!(
-    role_has("SUPER_ADMIN") ||
     role_has("ADMIN") ||
     (
         (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) &&
