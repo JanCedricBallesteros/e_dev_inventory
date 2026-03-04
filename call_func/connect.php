@@ -107,7 +107,11 @@ function activity_log_new($action)
 
 	## user access
 	$user_access_role = SYSTEM_ACCESS[GLOBAL_SYSTEM_ACCESS]['role'];
-	$role_id = array_search($role_txt, $user_access_role);
+	$role_id = array_search($role_txt, $user_access_role, true);
+	if ($role_id === false || $role_id === null || $role_id === '') {
+		$role_id = 0;
+	}
+	$role_id = (int)$role_id;
 
 	if (!empty($user_id) and trim($action) != "") { // may user
 		$insert = "INSERT INTO activity_log (user_id, action, date_log, session_id, user_level) VALUES ( '" . $user_id . "', '" . escape($db_connect, $action) . "','" . $date_now . "','" . $fingerprint . "', " . $role_id . ") ";

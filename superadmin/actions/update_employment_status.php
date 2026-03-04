@@ -123,7 +123,7 @@ if ($verify_query && mysqli_num_rows($verify_query) > 0) {
         $full_name = get_full_name($user_data['f_name'], $user_data['m_name'], $user_data['l_name'], '');
         $general_id = $user_data['general_id'];
         
-        // Log the activity - check if admin user_id is available
+        // Log update without breaking API response on logging issues
         $details = array(
             'user_id' => $user_id,
             'general_id' => $general_id,
@@ -131,7 +131,11 @@ if ($verify_query && mysqli_num_rows($verify_query) > 0) {
             'old_employment_status_id' => $prev_status_id,
             'new_employment_status_id' => $employment_status_id
         );
-        activity_log_new("UPDATE EMPLOYMENT STATUS", "SUCCESS", $details);
+        try {
+            activity_log_new("UPDATE EMPLOYMENT STATUS:: DETAILS::" . json_encode($details));
+        } catch (Throwable $e) {
+            // ignore logging errors and keep JSON response valid
+        }
     }
 
     echo json_encode([

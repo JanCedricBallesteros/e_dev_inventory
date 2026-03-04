@@ -274,6 +274,31 @@ $json_table = output($table_array);
 
 <script>
 document.addEventListener("DOMContentLoaded", function () {
+    if (typeof window.error_notif !== 'function') {
+        window.error_notif = function(msg) {
+            var text = String(msg || 'An error occurred.');
+            if (window.Swal && typeof window.Swal.fire === 'function') {
+                window.Swal.fire({ icon: 'error', title: 'Error', text: text });
+                return;
+            }
+            if (window.jQuery && typeof window.jQuery.notify === 'function') {
+                window.jQuery.notify({ message: text }, { type: 'danger', placement: { from: 'top', align: 'right' }, delay: 3000 });
+            }
+        };
+    }
+    if (typeof window.success_notif !== 'function') {
+        window.success_notif = function(msg) {
+            var text = String(msg || 'Success.');
+            if (window.Swal && typeof window.Swal.fire === 'function') {
+                window.Swal.fire({ icon: 'success', title: 'Success', text: text });
+                return;
+            }
+            if (window.jQuery && typeof window.jQuery.notify === 'function') {
+                window.jQuery.notify({ message: text }, { type: 'success', placement: { from: 'top', align: 'right' }, delay: 3000 });
+            }
+        };
+    }
+
     const CAN_MANAGE_EMPLOYMENT_STATUS = <?php echo $canManageEmploymentStatus ? 'true' : 'false'; ?>;
     var total_record = 0;
     var table_data = <?php echo $json_table . ";\r\n" ?>;
