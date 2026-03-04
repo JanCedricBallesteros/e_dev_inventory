@@ -235,7 +235,7 @@ $json_table = output($table_array);
         </div>
     </div>
 
-    <!-- Access Modal -->
+    <!-- Access Modaaaaal -->
     <div class="modal fade" id="accessModal" tabindex="-1" aria-labelledby="accessModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
