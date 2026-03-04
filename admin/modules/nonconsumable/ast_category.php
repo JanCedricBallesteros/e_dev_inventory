@@ -11,10 +11,7 @@ if (!(
     role_has("ADMIN") ||
     (
         (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) &&
-        user_has_access("
-        
-        
-        ")
+        user_has_access("AST")
     )
 )) {
     header("Location: " . BASE_URL);
@@ -243,8 +240,6 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 
 <?php include_once FOOTER_PATH; ?>
 
-<script src="<?= BASE_URL ?>assets/js/jquery.min.js"></script>
-<script src="<?= BASE_URL ?>assets/js/tabulator.min.js"></script>
 <?php include_once DOMAIN_PATH . '/global/include_bottom.php'; ?>
 
 <script>
@@ -410,7 +405,7 @@ function editCategory(id) {
             
             $('#editCategoryModal').modal('show');
         } else {
-            alert(res.message || 'Failed to load category data.');
+            error_notif(res.message || 'Failed to load category data.');
         }
     }, 'json');
 }

@@ -96,25 +96,60 @@ function mysqliquery_return($sql_query, $connect = "", $type = MYSQLI_ASSOC)
 	return $rdata;
 }
 
-function activity_log_new($action)
+function activity_log_new($action, $status = '', $details = null)
 {
 	global $db_connect, $session_class;
 	$date_now = date('Y-m-d H:i:s');
 	$user_id = $session_class->getValue('user_id');
 	$role_txt = $session_class->getValue('role_id');
+	if ($role_txt === null || $role_txt === '') {
+		$role_txt = $session_class->getValue('user_role');
+	}
 	$fingerprint = $session_class->getValue('browser_fingerprint');
 	$role_id = 0;
 
 	## user access
 	$user_access_role = SYSTEM_ACCESS[GLOBAL_SYSTEM_ACCESS]['role'];
-	$role_id = array_search($role_txt, $user_access_role, true);
-	if ($role_id === false || $role_id === null || $role_id === '') {
-		$role_id = 0;
+	if (is_numeric($role_txt) && isset($user_access_role[(string)((int)$role_txt)])) {
+		$role_id = (int)$role_txt;
+	} else {
+		$role_values = extract_role_values($role_txt);
+		if (empty($role_values)) {
+			$role_values = array($role_txt);
+		}
+		foreach ($role_values as $role_value) {
+			$candidate = trim((string)$role_value);
+			if ($candidate === '') {
+				continue;
+			}
+			if (is_numeric($candidate) && isset($user_access_role[(string)((int)$candidate)])) {
+				$role_id = (int)$candidate;
+				break;
+			}
+			$candidate_norm = normalize_role_label($candidate);
+			foreach ($user_access_role as $rid => $rname) {
+				if (normalize_role_label($rname) === $candidate_norm) {
+					$role_id = (int)$rid;
+					break 2;
+				}
+			}
+		}
 	}
-	$role_id = (int)$role_id;
 
-	if (!empty($user_id) and trim($action) != "") { // may user
-		$insert = "INSERT INTO activity_log (user_id, action, date_log, session_id, user_level) VALUES ( '" . $user_id . "', '" . escape($db_connect, $action) . "','" . $date_now . "','" . $fingerprint . "', " . $role_id . ") ";
+	$action_text = trim((string)$action);
+	$status_text = strtoupper(trim((string)$status));
+	if ($status_text !== '') {
+		$action_text .= '::' . $status_text;
+	}
+	if ($details !== null && $details !== '') {
+		$details_text = is_string($details) ? trim($details) : json_encode($details);
+		if ($details_text !== '') {
+			$action_text .= ':: DETAILS::' . $details_text;
+		}
+	}
+
+	if (!empty($user_id) and $action_text != "") { // may user
+		$insert = "INSERT INTO activity_log (user_id, action, date_log, session_id, user_level) VALUES ( '" . $user_id . "', '" . escape($db_connect, $action_text) . "','" . $date_now . "','" . $fingerprint . "', " . (int)$role_id . ") ";
 
 		if (mysqli_query($db_connect, $insert)) {
 			return true;

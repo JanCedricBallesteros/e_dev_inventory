@@ -77,6 +77,52 @@ function _is_valid_log_date($d) {
     return true;
 }
 
+function _extract_role_ids($raw)
+{
+    if ($raw === null) return array();
+    if (is_array($raw)) return $raw;
+
+    $text = trim((string)$raw);
+    if ($text === '') return array();
+
+    $decoded = json_decode($text, true);
+    if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+        return $decoded;
+    }
+
+    if (strpos($text, ',') !== false) {
+        return array_map('trim', explode(',', $text));
+    }
+
+    return array($text);
+}
+
+function _role_labels_from_raw($raw)
+{
+    $ids = _extract_role_ids($raw);
+    if (empty($ids)) return array();
+
+    $labels = array();
+    foreach ($ids as $id) {
+        $key = is_numeric($id) ? (int)$id : trim((string)$id);
+        if (isset(SYSTEM_ACCESS['E-INVENTORY']['role'][$key])) {
+            $labels[] = normalize_role_label(SYSTEM_ACCESS['E-INVENTORY']['role'][$key]);
+        } elseif (isset(SYSTEM_ACCESS['E-INVENTORY']['role'][(string)$key])) {
+            $labels[] = normalize_role_label(SYSTEM_ACCESS['E-INVENTORY']['role'][(string)$key]);
+        } else {
+            $rawLabel = normalize_role_label((string)$id);
+            if ($rawLabel !== '') {
+                $labels[] = $rawLabel;
+            }
+        }
+    }
+
+    if (!empty($labels)) {
+        $labels = array_values(array_unique($labels));
+    }
+    return $labels;
+}
+
 if ($query = call_mysql_query($select)) {
     if (mysqli_num_rows($query)) {
         while ($data = call_mysql_fetch_array($query)) {
@@ -90,23 +136,15 @@ if ($query = call_mysql_query($select)) {
             // Role label: prefer event role if available, otherwise from user roles
             $data['role_label'] = '';
             if (isset($data['user_level']) && $data['user_level'] !== '') {
-                $lvl = (string)$data['user_level'];
-                if (isset(SYSTEM_ACCESS['E-INVENTORY']['role'][$lvl])) {
-                    $data['role_label'] = SYSTEM_ACCESS['E-INVENTORY']['role'][$lvl];
-                } else {
-                    $data['role_label'] = $lvl;
-                }
+                $labels = _role_labels_from_raw($data['user_level']);
+                $data['role_label'] = !empty($labels) ? implode(', ', $labels) : '';
             } elseif (!empty($data['roles'])) {
-                $roles = json_decode($data['roles'], true);
-                if (is_array($roles)) {
-                    $mapped = [];
-                    foreach ($roles as $role) {
-                        if (isset(SYSTEM_ACCESS['E-INVENTORY']['role'][$role])) {
-                            $mapped[] = SYSTEM_ACCESS['E-INVENTORY']['role'][$role];
-                        }
-                    }
-                    $data['role_label'] = implode(', ', $mapped);
-                }
+                $labels = _role_labels_from_raw($data['roles']);
+                $data['role_label'] = !empty($labels) ? implode(', ', $labels) : '';
+            }
+
+            if ($data['role_label'] === '') {
+                $data['role_label'] = 'UNKNOWN';
             }
 
             if ($has_events) {
@@ -223,7 +261,8 @@ $json_table = output($table_array);
                                 <?php
                                 if (!empty(SYSTEM_ACCESS['E-INVENTORY']['role'])) {
                                     foreach (SYSTEM_ACCESS['E-INVENTORY']['role'] as $roleKey => $roleName) {
-                                        echo '<option value="' . htmlspecialchars($roleName) . '">' . htmlspecialchars($roleName) . '</option>';
+                                        $displayRole = normalize_role_label($roleName);
+                                        echo '<option value="' . htmlspecialchars($displayRole) . '">' . htmlspecialchars($displayRole) . '</option>';
                                     }
                                 }
                                 ?>

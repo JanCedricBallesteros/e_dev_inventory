@@ -74,6 +74,7 @@ $select = "
         u.m_name,
         u.l_name,
         u.suffix,
+        u.user_role AS roles,
         u.email_address,
         u.position
     FROM activity_log a
@@ -90,6 +91,11 @@ if ($query = call_mysql_query($select)) {
                 $data['l_name'] ?? '',
                 $data['suffix'] ?? ''
             );
+            $roleLabels = role_labels_from_raw($data['user_level'] ?? '');
+            if (empty($roleLabels)) {
+                $roleLabels = role_labels_from_raw($data['roles'] ?? '');
+            }
+            $data['role_label'] = !empty($roleLabels) ? implode(', ', $roleLabels) : 'UNKNOWN';
 
             $action_raw = $data['action'] ?? '';
             $data['action_raw'] = $action_raw;
@@ -295,7 +301,7 @@ $json_table = output($table_array);
         columns: [
             { title: "Date & Time", field: "date_log", bottomCalc: record_details, hozAlign: "center", headerFilter: "input", minWidth: 150 },
             { title: "User", field: "name", headerFilter: "input", minWidth: 150 },
-            { title: "Role", field: "user_level", hozAlign: "center", headerFilter: "input", minWidth: 100 },
+            { title: "Role", field: "role_label", hozAlign: "center", headerFilter: "input", minWidth: 130 },
             { title: "Action", field: "action_type", hozAlign: "left", headerFilter: "input", width: 700, minWidth: 200 },
             { title: "Status", field: "action_status", hozAlign: "center", headerFilter: "input", width: 80, minWidth: 80 },
             {
@@ -358,7 +364,7 @@ $json_table = output($table_array);
         }
         table.setFilter(function(data) {
             const hay = [
-                data.name, data.user_level, data.action_type,
+                data.name, data.role_label, data.action_type,
                 data.action_status, data.details_pretty, data.date_log
             ].join(' ').toLowerCase();
             return hay.indexOf(q) !== -1;

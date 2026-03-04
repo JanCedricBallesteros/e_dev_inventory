@@ -326,6 +326,12 @@ try {
                 }
             }
 
+            activity_log_new("AST CATEGORY BULK ADD", "SUCCESS", array(
+                'inserted' => $inserted,
+                'skipped' => $skipped,
+                'error_count' => count($errors)
+            ));
+
             json_response([
                 'success' => true,
                 'inserted' => $inserted,

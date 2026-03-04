@@ -300,6 +300,88 @@ function role_has($role)
 	return $normalizeRole($g_user_role) === $target;
 }
 
+function normalize_role_label($value)
+{
+	$label = strtoupper(trim((string)$value));
+	if ($label === '') {
+		return '';
+	}
+	$label = str_replace(array('_', '-'), ' ', $label);
+	$label = preg_replace('/\s+/', ' ', $label);
+	$label = trim($label);
+	if ($label === 'SUPERADMIN') {
+		return 'SUPER ADMIN';
+	}
+	if ($label === 'ADMINSTAFF') {
+		return 'ADMIN STAFF';
+	}
+	return $label;
+}
+
+function extract_role_values($raw)
+{
+	if ($raw === null) {
+		return array();
+	}
+	if (is_array($raw)) {
+		return $raw;
+	}
+
+	$text = trim((string)$raw);
+	if ($text === '') {
+		return array();
+	}
+
+	$decoded = json_decode($text, true);
+	if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+		return $decoded;
+	}
+
+	if (strpos($text, ',') !== false) {
+		return array_map('trim', explode(',', $text));
+	}
+
+	return array($text);
+}
+
+function role_labels_from_raw($raw, $system = 'E-INVENTORY')
+{
+	$values = extract_role_values($raw);
+	if (empty($values)) {
+		return array();
+	}
+
+	$labels = array();
+	$roleMap = SYSTEM_ACCESS[$system]['role'] ?? array();
+
+	foreach ($values as $value) {
+		$key = trim((string)$value);
+		if ($key === '') {
+			continue;
+		}
+
+		if (is_numeric($key) && isset($roleMap[(string)((int)$key)])) {
+			$labels[] = normalize_role_label($roleMap[(string)((int)$key)]);
+			continue;
+		}
+
+		$norm = normalize_role_label($key);
+		$mapped = false;
+		foreach ($roleMap as $mapVal) {
+			if (normalize_role_label($mapVal) === $norm) {
+				$labels[] = normalize_role_label($mapVal);
+				$mapped = true;
+				break;
+			}
+		}
+		if (!$mapped && $norm !== '') {
+			$labels[] = $norm;
+		}
+	}
+
+	return array_values(array_unique($labels));
+}
+
 function get_user_access_list($user_id = null)
 {
 	global $s_user_id;

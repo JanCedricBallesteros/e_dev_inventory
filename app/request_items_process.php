@@ -322,6 +322,11 @@ try {
                 if (!$ok) {
                     json_response(['success' => false, 'message' => 'Failed to submit request. Ensure requisition table exists.'], 500);
                 }
+                activity_log_new("USER REQUISITION SUBMIT", "SUCCESS", array(
+                    "module_type" => "AST",
+                    "item_code" => $itemCode,
+                    "qty_requested" => $qty
+                ));
                 json_response(['success' => true, 'message' => 'Request submitted.']);
             } else {
                 $itemCodeEsc = _esc($itemCode);
@@ -347,6 +352,11 @@ try {
                 if (!$ok) {
                     json_response(['success' => false, 'message' => 'Failed to submit request. Ensure requisition table exists.'], 500);
                 }
+                activity_log_new("USER REQUISITION SUBMIT", "SUCCESS", array(
+                    "module_type" => "CSM",
+                    "item_code" => $itemCode,
+                    "qty_requested" => $qty
+                ));
                 json_response(['success' => true, 'message' => 'Request submitted.']);
             }
             break;
