@@ -221,42 +221,6 @@ try {
             json_response(['success' => true, 'message' => 'Category updated successfully.']);
             break;
 
-        // DELETE CATEGORY
-        case 'delete_category':
-            $category_id = _int(_post('category_id'));
-            
-            if ($category_id <= 0) {
-                json_response(['success' => false, 'message' => 'Invalid category ID.'], 422);
-            }
-
-            // Get current data for audit log
-            $sqlGet = "SELECT item_category_name, category_photo FROM ast_inventory_category WHERE category_id = {$category_id} LIMIT 1";
-            $resGet = call_mysql_query($sqlGet);
-            $row = $resGet ? call_mysql_fetch_array($resGet) : null;
-            $photoName = $row ? $row['category_photo'] : null;
-            $categoryName = $row ? ($row['item_category_name'] ?? '') : '';
-
-            // Delete from database
-            $sql = "DELETE FROM ast_inventory_category WHERE category_id = {$category_id} LIMIT 1";
-            $ok = call_mysql_query($sql);
-            
-            if (!$ok) {
-                json_response(['success' => false, 'message' => 'Failed to delete category.'], 500);
-            }
-
-            // Delete photo file if exists
-            if ($photoName && file_exists($UPLOAD_ABS_DIR . $photoName)) {
-                @unlink($UPLOAD_ABS_DIR . $photoName);
-            }
-
-            activity_log_new("AST CATEGORY DELETE", "SUCCESS", array(
-                'category_id' => $category_id,
-                'category_name' => $categoryName,
-                'category_photo' => $photoName
-            ));
-            json_response(['success' => true, 'message' => 'Category deleted successfully.']);
-            break;
-
         // BULK ADD FROM WEB FORM
         case 'bulk_add_categories':
             $names = isset($_POST['bulk_names']) && is_array($_POST['bulk_names']) ? $_POST['bulk_names'] : [];

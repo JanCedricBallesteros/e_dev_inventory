@@ -197,32 +197,6 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
     </div>
 </div>
 
-<!-- DELETE CONFIRMATION MODAL -->
-<div class="modal fade" id="deleteModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header bg-danger text-white">
-                <h5 class="modal-title"><i class="bi bi-exclamation-triangle"></i>&ensp;Confirm Deletion</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <p>Are you sure you want to delete this category?</p>
-                <div class="alert alert-warning mb-0">
-                    <strong id="deleteCategoryInfo"></strong>
-                    <p class="mb-0 mt-2 small">This action cannot be undone.</p>
-                </div>
-                <div id="deleteMsg" class="mt-3"></div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-danger" id="confirmDeleteBtn">
-                    <i class="bi bi-trash"></i> Delete Category
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
-
 <!-- IMAGE PREVIEW MODAL -->
 <div class="modal fade" id="imagePreviewModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-lg">
@@ -247,7 +221,6 @@ const BASE_URL = <?php echo json_encode(BASE_URL); ?>;
 const PROCESS_URL = BASE_URL + 'admin/modules/nonconsumable/process/ast_category_process.php';
 
 let table;
-let categoryToDelete = null;
 
 // Initialize Tabulator
 function initTable() {
@@ -256,7 +229,7 @@ function initTable() {
         ajaxParams: { action: "list_categories" },
         ajaxConfig: "POST",
         layout: "fitColumns",
-        height: "600px",
+        // height: "600px", // Removed to prevent fixed height and scrollbar
         responsiveLayout: "collapse",
         placeholder: "No categories found",
         pagination: "local",
@@ -305,16 +278,13 @@ function initTable() {
             {
                 title: "Actions",
                 field: "category_id",
-                width: 160,
+                width: 120,
                 headerSort: false,
                 formatter: function(cell) {
                     const id = cell.getValue();
                     return `
                         <button class="btn btn-sm btn-warning me-1 btn-edit" data-id="${id}" title="Edit">
                             <i class="bi bi-pencil"></i> Edit
-                        </button>
-                        <button class="btn btn-sm btn-danger btn-delete" data-id="${id}" title="Delete">
-                            <i class="bi bi-trash"></i>
                         </button>
                     `;
                 }
@@ -329,9 +299,6 @@ function initTable() {
             if (target.classList.contains('btn-edit') || target.closest('.btn-edit')) {
                 const btn = target.classList.contains('btn-edit') ? target : target.closest('.btn-edit');
                 editCategory(btn.getAttribute('data-id'));
-            } else if (target.classList.contains('btn-delete') || target.closest('.btn-delete')) {
-                const btn = target.classList.contains('btn-delete') ? target : target.closest('.btn-delete');
-                deleteCategory(btn.getAttribute('data-id'));
             }
         }
     });
@@ -457,20 +424,6 @@ $('#editPhotoInput').on('change', function(e) {
     }
 });
 
-// Delete category
-function deleteCategory(id) {
-    categoryToDelete = id;
-    $('#deleteMsg').html('');
-
-    // Get category info
-    const rowData = table.getData().find(row => row.category_id == id);
-    if (rowData) {
-        $('#deleteCategoryInfo').text(`${rowData.item_category_name}`);
-    }
-
-    $('#deleteModal').modal('show');
-}
-
 // Enlarge photo on click — matches ast_inventory.php pattern
 $('#categoryTable').on('click', '.js-thumb-preview, .item-badge', function() {
     const full = $(this).data('full') || $(this).attr('src');
@@ -479,32 +432,6 @@ $('#categoryTable').on('click', '.js-thumb-preview, .item-badge', function() {
     $('#imagePreviewModal').modal('show');
 });
 
-$('#confirmDeleteBtn').on('click', function() {
-    if (!categoryToDelete) return;
-
-    $(this).prop('disabled', true);
-    $('#deleteMsg').html('');
-
-    $.post(PROCESS_URL, {
-        action: 'delete_category',
-        category_id: categoryToDelete
-    }, function(res) {
-        if (res.success) {
-            $('#deleteMsg').html('<div class="alert alert-success">' + res.message + '</div>');
-            table.replaceData();
-            setTimeout(() => {
-                $('#deleteModal').modal('hide');
-                categoryToDelete = null;
-            }, 1500);
-        } else {
-            $('#deleteMsg').html('<div class="alert alert-danger">' + res.message + '</div>');
-        }
-    }, 'json').fail(function() {
-        $('#deleteMsg').html('<div class="alert alert-danger">Error deleting category.</div>');
-    }).always(function() {
-        $('#confirmDeleteBtn').prop('disabled', false);
-    });
-});
 
     function addBulkRow(name = '') {
         const idx = $('#bulkRows .bulk-row').length;
@@ -617,10 +544,6 @@ $('#editCategoryModal').on('hidden.bs.modal', function() {
         addBulkRow();
     });
 
-$('#deleteModal').on('hidden.bs.modal', function() {
-    categoryToDelete = null;
-    $('#deleteMsg').html('');
-});
 </script>
 </body>
 </html>
