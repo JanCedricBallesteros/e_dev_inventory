@@ -175,6 +175,11 @@ if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) {
                                         <span class="sub-item">Inventory</span>
                                     </a>
                                 </li>
+                                <li class="<?php echo navigation_active("csm_available_items"); ?>">
+                                    <a href="<?php echo BASE_URL . "admin/modules/consumable/csm_available_items.php"; ?>">
+                                        <span class="sub-item">Add New Item</span>
+                                    </a>
+                                </li>                                  
                                 <li class="<?php echo navigation_active("csm_qrcode"); ?>">
                                     <a href="<?php echo BASE_URL . "admin/modules/consumable/csm_qrcode.php"; ?>">
                                         <span class="sub-item">QR Code</span>
