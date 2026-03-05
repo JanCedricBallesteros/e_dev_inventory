@@ -15,8 +15,28 @@ try {
     header('Cache-Control: no-cache, no-store, must-revalidate');
     header('Pragma: no-cache');
     header('Expires: 0');
-    
-    QRcode::png($value, false, QR_ECLEVEL_L, 4);
+
+    $canRenderLocal = class_exists('QRcode') && extension_loaded('gd') && function_exists('imagepng');
+    if ($canRenderLocal) {
+        QRcode::png($value, false, QR_ECLEVEL_L, 4);
+        exit;
+    }
+
+    // Fallback for environments where GD is not enabled (common on fresh XAMPP setups).
+    $fallbackUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&format=png&data=' . rawurlencode($value);
+    $ctx = stream_context_create(array(
+        'http' => array(
+            'timeout' => 8,
+            'ignore_errors' => true
+        )
+    ));
+    $png = @file_get_contents($fallbackUrl, false, $ctx);
+    if ($png !== false && strlen($png) > 0) {
+        echo $png;
+        exit;
+    }
+
+    throw new RuntimeException('Unable to render QR code (GD unavailable and fallback failed).');
 } catch (Exception $e) {
     // Log error and return a blank image
     error_log('QR Code generation error: ' . $e->getMessage());

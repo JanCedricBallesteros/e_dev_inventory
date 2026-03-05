@@ -37,8 +37,16 @@ $display_position = !empty($g_position) ? $g_position : 'User';
     <main id="main" class="main">
         <div class="pagetitle">
             <h1 class="h4 fw-semibold mb-1">User Dashboard</h1>
-            <p class="text-muted small mb-0">Welcome back, <?php echo htmlspecialchars($display_name); ?>.</p>
+            <p class="text-muted small mb-0" id="greeting-text"></p>
         </div>
+        <script>
+        (function() {
+            var name = <?php echo json_encode($display_name); ?>;
+            var hour = new Date().getHours();
+            var greeting = hour < 12 ? 'Good morning' : (hour < 18 ? 'Good afternoon' : 'Good evening');
+            document.getElementById('greeting-text').textContent = greeting + ', ' + name + '.';
+        })();
+        </script>
 
         <section class="section">
             <div class="row g-3">

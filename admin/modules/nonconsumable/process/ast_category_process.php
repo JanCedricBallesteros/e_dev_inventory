@@ -268,6 +268,8 @@ try {
             $skipped = 0;
             $errors = [];
             $rowIndex = 0;
+            $insertedNames = [];
+            $skippedNames = [];
 
             // Pull existing names for fast duplicate checks
             $existingNames = [];
@@ -292,6 +294,7 @@ try {
                 $nameKey = strtolower($name);
                 if (isset($existingNames[$nameKey])) {
                     $skipped++;
+                    $skippedNames[] = $name . ' (duplicate)';
                     $errors[] = "Row {$rowIndex}: Category name already exists.";
                     continue;
                 }
@@ -316,21 +319,29 @@ try {
                 
                 if (call_mysql_query($insSql)) {
                     $inserted++;
+                    $insertedNames[] = $name;
                     $existingNames[$nameKey] = true;
                 } else {
                     if ($photoName && file_exists($UPLOAD_ABS_DIR . $photoName)) {
                         @unlink($UPLOAD_ABS_DIR . $photoName);
                     }
                     $skipped++;
+                    $skippedNames[] = $name . ' (insert failed)';
                     $errors[] = "Row {$rowIndex}: Failed to insert.";
                 }
             }
 
-            activity_log_new("AST CATEGORY BULK ADD", "SUCCESS", array(
+            $logDetails = array(
                 'inserted' => $inserted,
                 'skipped' => $skipped,
-                'error_count' => count($errors)
-            ));
+            );
+            if (!empty($insertedNames)) {
+                $logDetails['added'] = $insertedNames;
+            }
+            if (!empty($skippedNames)) {
+                $logDetails['not_added'] = $skippedNames;
+            }
+            activity_log_new("AST CATEGORY ADD CATEGORIES", "SUCCESS", $logDetails);
 
             json_response([
                 'success' => true,

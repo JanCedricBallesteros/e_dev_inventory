@@ -311,13 +311,35 @@ function upload_image($fieldName, $prefix, $uploadDirAbs, $allowedExt = ['jpg','
 }
 
 function generate_qr_image($value, $prefix, $uploadDirAbs) {
-    if ($value === '' || !class_exists('QRcode')) {
+    if ($value === '') {
         return null;
     }
     $fileName = $prefix . date('Ymd_His') . '_' . uniqid() . '.png';
     $filePath = $uploadDirAbs . $fileName;
-    QRcode::png($value, $filePath, QR_ECLEVEL_L, 4);
-    return file_exists($filePath) ? $fileName : null;
+
+    $canRenderLocal = class_exists('QRcode') && extension_loaded('gd') && function_exists('imagepng');
+    if ($canRenderLocal) {
+        QRcode::png($value, $filePath, QR_ECLEVEL_L, 4);
+        return file_exists($filePath) ? $fileName : null;
+    }
+
+    // Fallback for machines without GD enabled.
+    $fallbackUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&format=png&data=' . rawurlencode($value);
+    $ctx = stream_context_create(array(
+        'http' => array(
+            'timeout' => 8,
+            'ignore_errors' => true
+        )
+    ));
+    $png = @file_get_contents($fallbackUrl, false, $ctx);
+    if ($png !== false && strlen($png) > 0) {
+        $written = @file_put_contents($filePath, $png);
+        if ($written !== false && file_exists($filePath)) {
+            return $fileName;
+        }
+    }
+
+    return null;
 }
 
 $UPLOAD_REL_DIR = 'upload/ast_inventory/';

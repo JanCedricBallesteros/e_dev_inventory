@@ -163,18 +163,18 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
     </div>
 </div>
 
-    <!-- BULK ADD MODAL -->
+    <!-- ADD CATEGORIES MODAL -->
     <div class="modal fade" id="bulkAddModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title"><i class="bi bi-upload"></i>&ensp;Bulk Add Categories</h5>
+                <h5 class="modal-title"><i class="bi bi-plus-circle"></i>&ensp;Add Categories</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <form id="bulkAddForm" enctype="multipart/form-data">
                 <div class="modal-body">
                     <div class="alert alert-info mb-3">
-                        <strong>Tip:</strong> Add multiple categories at once. Codes will be auto-generated.
+                        <strong>Tip:</strong> Add multiple categories at once. Duplicate names will be skipped automatically.
                     </div>
                     <div class="mb-2 d-flex justify-content-between align-items-center">
                         <div class="fw-semibold">Rows</div>

@@ -26,7 +26,7 @@ if (!(
     include_once DOMAIN_PATH . '/global/include_top.php';
     ?>
     <link href="<?= BASE_URL ?>assets/css/tabulator_bootstrap.min.css" rel="stylesheet">
-    <link href="<?= BASE_URL ?>assets/css/select2.min.css" rel="stylesheet"></style>
+    <link href="<?= BASE_URL ?>assets/css/select2.min.css" rel="stylesheet">
     <style>
         .section-card { border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
         .section-card .card-header { background: var(--bg-eclearance-rgb); color: #fff; font-weight: 600; }
