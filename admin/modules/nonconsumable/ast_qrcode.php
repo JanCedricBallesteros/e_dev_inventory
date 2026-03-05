@@ -75,7 +75,6 @@ if (!(
 
 </body>
 <?php include_once DOMAIN_PATH . '/global/include_bottom.php'; ?>
-<script src="<?= BASE_URL ?>assets/js/jquery.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <script>
 const BASE_URL = <?php echo json_encode(BASE_URL); ?>;

@@ -214,8 +214,6 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 
 </body>
 <?php include_once DOMAIN_PATH . '/global/include_bottom.php'; ?>
-<script src="<?= BASE_URL ?>assets/js/jquery.min.js"></script>
-<script src="<?= BASE_URL ?>assets/js/tabulator.min.js"></script>
 <script src="https://unpkg.com/html5-qrcode"></script>
 <script src="<?= BASE_URL ?>assets/js/qr_search.js"></script>
 <script>
