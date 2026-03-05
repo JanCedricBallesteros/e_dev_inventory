@@ -667,6 +667,9 @@ try {
             $cost_value = _float_or_null(_post('cost_value'));
             $property_series = _int(_post('property_series'));
             $allowed_status = _post('allowed_status', '');
+            if ($allowed_status === '') {
+                $allowed_status = json_encode(['none' => true]);
+            }
             $allowed_norm = normalize_allowed_payload($allowed_status);
 
             $category_id = _int(_post('category_id'));

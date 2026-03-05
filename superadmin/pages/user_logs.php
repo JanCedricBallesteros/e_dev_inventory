@@ -221,7 +221,7 @@ $json_table = output($table_array);
             .superadmin-toolbar .toolbar-left { flex: 0 0 auto; }
             .superadmin-toolbar .toolbar-right { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
             .superadmin-toolbar .toolbar-right .btn { width: 100%; }
-            .wrap-text { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+            .wrap-text { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
         }
     </style>
 </head>
