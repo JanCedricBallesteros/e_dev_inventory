@@ -119,6 +119,85 @@ function _generate_item_code_auto($catCode) {
     return _format_item_code($catCode, (string)$n);
 }
 
+/**
+ * Canonicalize scanned / pasted item code:
+ * - remove spaces
+ * - accept exact "CSM-XXXX-0001"
+ */
+function _canon_item_code($code) {
+    $code = trim((string)$code);
+    if ($code === '') return '';
+    $c = preg_replace('/\s+/', '', $code);
+    // Normalize to CSM-... if it matches
+    if (preg_match('/^CSM-([A-Za-z0-9\-_]+)-(\d{4})$/i', $c, $m)) {
+        return "CSM-" . $m[1] . "-" . $m[2];
+    }
+    return $c;
+}
+
+/**
+ * Resolve display_image (same logic you suggested)
+ */
+function _list_inventory_sql($where = "", $order = "ORDER BY i.created_at DESC", $limit = "") {
+    $whereSql = $where ? "WHERE {$where}" : "";
+    $limitSql = $limit ? "LIMIT {$limit}" : "";
+
+    return "
+        SELECT
+            i.*,
+            c.category_id AS category_id_ref,
+            c.item_category_name,
+
+            /* Resolved per-inventory assigned image (if item_category_img is numeric) */
+            (
+                CASE
+                    WHEN i.item_category_img IS NULL OR TRIM(i.item_category_img) = '' THEN NULL
+                    WHEN TRIM(i.item_category_img) REGEXP '^[0-9]+$' THEN (
+                        SELECT ci2.file_url
+                        FROM csm_inventory_category_images ci2
+                        WHERE ci2.image_id = CAST(TRIM(i.item_category_img) AS UNSIGNED)
+                        LIMIT 1
+                    )
+                    WHEN TRIM(i.item_category_img) LIKE 'upload/%' THEN TRIM(i.item_category_img)
+                    WHEN TRIM(i.item_category_img) LIKE '%/%' THEN TRIM(i.item_category_img)
+                    ELSE CONCAT('upload/category/', TRIM(i.item_category_img))
+                END
+            ) AS assigned_image_url,
+
+            /* Final image for UI: assigned first, else category primary */
+            COALESCE(
+                (
+                    CASE
+                        WHEN i.item_category_img IS NULL OR TRIM(i.item_category_img) = '' THEN NULL
+                        WHEN TRIM(i.item_category_img) REGEXP '^[0-9]+$' THEN (
+                            SELECT ci2.file_url
+                            FROM csm_inventory_category_images ci2
+                            WHERE ci2.image_id = CAST(TRIM(i.item_category_img) AS UNSIGNED)
+                            LIMIT 1
+                        )
+                        WHEN TRIM(i.item_category_img) LIKE 'upload/%' THEN TRIM(i.item_category_img)
+                        WHEN TRIM(i.item_category_img) LIKE '%/%' THEN TRIM(i.item_category_img)
+                        ELSE CONCAT('upload/category/', TRIM(i.item_category_img))
+                    END
+                ),
+                (
+                    SELECT ci.file_url
+                    FROM csm_inventory_category_images ci
+                    WHERE ci.category_id = c.category_id
+                    ORDER BY (CASE WHEN IFNULL(ci.is_primary,0)=1 THEN 0 ELSE 1 END), ci.image_id ASC
+                    LIMIT 1
+                )
+            ) AS display_image
+
+        FROM csm_inventory i
+        LEFT JOIN csm_inventory_category c
+            ON c.item_category_code = i.item_category_code
+        {$whereSql}
+        {$order}
+        {$limitSql}
+    ";
+}
+
 $action = _post('action', '');
 if ($action === '') {
     http_response_code(400);
@@ -242,17 +321,25 @@ try {
         case 'list_inventory': {
             header('Content-Type: application/json; charset=utf-8');
 
-            $sql = "
-                SELECT
-                    i.*,
-                    c.item_category_name
-                FROM csm_inventory i
-                LEFT JOIN csm_inventory_category c
-                    ON c.item_category_code = i.item_category_code
-                ORDER BY i.created_at DESC
-            ";
-
+            // UPDATED: include display_image resolution
+            $sql = _list_inventory_sql("", "ORDER BY i.created_at DESC", "");
             $result = call_mysql_query($sql);
+
+            $items = [];
+            if ($result) {
+                while ($row = call_mysql_fetch_array($result)) $items[] = $row;
+            }
+            echo json_encode(['success' => true, 'data' => $items]);
+            exit();
+        }
+
+        // ============ READ (RECENT ADDED) ============
+        case 'list_recent_added': {
+            header('Content-Type: application/json; charset=utf-8');
+
+            $sql = _list_inventory_sql("", "ORDER BY i.created_at DESC", "200");
+            $result = call_mysql_query($sql);
+
             $items = [];
             if ($result) {
                 while ($row = call_mysql_fetch_array($result)) $items[] = $row;
@@ -271,13 +358,40 @@ try {
                 exit();
             }
 
-            $sql = "SELECT * FROM csm_inventory WHERE inventory_id = {$inventory_id} LIMIT 1";
+            $sql = _list_inventory_sql("i.inventory_id = {$inventory_id}", "ORDER BY i.inventory_id DESC", "1");
             $result = call_mysql_query($sql);
             $row = $result ? call_mysql_fetch_array($result) : null;
 
             if (!$row) {
                 http_response_code(404);
                 echo json_encode(['success' => false, 'message' => 'Record not found.']);
+                exit();
+            }
+
+            echo json_encode(['success' => true, 'data' => $row]);
+            exit();
+        }
+
+        // ============ FIND BY CODE (SCAN/SEARCH) ============
+        case 'find_item_by_code': {
+            header('Content-Type: application/json; charset=utf-8');
+
+            $codeIn = _canon_item_code(_post('inventory_system_item_code'));
+            if ($codeIn === '') {
+                http_response_code(422);
+                echo json_encode(['success' => false, 'message' => 'Missing inventory_system_item_code.']);
+                exit();
+            }
+
+            $codeEsc = _esc($codeIn);
+
+            $sql = _list_inventory_sql("i.inventory_system_item_code = '{$codeEsc}'", "ORDER BY i.inventory_id DESC", "1");
+            $result = call_mysql_query($sql);
+            $row = $result ? call_mysql_fetch_array($result) : null;
+
+            if (!$row) {
+                http_response_code(404);
+                echo json_encode(['success' => false, 'message' => 'Item not found.']);
                 exit();
             }
 
@@ -385,7 +499,76 @@ try {
             exit();
         }
 
-        // ============ UPDATE AVAILABLE ONLY ============
+        // ============ ADD QUANTITY (existing item) ============
+        case 'add_quantity': {
+            header('Content-Type: application/json; charset=utf-8');
+
+            $inventory_id = _int(_post('inventory_id'));
+            $add_qty      = _int(_post('add_quantity'));
+
+            $source_of_funds = _post('source_of_funds'); // optional; if blank => keep current
+            $item_cost_raw   = _post('item_cost');       // optional; if blank => keep current
+
+            if ($inventory_id <= 0) {
+                http_response_code(422);
+                echo json_encode(['success' => false, 'message' => 'Invalid inventory_id.']);
+                exit();
+            }
+            if ($add_qty <= 0) {
+                http_response_code(422);
+                echo json_encode(['success' => false, 'message' => 'Add quantity must be at least 1.']);
+                exit();
+            }
+
+            // Fetch existing
+            $q = call_mysql_query("SELECT unit_quantity, current_unit_quantity, unit_crit_level, source_of_funds, item_cost FROM csm_inventory WHERE inventory_id={$inventory_id} LIMIT 1");
+            $row = $q ? call_mysql_fetch_array($q) : null;
+            if (!$row) {
+                http_response_code(404);
+                echo json_encode(['success' => false, 'message' => 'Item not found.']);
+                exit();
+            }
+
+            $old_unit_qty = (int)$row['unit_quantity'];
+            $old_cur_qty  = (int)$row['current_unit_quantity'];
+
+            $new_unit_qty = $old_unit_qty + $add_qty;
+            $new_cur_qty  = $old_cur_qty + $add_qty;
+
+            // keep existing if blank
+            $final_source = ($source_of_funds === '') ? (string)$row['source_of_funds'] : $source_of_funds;
+
+            $final_cost = (string)$row['item_cost'];
+            if (trim($item_cost_raw) !== '') {
+                $final_cost = (string)_float($item_cost_raw);
+            }
+
+            $today = _today();
+
+            $sql = "
+                UPDATE csm_inventory
+                SET
+                    unit_quantity = {$new_unit_qty},
+                    current_unit_quantity = {$new_cur_qty},
+                    source_of_funds = '" . _esc($final_source) . "',
+                    item_cost = " . (float)$final_cost . ",
+                    last_updated = '" . _esc($today) . "'
+                WHERE inventory_id = {$inventory_id}
+                LIMIT 1
+            ";
+
+            $res = call_mysql_query($sql);
+            if (!$res) {
+                http_response_code(500);
+                echo json_encode(['success' => false, 'message' => 'Database update failed.']);
+                exit();
+            }
+
+            echo json_encode(['success' => true]);
+            exit();
+        }
+
+        // ============ UPDATE AVAILABLE ONLY (ENFORCE CRITICAL RULE) ============
         case 'update_available_qty': {
             $inventory_id = _int(_post('inventory_id'));
             $current_unit_quantity = _int(_post('current_unit_quantity'));
@@ -398,6 +581,31 @@ try {
             if ($current_unit_quantity < 0) {
                 http_response_code(422);
                 echo "Available quantity cannot be negative.";
+                exit();
+            }
+
+            // Enforce: cannot be less than critical level
+            $chk = call_mysql_query("SELECT unit_crit_level, unit_quantity FROM csm_inventory WHERE inventory_id={$inventory_id} LIMIT 1");
+            $r = $chk ? call_mysql_fetch_array($chk) : null;
+            if (!$r) {
+                http_response_code(404);
+                echo "Record not found.";
+                exit();
+            }
+
+            $crit = (int)$r['unit_crit_level'];
+            $unitQty = (int)$r['unit_quantity'];
+
+            if ($current_unit_quantity < $crit) {
+                http_response_code(422);
+                echo "Restriction: Available quantity cannot be less than Critical Level ({$crit}).";
+                exit();
+            }
+
+            // Optional safety: cannot exceed total received
+            if ($current_unit_quantity > $unitQty) {
+                http_response_code(422);
+                echo "Available quantity cannot exceed Actual Qty ({$unitQty}).";
                 exit();
             }
 
