@@ -1,9 +1,4 @@
 <?php
-/*
-    OLD USER INFO PAGE, REFERENCE ONLY. DO NOT USE.
-    MIGHT TURN THIS INTO A DASHBOARD IN THE FUTURE OR SOMETHING, WHO KNOWS :P
-    RAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHHHHHHHHHHHHHHHHHHHHHHHHHHH
-*/
 require_once dirname(__DIR__, 2) . '/config/config.php';
 require GLOBAL_FUNC;
 require CL_SESSION_PATH;
@@ -781,4 +776,3 @@ document.addEventListener("DOMContentLoaded", function () {
 </script>
 
 </html>
-

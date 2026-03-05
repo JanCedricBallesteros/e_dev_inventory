@@ -99,8 +99,8 @@ if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) {
                 </li>
 
                 <?php if (role_has("SUPER_ADMIN")) { ?>
-                    <li class="nav-item <?php echo navigation_active("main_superadmin"); ?>">
-                        <a href="<?php echo BASE_URL . "superadmin/pages/main_superadmin.php"; ?>">
+                    <li class="nav-item <?php echo navigation_active("user_information"); ?>">
+                        <a href="<?php echo BASE_URL . "superadmin/pages/user_information.php"; ?>">
                             <i class="fas fa-user"></i>
                             <p>User Information</p>
                         </a>
