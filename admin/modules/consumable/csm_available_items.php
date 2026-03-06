@@ -1032,8 +1032,8 @@ function initTable() {
         responsiveLayout: 'collapse',
         placeholder: 'No recently added items found',
         pagination: 'local',
-        paginationSize: 10,
-        paginationSizeSelector: [5, 10, 20, 50, true],
+        paginationSize: 20,
+        paginationSizeSelector: [20, 100, 500, 1000, true],
         initialSort: [
             { column: "created_at", dir: "desc" }
         ],
