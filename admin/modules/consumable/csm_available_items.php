@@ -1,5 +1,5 @@
 <?php
-// csm_available_items.php
+// admin/modules/consumable/csm_available_items.php
 require_once dirname(__DIR__, 3) . '/config/config.php';
 require GLOBAL_FUNC;
 require CL_SESSION_PATH;
@@ -18,15 +18,17 @@ if (!(
     exit();
 }
 
-/* ---------- Helpers ---------- */
 function getAllCategories() {
     $sql = "SELECT category_id, item_category_code, item_category_name
             FROM csm_inventory_category
             ORDER BY item_category_name ASC";
     $result = call_mysql_query($sql);
+
     $rows = [];
     if ($result) {
-        while ($r = call_mysql_fetch_array($result)) $rows[] = $r;
+        while ($row = call_mysql_fetch_array($result)) {
+            $rows[] = $row;
+        }
     }
     return $rows;
 }
@@ -40,36 +42,190 @@ $categories = getAllCategories();
     include_once META_PATH;
     include_once DOMAIN_PATH . '/global/include_top.php';
     ?>
-    <link href="https://unpkg.com/tabulator-tables@4.7.2/dist/css/tabulator.min.css" rel="stylesheet">
+    <link href="<?= BASE_URL ?>assets/css/tabulator_bootstrap.min.css" rel="stylesheet">
+    <link href="<?= BASE_URL ?>assets/css/select2.min.css" rel="stylesheet">
     <style>
-        .header-actions{
-            display:flex; align-items:center; gap:.5rem; flex-wrap:wrap;
+        .section-card {
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
         }
-        @media (max-width:576px){
-            .header-actions{ flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; max-width:100%; padding-bottom:.25rem; }
-            .header-actions .btn{ white-space:nowrap; flex:0 0 auto; }
+        .section-card .card-header {
+            background: var(--bg-eclearance-rgb);
+            color: #fff;
+            font-weight: 600;
         }
-
+        .badge-code {
+            font-family: 'Courier New', monospace;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .select2-container--default .select2-selection--single {
+            height: 38px;
+            border: 1px solid #ced4da;
+            border-radius: 0.375rem;
+        }
+        .select2-container--default .select2-selection--single .select2-selection__rendered {
+            line-height: 36px;
+            padding-left: 12px;
+        }
+        .select2-container--default .select2-selection--single .select2-selection__arrow {
+            height: 36px;
+        }
+        #inventoryTable {
+            min-height: 220px;
+        }
+        .qr-preview-wrap {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 180px;
+        }
+        .qr-preview-img {
+            width: 100%;
+            max-width: 180px;
+            height: auto;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 8px;
+            background: #fff;
+        }
+        .review-table-wrap {
+            max-height: 320px;
+            overflow: auto;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+        }
         .inv-thumb-wrap{
-            width:56px;height:56px;border:1px solid #dee2e6;border-radius:10px;background:#fff;
-            display:flex;align-items:center;justify-content:center;overflow:hidden;
+            width:56px;
+            height:56px;
+            border:1px solid #dee2e6;
+            border-radius:10px;
+            background:#fff;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            overflow:hidden;
         }
-        .inv-thumb-wrap img{ width:56px;height:56px;object-fit:cover;display:block; }
-        .inv-thumb-fallback{ font-size:24px; line-height:1; color:#6c757d; }
-        .inv-thumb-click{ cursor:pointer; display:inline-flex; }
-
-        .view-img-wrap{
-            width:100%; background:#f8f9fa; border:1px solid #e5e7eb; border-radius:14px; overflow:hidden;
+        .inv-thumb-wrap img{
+            width:56px;
+            height:56px;
+            object-fit:cover;
+            display:block;
         }
-        .view-img-wrap img{ width:100%; height:auto; display:block; }
-
-        .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-
-        /* QR thumb */
-        .qr-thumb{
-            height:56px;width:56px;object-fit:contain;
-            border:1px solid #dee2e6;border-radius:10px;background:#fff;padding:4px;
+        .inv-thumb-fallback{
+            font-size:24px;
+            line-height:1;
+            color:#6c757d;
+        }
+        .inv-thumb-click{
             cursor:pointer;
+            display:inline-flex;
+        }
+        .view-img-wrap{
+            width:100%;
+            background:#f8f9fa;
+            border:1px solid #e5e7eb;
+            border-radius:14px;
+            overflow:hidden;
+        }
+        .view-img-wrap img{
+            width:100%;
+            height:auto;
+            display:block;
+        }
+        .card-header-tools {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: .75rem;
+            flex-wrap: wrap;
+        }
+        .card-header-tools .title-wrap {
+            display: flex;
+            align-items: center;
+            gap: .35rem;
+            min-width: 0;
+        }
+        .card-header-tools .header-actions {
+            display: flex;
+            align-items: center;
+            gap: .5rem;
+            flex-wrap: wrap;
+        }
+        @media (max-width: 576px) {
+            .card-header-tools {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .card-header-tools .header-actions {
+                justify-content: flex-start;
+            }
+        }
+
+        /* ===== QR camera preview fixes =====
+           Removes weird black strip / bottom gap by forcing scanner internals
+           to fill the preview box cleanly.
+        */
+        .qr-camera-shell{
+            width:100%;
+            max-width:420px;
+            margin:0 auto;
+            aspect-ratio:1 / 1;
+            position:relative;
+            overflow:hidden;
+            border-radius:12px;
+            background:#111;
+        }
+        .qr-camera-shell > div{
+            width:100%;
+            height:100%;
+        }
+        .qr-camera-shell video,
+        .qr-camera-shell canvas{
+            width:100% !important;
+            height:100% !important;
+            object-fit:cover !important;
+            display:block !important;
+            border-radius:0 !important;
+        }
+        .qr-camera-shell #searchPreview,
+        .qr-camera-shell #addQtyPreview{
+            width:100%;
+            height:100%;
+            background:#111;
+        }
+
+        /* html5-qrcode internals */
+        #searchPreview video,
+        #searchPreview canvas,
+        #addQtyPreview video,
+        #addQtyPreview canvas{
+            width:100% !important;
+            height:100% !important;
+            object-fit:cover !important;
+            display:block !important;
+            margin:0 !important;
+            padding:0 !important;
+            border:0 !important;
+            background:#111 !important;
+        }
+        #searchPreview > div,
+        #addQtyPreview > div{
+            width:100% !important;
+            height:100% !important;
+        }
+        #searchPreview region,
+        #addQtyPreview region{
+            display:none !important;
+        }
+
+        /* Sometimes html5-qrcode injects an extra shaded area/table */
+        #searchPreview img,
+        #addQtyPreview img{
+            max-width:none !important;
         }
     </style>
 </head>
@@ -81,236 +237,198 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 ?>
 
 <main id="main" class="main">
+    <div class="pagetitle">
+        <h1 class="h4 fw-semibold mb-1">Manage Consumable Inventory</h1>
+        <p class="text-muted small mb-0">Add records, review inventory, scan QR, and update available quantities.</p>
+    </div>
+
     <section class="section">
-        <div class="card">
+        <div id="pageMsg" class="alert alert-danger d-none mb-3"></div>
 
-            <div class="card-header bg-eclearance text-white fw-semibold d-flex align-items-center justify-content-between flex-wrap gap-2">
-                <div>
-                    <i class="bi bi-check-circle"></i>&ensp;Consumable Inventory Controls
-                </div>
+        <div class="row g-3">
+            <!-- Add New Item -->
+            <div class="col-12 col-xl-8">
+                <div class="card section-card h-100">
+                    <div class="card-header d-flex align-items-center justify-content-between">
+                        <span><i class="bi bi-plus-circle"></i>&ensp;Add New Consumable Record</span>
+                    </div>
+                    <div class="card-body">
+                        <form id="addItemForm">
+                            <div class="row g-3">
+                                <div class="col-md-4">
+                                    <label class="form-label fw-semibold">Category</label>
+                                    <select class="form-select" name="item_category_code" id="categorySelect" required>
+                                        <option value="">Select category</option>
+                                        <?php foreach ($categories as $cat): ?>
+                                            <option value="<?= htmlspecialchars($cat['item_category_code']) ?>">
+                                                <?= htmlspecialchars($cat['item_category_name']) ?> (<?= htmlspecialchars($cat['item_category_code']) ?>)
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
 
-                <div class="header-actions">
-                    <button class="btn btn-outline-light btn-sm" data-bs-toggle="modal" data-bs-target="#scanQrModal">
-                        <i class="bi bi-upc-scan"></i>&ensp;Scan QR
-                    </button>
-                    <button class="btn btn-light btn-sm" id="btnRefreshAll">
-                        <i class="bi bi-arrow-clockwise"></i>&ensp;Refresh
-                    </button>
+                                <div class="col-md-4">
+                                    <label class="form-label fw-semibold">Item Code Number (optional)</label>
+                                    <input type="text"
+                                           class="form-control"
+                                           name="inventory_system_item_code"
+                                           id="itemCodeNumberField"
+                                           placeholder="e.g. 1 or leave blank for auto"
+                                           autocomplete="off"
+                                           inputmode="numeric"
+                                           pattern="[0-9]*">
+                                    <div class="small text-muted mt-1">
+                                        Numbers only. Full code becomes <span id="codePatternText">CSM-[CATEGORY]-0001</span>
+                                    </div>
+                                </div>
+
+                                <div class="col-md-4">
+                                    <label class="form-label fw-semibold">Full Item Code Preview</label>
+                                    <input type="text" class="form-control" id="fullItemCodeField" readonly placeholder="CSM-XXXX-0001">
+                                </div>
+
+                                <div class="col-md-8">
+                                    <label class="form-label fw-semibold">Itemized Description</label>
+                                    <textarea class="form-control"
+                                              name="item_description"
+                                              id="itemDescription"
+                                              rows="2"
+                                              placeholder="Enter itemized description"
+                                              required></textarea>
+                                </div>
+
+                                <div class="col-md-4">
+                                    <label class="form-label fw-semibold">Source of Funds</label>
+                                    <input type="text" class="form-control" name="source_of_funds" id="sourceOfFunds" placeholder="e.g. General Fund">
+                                </div>
+
+                                <div class="col-md-3">
+                                    <label class="form-label fw-semibold">Actual Qty</label>
+                                    <input type="number" min="0" class="form-control" name="unit_quantity" id="unitQuantity" value="0" required>
+                                </div>
+
+                                <div class="col-md-3">
+                                    <label class="form-label fw-semibold">Available to Issue</label>
+                                    <input type="number" min="0" class="form-control" name="current_unit_quantity" id="currentUnitQuantity" value="0" required>
+                                </div>
+
+                                <div class="col-md-3">
+                                    <label class="form-label fw-semibold">Critical Level</label>
+                                    <input type="number" min="0" class="form-control" name="unit_crit_level" id="unitCritLevel" value="0" required>
+                                </div>
+
+                                <div class="col-md-3">
+                                    <label class="form-label fw-semibold">Item Cost</label>
+                                    <input type="number" step="0.01" min="0" class="form-control" name="item_cost" id="itemCost" value="0.00" required>
+                                </div>
+
+                                <div class="col-12">
+                                    <label class="form-label fw-semibold">QR Code Preview</label>
+                                    <div class="border rounded p-3 bg-white">
+                                        <div id="qrLoading" class="text-muted small py-3 text-center" style="display:none;">
+                                            <i class="bi bi-arrow-clockwise" style="animation: spin 1s linear infinite;"></i><br>
+                                            Generating QR code...
+                                        </div>
+                                        <div id="qrPreviewWrap" class="qr-preview-wrap">
+                                            <img id="qrPreviewImg" class="qr-preview-img d-none" src="" alt="QR Preview">
+                                            <div id="qrPreviewEmpty" class="text-muted small">QR preview will appear here.</div>
+                                        </div>
+                                        <div id="qrPreviewMeta" class="small text-muted mt-2 text-center">Based on the full item code preview</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="mt-3 d-flex gap-2">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="bi bi-save"></i> Save Record
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary" id="resetAddForm">Clear</button>
+                            </div>
+                            <div id="addItemMsg" class="mt-3"></div>
+                        </form>
+                    </div>
                 </div>
             </div>
 
-            <div class="card-body mt-3 bg-white">
-
-                <!-- TABS -->
-                <ul class="nav nav-tabs" id="invTabs" role="tablist">
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link active" id="tab-additem" data-bs-toggle="tab" data-bs-target="#pane-additem" type="button" role="tab">
-                            <i class="bi bi-plus-circle"></i>&ensp;Add New Item
-                        </button>
-                    </li>
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="tab-addqty" data-bs-toggle="tab" data-bs-target="#pane-addqty" type="button" role="tab">
-                            <i class="bi bi-box-arrow-in-down"></i>&ensp;Add Quantity
-                        </button>
-                    </li>
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="tab-setavail" data-bs-toggle="tab" data-bs-target="#pane-setavail" type="button" role="tab">
-                            <i class="bi bi-sliders"></i>&ensp;Set Available Item
-                        </button>
-                    </li>
-                </ul>
-
-                <div class="tab-content pt-3">
-                    <!-- ===================== ADD NEW ITEM ===================== -->
-                    <div class="tab-pane fade show active" id="pane-additem" role="tabpanel">
-                        <div class="row g-3">
-
-                            <div class="col-lg-5">
-                                <div class="border rounded p-3">
-                                    <div class="fw-semibold mb-2"><i class="bi bi-plus-circle"></i>&ensp;Add New Item</div>
-
-                                    <form id="formAddNewItem">
-                                        <div class="mb-2">
-                                            <label class="form-label fw-semibold">Item Category</label>
-                                            <select class="form-select" name="item_category_code" required>
-                                                <option value="">Select Category</option>
-                                                <?php foreach($categories as $cat): ?>
-                                                    <option value="<?= htmlspecialchars($cat['item_category_code']) ?>">
-                                                        <?= htmlspecialchars($cat['item_category_name']) ?> (<?= htmlspecialchars($cat['item_category_code']) ?>)
-                                                    </option>
-                                                <?php endforeach; ?>
-                                            </select>
-                                        </div>
-
-                                        <div class="mb-2">
-                                            <label class="form-label fw-semibold">Item Code (Auto-generated)</label>
-                                            <input type="text" class="form-control mono" value="CSM-[CATEGORY]-0001" disabled>
-                                            <div class="form-text">
-                                                Actual will be generated as: <b>CSM-[Item Category Code]-0001</b>, next numbers auto increment per category.
-                                            </div>
-                                        </div>
-
-                                        <div class="mb-2">
-                                            <label class="form-label fw-semibold">Item Description</label>
-                                            <textarea class="form-control" name="item_description" required placeholder="Enter full item description (model/size/details)"></textarea>
-                                        </div>
-
-                                        <div class="row g-2">
-                                            <div class="col-md-6">
-                                                <label class="form-label fw-semibold">Quantity</label>
-                                                <input type="number" class="form-control" name="unit_quantity" min="0" required>
-                                            </div>
-                                            <div class="col-md-6">
-                                                <label class="form-label fw-semibold">Critical Level</label>
-                                                <input type="number" class="form-control" name="unit_crit_level" min="0" required>
-                                            </div>
-                                        </div>
-
-                                        <div class="row g-2 mt-1">
-                                            <div class="col-md-6">
-                                                <label class="form-label fw-semibold">Unit</label>
-                                                <input type="text" class="form-control" name="unit" placeholder="pcs / box / ream / set">
-                                                <div class="form-text">Saved only if your DB has <code>csm_inventory.unit</code>.</div>
-                                            </div>
-                                            <div class="col-md-6">
-                                                <label class="form-label fw-semibold">Cost Value (optional)</label>
-                                                <input type="number" class="form-control" name="item_cost" step="0.01" min="0" placeholder="0.00">
-                                            </div>
-                                        </div>
-
-                                        <div class="mt-2">
-                                            <label class="form-label fw-semibold">Source of Fund (optional)</label>
-                                            <input type="text" class="form-control" name="source_of_funds" placeholder="General Fund / Donation / LGU / etc">
-                                        </div>
-
-                                        <div class="alert alert-info mt-2 mb-2">
-                                            <i class="bi bi-info-circle"></i>
-                                            <b>Available quantity</b> will start equal to Quantity.
-                                            Acquisition Date and Last Updated are set to <b>today</b>.
-                                        </div>
-
-                                        <button class="btn btn-primary w-100" type="submit" id="btnAddNewItem">
-                                            <i class="bi bi-save"></i> Add Item
-                                        </button>
-                                        <div id="addNewItemMsg" class="mt-2"></div>
-                                    </form>
-                                </div>
+            <!-- Add Quantity -->
+            <div class="col-12 col-xl-4">
+                <div class="card section-card h-100">
+                    <div class="card-header">
+                        <div class="card-header-tools">
+                            <div class="title-wrap">
+                                <i class="bi bi-plus-square"></i>
+                                <span>Add Quantity </span>
                             </div>
-
-                            <div class="col-lg-7">
-                                <div class="border rounded p-3">
-                                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
-                                        <div class="fw-semibold"><i class="bi bi-clock-history"></i>&ensp;Recently Added Items</div>
-                                        <button class="btn btn-outline-primary btn-sm" id="btnReloadRecent">
-                                            <i class="bi bi-arrow-clockwise"></i> Reload
-                                        </button>
-                                    </div>
-                                    <div class="small text-muted mb-2">Shows the most recent inventory records.</div>
-                                    <div id="tableRecentAdded"></div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- ===================== ADD QUANTITY ===================== -->
-                    <div class="tab-pane fade" id="pane-addqty" role="tabpanel">
-                        <div class="row g-3">
-                            <div class="col-lg-5">
-                                <div class="border rounded p-3">
-                                    <div class="fw-semibold mb-2"><i class="bi bi-box-arrow-in-down"></i>&ensp;Add Quantity to Existing Item</div>
-
-                                    <div class="mb-2">
-                                        <label class="form-label fw-semibold">Scan QR / Search Code</label>
-                                        <div class="input-group">
-                                            <input type="text" id="addQtySearchCode" class="form-control mono" placeholder="Paste/scan item code here">
-                                            <button class="btn btn-outline-primary" type="button" id="btnFindItem">
-                                                <i class="bi bi-search"></i> Find
-                                            </button>
-                                        </div>
-                                        <div class="form-text">
-                                            Accepts full code like <code>CSM-0002-0001</code>.
-                                        </div>
-                                    </div>
-
-                                    <div id="foundItemCard" class="border rounded p-2 mb-2" style="display:none;">
-                                        <div class="d-flex gap-2">
-                                            <div class="inv-thumb-wrap" id="foundItemImgWrap">
-                                                <i class="bi bi-image inv-thumb-fallback"></i>
-                                            </div>
-                                            <div class="flex-grow-1">
-                                                <div class="fw-semibold mono" id="foundItemCode">—</div>
-                                                <div class="small" id="foundItemDesc">—</div>
-                                                <div class="small text-muted" id="foundItemMeta">—</div>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <form id="formAddQty" style="display:none;">
-                                        <input type="hidden" name="inventory_id" id="addQtyInventoryId">
-
-                                        <div class="row g-2">
-                                            <div class="col-md-6">
-                                                <label class="form-label fw-semibold">Quantity (add)</label>
-                                                <input type="number" class="form-control" name="add_quantity" min="1" required>
-                                            </div>
-                                            <div class="col-md-6">
-                                                <label class="form-label fw-semibold">Unit</label>
-                                                <input type="text" class="form-control" name="unit" placeholder="pcs / box / ream / set">
-                                            </div>
-                                        </div>
-
-                                        <div class="mt-2">
-                                            <label class="form-label fw-semibold">Source of Fund (optional)</label>
-                                            <input type="text" class="form-control" name="source_of_funds" id="addQtySourceFunds" placeholder="Defaults to existing if blank">
-                                        </div>
-
-                                        <div class="mt-2">
-                                            <label class="form-label fw-semibold">Cost Value (optional)</label>
-                                            <input type="number" class="form-control" name="item_cost" id="addQtyCost" step="0.01" min="0" placeholder="Defaults to existing if blank">
-                                        </div>
-
-                                        <button class="btn btn-primary w-100 mt-3" type="submit" id="btnSubmitAddQty">
-                                            <i class="bi bi-save"></i> Save Quantity
-                                        </button>
-
-                                        <div id="addQtyMsg" class="mt-2"></div>
-                                    </form>
-                                </div>
-                            </div>
-
-                            <div class="col-lg-7">
-                                <div class="border rounded p-3">
-                                    <div class="fw-semibold mb-2"><i class="bi bi-list-ul"></i>&ensp;Quick Search (All Items)</div>
-                                    <div class="small text-muted mb-2">Search and click an item to load it into “Add Quantity”.</div>
-                                    <div id="tableAllItems"></div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- ===================== SET AVAILABLE ITEM ===================== -->
-                    <div class="tab-pane fade" id="pane-setavail" role="tabpanel">
-                        <div class="border rounded p-3">
-                            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
-                                <div class="fw-semibold"><i class="bi bi-sliders"></i>&ensp;Set Available Item (Requestor Display)</div>
-                                <button class="btn btn-outline-primary btn-sm" id="btnReloadAvail">
-                                    <i class="bi bi-arrow-clockwise"></i> Reload
+                            <div class="header-actions">
+                                <button class="btn btn-sm btn-light" type="button" id="openAddQtyScanner" title="Scan QR Code">
+                                    <i class="bi bi-qr-code-scan"></i>&ensp;Scan QR Code
                                 </button>
                             </div>
-
-                            <div class="alert alert-warning mt-2 mb-2">
-                                <i class="bi bi-shield-exclamation"></i>
-                                Restriction: <b>Remaining quantity must not be less than the critical level</b>.
-                                This page prevents setting available below critical.
-                            </div>
-
-                            <div id="tableSetAvailable"></div>
-                            <div id="setAvailMsg" class="mt-2"></div>
                         </div>
                     </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Item Code</label>
+                            <select class="form-select" id="searchItemCode">
+                                <option value="">Select item code</option>
+                            </select>
+                            <div class="small text-muted mt-1">Last scanned: <span id="addQtyLastScanned">-</span></div>
+                        </div>
 
-                </div><!-- tab-content -->
+                        <div id="itemInfo" class="mb-3 text-muted small">No item loaded.</div>
 
+                        <form id="addQtyForm">
+                            <input type="hidden" name="inventory_id" id="addQtyInventoryId">
+
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">Quantity to Add</label>
+                                <input type="number" class="form-control" name="add_quantity" id="addQtyValue" min="1" value="1" required>
+                            </div>
+
+                            <div class="row g-2">
+                                <div class="col-6">
+                                    <label class="form-label fw-semibold">Source of Funds</label>
+                                    <input type="text" class="form-control" name="source_of_funds" id="addQtySource">
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label fw-semibold">Item Cost</label>
+                                    <input type="number" step="0.01" min="0" class="form-control" name="item_cost" id="addQtyCost">
+                                </div>
+                            </div>
+
+                            <div class="mt-3">
+                                <button type="submit" class="btn btn-success w-100">
+                                    <i class="bi bi-arrow-up-circle"></i> Apply Quantity
+                                </button>
+                            </div>
+                            <div id="addQtyMsg" class="mt-3"></div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Inventory List -->
+            <div class="col-12">
+                <div class="card section-card h-100">
+                    <div class="card-header">
+                        <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-md-between gap-2">
+                            <span><i class="bi bi-table"></i>&ensp;Inventory List</span>
+                            <div class="input-group" style="max-width:360px;">
+                                <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                                <input type="text" class="form-control form-control-sm" id="tableSearch" placeholder="Search item code, category, or description">
+                                <button class="btn btn-light btn-sm border" type="button" id="openSearchScanner" title="Scan QR">
+                                    <i class="bi bi-qr-code-scan"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div id="inventoryTablePlaceholder" class="text-muted small mb-2">
+                            Scroll to load recent inventory table.
+                        </div>
+                        <div id="inventoryTable"></div>
+                    </div>
+                </div>
             </div>
         </div>
     </section>
@@ -323,16 +441,20 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
     <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title fw-semibold"><i class="bi bi-image"></i>&ensp;Category Image</h5>
+                <h5 class="modal-title fw-semibold">
+                    <i class="bi bi-image"></i>&ensp;Inventory Image
+                </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
+
             <div class="modal-body">
                 <div class="small text-muted mb-2" id="viewInvImageTitle">—</div>
                 <div id="viewInvImageBodyMsg" class="mb-2"></div>
                 <div class="view-img-wrap">
-                    <img id="viewInvImageImg" src="" alt="Image">
+                    <img id="viewInvImageImg" src="" alt="Inventory Image">
                 </div>
             </div>
+
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
             </div>
@@ -340,537 +462,1103 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
     </div>
 </div>
 
-<!-- QR PREVIEW MODAL -->
-<div class="modal fade" id="qrPreviewModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title fw-semibold"><i class="bi bi-qr-code"></i>&ensp;QR Code Preview</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body text-center">
-        <div class="small text-muted mb-2" id="qrPreviewCode">—</div>
-        <img id="qrPreviewImg" src="" alt="QR"
-             style="max-width:320px;width:100%;height:auto;border:1px solid #dee2e6;border-radius:12px;background:#fff;padding:10px;">
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- SCAN QR -->
-<div class="modal fade" id="scanQrModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog">
+<!-- SEARCH QR MODAL -->
+<div class="modal fade" id="searchQrModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title fw-semibold"><i class="bi bi-upc-scan"></i>&ensp;Scan QR</h5>
+                <h5 class="modal-title fw-semibold"><i class="bi bi-qr-code-scan"></i>&ensp;Scan QR to Search</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <div class="d-flex gap-2 mb-2">
-                    <select id="cameraSelect" class="form-select form-select-sm" style="max-width: 260px;">
+                    <select id="searchCameraSelect" class="form-select form-select-sm" style="max-width: 260px;">
                         <option value="">Loading cameras...</option>
                     </select>
-                    <button type="button" id="btnStart" class="btn btn-success btn-sm">Start</button>
-                    <button type="button" id="btnStop" class="btn btn-outline-danger btn-sm" disabled>Stop</button>
+                    <button type="button" id="searchBtnStart" class="btn btn-success btn-sm">Start</button>
+                    <button type="button" id="searchBtnStop" class="btn btn-outline-danger btn-sm" disabled>Stop</button>
                 </div>
-                <div id="preview-wrapper" style="width:100%;max-width:420px;margin:0 auto;position:relative;background:#000;border-radius:10px;overflow:hidden;aspect-ratio:4/3;">
-                    <div id="preview"></div>
-                    <div id="scannerLoading" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;font-size:14px;z-index:10;text-align:center;">
+                <div class="qr-camera-shell">
+                    <div id="searchPreview"></div>
+                    <div class="scanner-loading" id="searchScannerLoading" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;font-size:14px;z-index:10;text-align:center;">
                         <div>Initializing camera...</div>
                     </div>
                 </div>
-
                 <div class="mt-2 small">
                     <span class="text-muted">Last scanned:</span>
-                    <span id="lastScanned" class="fw-semibold">—</span>
+                    <span id="searchLastScanned" class="fw-semibold">-</span>
                 </div>
-                <div id="scanError" class="text-danger small mt-1" style="display:none;"></div>
+                <div id="searchScanError" class="text-danger small mt-1" style="display:none;"></div>
             </div>
         </div>
     </div>
 </div>
 
-<?php include_once DOMAIN_PATH . '/global/include_bottom.php'; ?>
+<!-- ADD QTY QR MODAL -->
+<div class="modal fade" id="addQtyQrModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-semibold"><i class="bi bi-qr-code-scan"></i>&ensp;Scan QR to Add Quantity</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                    <select id="addQtyCameraSelect" class="form-select form-select-sm" style="max-width: 260px;">
+                        <option value="">Loading cameras...</option>
+                    </select>
+                    <div class="d-flex gap-2">
+                        <button type="button" id="addQtyBtnStart" class="btn btn-success btn-sm">Start</button>
+                        <button type="button" id="addQtyBtnStop" class="btn btn-outline-danger btn-sm" disabled>Stop</button>
+                    </div>
+                </div>
+                <div class="d-flex flex-column align-items-center">
+                    <div class="qr-camera-shell">
+                        <div id="addQtyPreview"></div>
+                        <div id="addQtyScannerLoading" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;color:#fff;font-size:14px;z-index:10;">
+                            Initializing camera...
+                        </div>
+                    </div>
+                    <div class="mt-2 small">
+                        <span class="text-muted">Last scanned:</span>
+                        <span id="addQtyScanLast" class="fw-semibold">-</span>
+                    </div>
+                    <div id="addQtyScanError" class="text-danger small mt-1" style="display:none;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script src="https://unpkg.com/tabulator-tables@4.7.2/dist/js/tabulator.min.js"></script>
+<!-- REVIEW ADD ITEM MODAL -->
+<div class="modal fade" id="reviewAddItemModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-semibold"><i class="bi bi-check2-square"></i>&ensp;Review Record Before Save</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="reviewAddItemError" class="alert alert-danger d-none mb-3"></div>
+                <div id="reviewAddItemContent">
+                    <div class="row g-2 mb-3 small">
+                        <div class="col-md-6"><span class="text-muted">Category:</span> <span class="fw-semibold" id="reviewCategory"></span></div>
+                        <div class="col-md-6"><span class="text-muted">Item Code:</span> <span class="fw-semibold" id="reviewItemCode"></span></div>
+                        <div class="col-md-6"><span class="text-muted">Description:</span> <span class="fw-semibold" id="reviewDescription"></span></div>
+                        <div class="col-md-6"><span class="text-muted">Source of Funds:</span> <span class="fw-semibold" id="reviewSource"></span></div>
+                        <div class="col-md-3"><span class="text-muted">Actual Qty:</span> <span class="fw-semibold" id="reviewUnitQty"></span></div>
+                        <div class="col-md-3"><span class="text-muted">Available Qty:</span> <span class="fw-semibold" id="reviewCurrentQty"></span></div>
+                        <div class="col-md-3"><span class="text-muted">Critical Level:</span> <span class="fw-semibold" id="reviewCritLevel"></span></div>
+                        <div class="col-md-3"><span class="text-muted">Cost:</span> <span class="fw-semibold" id="reviewCost"></span></div>
+                    </div>
+                    <div class="review-table-wrap">
+                        <table class="table table-sm table-striped mb-0">
+                            <tbody>
+                                <tr>
+                                    <th style="width:220px;">Acquisition Date</th>
+                                    <td>Automatically set to today by process file</td>
+                                </tr>
+                                <tr>
+                                    <th>QR Target Value</th>
+                                    <td id="reviewQrValue"></td>
+                                </tr>
+                                <tr>
+                                    <th>Rule Check</th>
+                                    <td id="reviewRuleCheck"></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Back</button>
+                <button type="button" class="btn btn-primary" id="confirmAddItemBtn">
+                    <i class="bi bi-save"></i> Confirm Save
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- EDIT RECORD MODAL -->
+<div class="modal fade" id="editRecordModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-semibold"><i class="bi bi-pencil-square"></i>&ensp;Edit Inventory Record</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+
+            <div class="modal-body">
+                <form id="editInventoryForm">
+                    <input type="hidden" name="inventory_id" id="edit_inventory_id">
+
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Item Code Number</label>
+                            <input type="text"
+                                   name="inventory_system_item_code"
+                                   id="edit_inventory_system_item_code"
+                                   class="form-control"
+                                   inputmode="numeric"
+                                   pattern="[0-9]*"
+                                   placeholder="e.g. 25">
+                            <div class="small text-muted mt-1">Full format is automatic.</div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Category</label>
+                            <select name="item_category_code" id="edit_item_category_code" class="form-select" required>
+                                <option value="">Select Category</option>
+                                <?php foreach ($categories as $cat): ?>
+                                    <option value="<?= htmlspecialchars($cat['item_category_code']) ?>">
+                                        <?= htmlspecialchars($cat['item_category_name']) ?> (<?= htmlspecialchars($cat['item_category_code']) ?>)
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Full Item Code Preview</label>
+                            <input type="text" class="form-control" id="edit_full_item_code" readonly>
+                        </div>
+
+                        <div class="col-md-8">
+                            <label class="form-label fw-semibold">Itemized Description</label>
+                            <textarea name="item_description" id="edit_item_description" class="form-control" required></textarea>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Source of Funds</label>
+                            <input type="text" name="source_of_funds" id="edit_source_of_funds" class="form-control">
+                        </div>
+
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold">Actual Qty</label>
+                            <input type="number" name="unit_quantity" id="edit_unit_quantity" class="form-control" required min="0">
+                        </div>
+
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold">Critical Level</label>
+                            <input type="number" name="unit_crit_level" id="edit_unit_crit_level" class="form-control" required min="0">
+                        </div>
+
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold">Item Cost</label>
+                            <input type="number" step="0.01" name="item_cost" id="edit_item_cost" class="form-control" required min="0">
+                        </div>
+
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold">Available Qty</label>
+                            <input type="text" id="edit_current_unit_quantity_display" class="form-control" readonly>
+                            <div class="small text-muted mt-1">Editable through the separate Available action.</div>
+                        </div>
+                    </div>
+
+                    <div class="mt-3 d-flex align-items-center gap-2">
+                        <button type="submit" class="btn btn-primary">Save Changes</button>
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    </div>
+                </form>
+
+                <div id="editRecordMsg" class="mt-2"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- AVAILABLE MODAL -->
+<div class="modal fade" id="availableModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-semibold">
+                    <i class="bi bi-box-arrow-in-down"></i>&ensp;Update Available to Issue
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="availableForm">
+                    <input type="hidden" name="inventory_id" id="avail_inventory_id">
+                    <div class="mb-2">
+                        <div class="small text-muted">Item</div>
+                        <div class="fw-semibold" id="avail_item_label">—</div>
+                    </div>
+
+                    <label class="form-label">Available to Issue</label>
+                    <input type="number" class="form-control" name="current_unit_quantity" id="avail_current_unit_quantity" min="0" required>
+
+                    <div class="form-text">Cannot be lower than Critical Level and cannot exceed Actual Qty.</div>
+
+                    <div id="availableMsg" class="mt-2"></div>
+
+                    <div class="mt-3 d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">Save</button>
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="<?= BASE_URL ?>assets/js/jquery.min.js"></script>
+<script src="<?= BASE_URL ?>assets/js/select2.min.js"></script>
+<script src="<?= BASE_URL ?>assets/js/tabulator.min.js"></script>
+<?php include_once DOMAIN_PATH . '/global/include_bottom.php'; ?>
 <script src="https://unpkg.com/html5-qrcode"></script>
+<script src="<?= BASE_URL ?>assets/js/qr_search.js"></script>
 
 <script>
-const PROCESS_URL = 'process/csm_available_items_process.php';
 const BASE_URL = <?php echo json_encode(BASE_URL); ?>;
+const PROCESS_URL = BASE_URL + 'admin/modules/consumable/process/csm_inventory_process.php';
+const QR_GENERATOR_URL = BASE_URL + 'admin/modules/tools/qr_image.php';
 
-function escHtml(s){
-    return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+let inventoryTable = null;
+let inventoryCache = [];
+let pendingAddItemDraft = null;
+let isSavingAddItem = false;
+let pageMsgTimeout = null;
+
+function showMessage(target, type, text) {
+    $(target).html(`<div class="alert alert-${type} mb-2">${text}</div>`);
 }
 
-/**
- * IMPORTANT:
- * This matches your working page:
- * - Backend returns display_image like "upload/category/xxx.jpg"
- * - We simply prefix BASE_URL
- */
+function showPageMessage(message) {
+    const el = $('#pageMsg');
+    if (!message) {
+        el.addClass('d-none').text('');
+        return;
+    }
+    el.removeClass('d-none').text(message);
+    if (pageMsgTimeout) clearTimeout(pageMsgTimeout);
+    pageMsgTimeout = setTimeout(() => {
+        el.addClass('d-none').text('');
+    }, 4000);
+}
+
+function escHtml(str) {
+    return String(str === null || str === undefined ? '' : str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 function absUrl(path){
     const base = String(BASE_URL || '');
     const sep = base.endsWith('/') ? '' : '/';
-    path = String(path || '').replace(/^\/+/, '');
-    return base + sep + path;
+    const rel = String(path || '').replace(/^\/+/, '');
+    return base + sep + rel;
 }
 
-function toastMsg(el, html){ $(el).html(html); }
+function normalizeCategoryCodeForDisplay(code){
+    const raw = String(code || '').trim();
+    if (!raw) return '';
+    const m = raw.match(/^CSM-?(\d+)$/i);
+    if (m) return `CSM-${m[1]}`;
+    if (/^CSM-/i.test(raw)) return raw;
+    return `CSM-${raw}`;
+}
 
-function openImgModal(row){
-    const rel = row.display_image || '';
-    if(!rel) return;
-    const src = absUrl(rel);
-    $('#viewInvImageTitle').text((row.inventory_system_item_code || '') + ' — ' + String(row.item_description || '').slice(0,80));
-    $('#viewInvImageBodyMsg').html('');
-    $('#viewInvImageImg').off('error').attr('src', src).on('error', function(){
-        $(this).attr('src','');
-        $('#viewInvImageBodyMsg').html('<div class="alert alert-warning mb-0">Image not found.</div>');
+function normalizeCategoryCodeForItemCode(code){
+    const raw = String(code || '').trim();
+    if (!raw) return '';
+    const m = raw.match(/^CSM-?(\d+)$/i);
+    if (m) return m[1];
+    return raw;
+}
+
+function groupLabel(code, name){
+    const c = String(code || '').trim();
+    const n = String(name || '').trim();
+    if (!c && !n) return 'Uncategorized';
+    const cDisp = c ? normalizeCategoryCodeForDisplay(c) : '';
+    if (cDisp && n) return `${cDisp} — ${n}`;
+    return cDisp || n;
+}
+
+function extractNumericSuffix(fullCode) {
+    const s = String(fullCode || '').trim();
+    const m = s.match(/-(\d{4})$/);
+    return m ? String(parseInt(m[1], 10)) : '';
+}
+
+function buildItemCodePreview(categoryCode, numericInput) {
+    const cat = normalizeCategoryCodeForItemCode(categoryCode);
+    const num = String(numericInput || '').trim();
+
+    if (!cat) return '';
+
+    if (!num) return `CSM-${cat}-0001`;
+
+    const digits = num.replace(/\D/g, '');
+    if (!digits) return `CSM-${cat}-0001`;
+
+    const normalized = String(parseInt(digits, 10));
+    if (!normalized || normalized === 'NaN' || normalized === '0') return `CSM-${cat}-0001`;
+
+    return `CSM-${cat}-${normalized.padStart(4, '0')}`;
+}
+
+function updateCodePreview() {
+    const categoryCode = $('#categorySelect').val() || '';
+    const itemCodeNumber = ($('#itemCodeNumberField').val() || '').replace(/\D/g, '');
+    $('#itemCodeNumberField').val(itemCodeNumber);
+
+    const preview = buildItemCodePreview(categoryCode, itemCodeNumber);
+    $('#fullItemCodeField').val(preview);
+
+    $('#codePatternText').text(
+        `CSM-${normalizeCategoryCodeForItemCode(categoryCode || 'CATEGORY')}-0001`
+            .replace('CSM-CATEGORY-0001', 'CSM-[CATEGORY]-0001')
+    );
+
+    updateQrPreview(preview);
+}
+
+function updateEditCodePreview() {
+    const categoryCode = $('#edit_item_category_code').val() || '';
+    const itemCodeNumber = ($('#edit_inventory_system_item_code').val() || '').replace(/\D/g, '');
+    $('#edit_inventory_system_item_code').val(itemCodeNumber);
+
+    const preview = buildItemCodePreview(categoryCode, itemCodeNumber);
+    $('#edit_full_item_code').val(preview);
+}
+
+function updateQrPreview(code) {
+    const img = $('#qrPreviewImg');
+    const empty = $('#qrPreviewEmpty');
+    const loading = $('#qrLoading');
+    const meta = $('#qrPreviewMeta');
+
+    if (!code) {
+        img.addClass('d-none').attr('src', '');
+        empty.removeClass('d-none').text('QR preview will appear here.');
+        loading.hide();
+        meta.text('Based on the full item code preview');
+        return;
+    }
+
+    loading.show();
+    empty.addClass('d-none');
+
+    const src = `${QR_GENERATOR_URL}?v=${encodeURIComponent(code)}&t=${Date.now()}`;
+    img.off('load error')
+        .on('load', function() {
+            loading.hide();
+            img.removeClass('d-none');
+        })
+        .on('error', function() {
+            loading.hide();
+            img.addClass('d-none').attr('src', '');
+            empty.removeClass('d-none').text('Failed to load QR preview.');
+        })
+        .attr('src', src);
+
+    meta.text(code);
+}
+
+function loadInventoryForDropdown() {
+    $.post(PROCESS_URL, { action: 'list_inventory' }, function(res) {
+        if (res && res.success) {
+            inventoryCache = res.data || [];
+
+            const options = ['<option value="">Select item code</option>'];
+            inventoryCache.forEach(item => {
+                const category = item.item_category_name ? `[${item.item_category_name}] ` : '';
+                const desc = item.item_description ? ` - ${item.item_description}` : '';
+                options.push(`<option value="${item.inventory_system_item_code}">${escHtml(item.inventory_system_item_code)} ${escHtml(category + desc)}</option>`);
+            });
+
+            $('#searchItemCode').html(options.join(''));
+
+            if ($('#searchItemCode').data('select2')) {
+                $('#searchItemCode').off('select2:select select2:clear').select2('destroy');
+            }
+
+            $('#searchItemCode').select2({
+                placeholder: 'Search item code',
+                allowClear: true,
+                width: '100%'
+            }).on('select2:select', function(e) {
+                const code = e.params.data.id;
+                if (code) {
+                    $('#addQtyLastScanned').text(code);
+                    loadItemByCode(code);
+                }
+            }).on('select2:clear', function() {
+                $('#itemInfo').html('<div class="text-muted small">No item loaded.</div>');
+                $('#addQtyInventoryId').val('');
+                $('#addQtyLastScanned').text('-');
+            });
+
+            showPageMessage('');
+        } else {
+            showPageMessage((res && res.message) || 'Failed to load inventory list.');
+        }
+    }, 'json').fail(function() {
+        showPageMessage('Server error while loading inventory list.');
     });
+}
+
+function collectAddItemDraft() {
+    const categoryCode = ($('#categorySelect').val() || '').trim();
+    const categoryLabel = ($('#categorySelect option:selected').text() || '').trim();
+
+    return {
+        inventory_system_item_code: ($('#itemCodeNumberField').val() || '').trim(),
+        full_item_code_preview: ($('#fullItemCodeField').val() || '').trim(),
+        item_category_code: categoryCode,
+        category_label: categoryLabel && categoryLabel !== 'Select category' ? categoryLabel : '',
+        item_description: ($('#itemDescription').val() || '').trim(),
+        source_of_funds: ($('#sourceOfFunds').val() || '').trim(),
+        unit_quantity: ($('#unitQuantity').val() || '').trim(),
+        current_unit_quantity: ($('#currentUnitQuantity').val() || '').trim(),
+        unit_crit_level: ($('#unitCritLevel').val() || '').trim(),
+        item_cost: ($('#itemCost').val() || '').trim()
+    };
+}
+
+function validateAddItemDraft(draft) {
+    if (!draft.item_category_code) return 'Category is required.';
+    if (!draft.item_description) return 'Itemized description is required.';
+    if (draft.inventory_system_item_code && !/^\d+$/.test(draft.inventory_system_item_code)) return 'Item code number must contain digits only.';
+    if (draft.unit_quantity === '' || parseInt(draft.unit_quantity, 10) < 0) return 'Actual Qty must be 0 or higher.';
+    if (draft.current_unit_quantity === '' || parseInt(draft.current_unit_quantity, 10) < 0) return 'Available to Issue must be 0 or higher.';
+    if (draft.unit_crit_level === '' || parseInt(draft.unit_crit_level, 10) < 0) return 'Critical Level must be 0 or higher.';
+    if (draft.item_cost === '' || parseFloat(draft.item_cost) < 0) return 'Item Cost must be 0 or higher.';
+    if (parseInt(draft.current_unit_quantity, 10) > parseInt(draft.unit_quantity, 10)) return 'Available to Issue cannot exceed Actual Qty.';
+    if (parseInt(draft.current_unit_quantity, 10) < parseInt(draft.unit_crit_level, 10)) return 'Available to Issue cannot be lower than Critical Level.';
+    return '';
+}
+
+function populateReviewModal(draft) {
+    $('#reviewCategory').text(draft.category_label || draft.item_category_code || '-');
+    $('#reviewItemCode').text(draft.full_item_code_preview || '(Auto-generated)');
+    $('#reviewDescription').text(draft.item_description || '-');
+    $('#reviewSource').text(draft.source_of_funds || '-');
+    $('#reviewUnitQty').text(draft.unit_quantity);
+    $('#reviewCurrentQty').text(draft.current_unit_quantity);
+    $('#reviewCritLevel').text(draft.unit_crit_level);
+    $('#reviewCost').text(draft.item_cost !== '' ? parseFloat(draft.item_cost).toFixed(2) : '0.00');
+    $('#reviewQrValue').text(draft.full_item_code_preview || '(Auto-generated after save)');
+    $('#reviewRuleCheck').html(`
+        Available (${escHtml(draft.current_unit_quantity)}) is
+        ${parseInt(draft.current_unit_quantity, 10) >= parseInt(draft.unit_crit_level, 10) ? '<span class="text-success fw-semibold">not below</span>' : '<span class="text-danger fw-semibold">below</span>'}
+        Critical Level (${escHtml(draft.unit_crit_level)}),
+        and
+        ${parseInt(draft.current_unit_quantity, 10) <= parseInt(draft.unit_quantity, 10) ? '<span class="text-success fw-semibold">not above</span>' : '<span class="text-danger fw-semibold">above</span>'}
+        Actual Qty (${escHtml(draft.unit_quantity)}).
+    `);
+}
+
+function buildAddItemPayload(draft) {
+    return {
+        action: 'add_inventory',
+        inventory_system_item_code: draft.inventory_system_item_code,
+        item_description: draft.item_description,
+        item_category_code: draft.item_category_code,
+        unit_quantity: draft.unit_quantity,
+        current_unit_quantity: draft.current_unit_quantity,
+        unit_crit_level: draft.unit_crit_level,
+        item_cost: draft.item_cost,
+        source_of_funds: draft.source_of_funds
+    };
+}
+
+function openReviewAddItemModal(draft) {
+    pendingAddItemDraft = draft;
+    $('#reviewAddItemError').addClass('d-none').text('');
+    populateReviewModal(draft);
+    $('#confirmAddItemBtn').prop('disabled', false).html('<i class="bi bi-save"></i> Confirm Save');
+    $('#reviewAddItemModal').modal('show');
+}
+
+function submitAddItemFromReview() {
+    if (!pendingAddItemDraft || isSavingAddItem) return;
+
+    isSavingAddItem = true;
+    $('#confirmAddItemBtn').prop('disabled', true).html('<i class="bi bi-arrow-clockwise" style="animation: spin 1s linear infinite;"></i> Saving...');
+
+    $.ajax({
+        url: PROCESS_URL,
+        type: 'POST',
+        data: buildAddItemPayload(pendingAddItemDraft),
+        success: function(response) {
+            if ($.trim(response) === 'success') {
+                $('#reviewAddItemModal').modal('hide');
+                showMessage('#addItemMsg', 'success', 'Record added successfully.');
+                $('#addItemForm')[0].reset();
+                $('#categorySelect').val('').trigger('change');
+                updateCodePreview();
+                refreshTable();
+                loadInventoryForDropdown();
+                return;
+            }
+            $('#reviewAddItemError').removeClass('d-none').text(response || 'Save failed.');
+        },
+        error: function(xhr) {
+            let msg = 'Server error while saving.';
+            if (xhr.responseText) msg = xhr.responseText;
+            $('#reviewAddItemError').removeClass('d-none').text(msg);
+        },
+        complete: function() {
+            isSavingAddItem = false;
+            $('#confirmAddItemBtn').prop('disabled', false).html('<i class="bi bi-save"></i> Confirm Save');
+        }
+    });
+}
+
+function openInvImageModal(row){
+    if (!row) return;
+
+    const rel = row.display_image || '';
+    if (!rel) return;
+
+    const src = absUrl(rel);
+    const title = `${row.inventory_system_item_code || ''} — ${String(row.item_description || '').slice(0, 60)}`;
+
+    $('#viewInvImageTitle').text(title);
+    $('#viewInvImageBodyMsg').html('');
+    $('#viewInvImageImg')
+        .off('error')
+        .attr('src', src)
+        .on('error', function(){
+            $(this).attr('src','');
+            $('#viewInvImageBodyMsg').html('<div class="alert alert-warning mb-0">Image not found.</div>');
+        });
+
     $('#viewInvImageModal').modal('show');
 }
 
-function openQrModal(code){
-    if(!code) return;
-    const imgUrl = "../tools/qr_image.php?v=" + encodeURIComponent(code);
-    $('#qrPreviewCode').text(code);
-    $('#qrPreviewImg').attr('src', imgUrl);
-    $('#qrPreviewModal').modal('show');
-}
-
-/* ========== Tabulator Tables (pagination like manage_inventory) ========== */
-const PAGINATION_SIZE_SELECTOR = [20,100,500,1000,true];
-
-let tableRecent = new Tabulator("#tableRecentAdded", {
-    layout:"fitColumns",
-    height:"520px",
-    pagination:"local",
-    paginationSize:20,
-    paginationSizeSelector:PAGINATION_SIZE_SELECTOR,
-    movableColumns:true,
-    columns:[
-        {title:"Image", field:"display_image", width:80, hozAlign:"center", headerSort:false,
-            formatter:(cell)=>{
-                const d = cell.getRow().getData();
-                const rel = d.display_image || '';
-                const url = rel ? absUrl(rel) : '';
-                if(!url) return `<div class="inv-thumb-wrap"><i class="bi bi-image inv-thumb-fallback"></i></div>`;
-                return `<div class="inv-thumb-click"><div class="inv-thumb-wrap"><img src="${escHtml(url)}" onerror="this.remove();this.parentNode.innerHTML='<i class=&quot;bi bi-image inv-thumb-fallback&quot;></i>';"></div></div>`;
-            },
-            cellClick:(e, cell)=> openImgModal(cell.getRow().getData())
+function initTable() {
+    inventoryTable = new Tabulator('#inventoryTable', {
+        ajaxURL: PROCESS_URL,
+        ajaxParams: { action: 'list_recent_added' },
+        ajaxConfig: 'POST',
+        layout: 'fitColumns',
+        responsiveLayout: 'collapse',
+        placeholder: 'No items found',
+        pagination: 'local',
+        paginationSize: 10,
+        paginationSizeSelector: [5, 10, 20, 50, true],
+        ajaxResponse: function(url, params, response) {
+            const data = response && response.data ? response.data : [];
+            inventoryCache = data;
+            return data;
         },
-        {title:"Item Code", field:"inventory_system_item_code", minWidth:170},
-        {title:"Category", field:"item_category_name", minWidth:220},
-        {title:"Description", field:"item_description", minWidth:250, formatter:"textarea"},
-        {title:"Qty", field:"current_unit_quantity", hozAlign:"right", width:90},
-        {title:"Crit", field:"unit_crit_level", hozAlign:"right", width:90},
-        {title:"QR", field:"inventory_system_item_code", width:90, hozAlign:"center", headerSort:false,
-          formatter:(cell)=>{
-            const code = cell.getValue();
-            if(!code) return '';
-            const u = "../tools/qr_image.php?v=" + encodeURIComponent(code);
-            return `<img class="qr-thumb" src="${u}" data-code="${escHtml(code)}" alt="QR">`;
-          },
-          cellClick:(e, cell)=> openQrModal(cell.getRow().getData().inventory_system_item_code)
-        },
-        {title:"Created", field:"created_at", minWidth:160},
-    ]
-});
+        columns: [
+            {
+                title: "Image",
+                field: "display_image",
+                width: 88,
+                hozAlign: "center",
+                headerSort: false,
+                formatter: function(cell) {
+                    const d = cell.getRow().getData();
+                    const rel = d.display_image || '';
+                    const url = rel ? absUrl(rel) : '';
 
-let tableAll = new Tabulator("#tableAllItems", {
-    layout:"fitColumns",
-    height:"520px",
-    pagination:"local",
-    paginationSize:20,
-    paginationSizeSelector:PAGINATION_SIZE_SELECTOR,
-    movableColumns:true,
-    columns:[
-        {title:"Item Code", field:"inventory_system_item_code", minWidth:170, headerFilter:"input"},
-        {title:"Category", field:"item_category_name", minWidth:220, headerFilter:"input"},
-        {title:"Description", field:"item_description", minWidth:250, headerFilter:"input", formatter:"textarea"},
-        {title:"Current Qty", field:"current_unit_quantity", hozAlign:"right", width:120, headerFilter:"number"},
-        {title:"Crit", field:"unit_crit_level", hozAlign:"right", width:90},
-        {title:"QR", field:"inventory_system_item_code", width:90, hozAlign:"center", headerSort:false,
-          formatter:(cell)=>{
-            const code = cell.getValue();
-            if(!code) return '';
-            const u = "../tools/qr_image.php?v=" + encodeURIComponent(code);
-            return `<img class="qr-thumb" src="${u}" data-code="${escHtml(code)}" alt="QR">`;
-          },
-          cellClick:(e, cell)=> openQrModal(cell.getRow().getData().inventory_system_item_code)
-        },
-        {title:"Action", headerSort:false, width:110, hozAlign:"center",
-            formatter:()=> `<button class="btn btn-sm btn-outline-primary"><i class="bi bi-arrow-right-circle"></i> Select</button>`,
-            cellClick:(e, cell)=>{
-                const d = cell.getRow().getData();
-                loadFoundItem(d);
-                document.getElementById("addQtySearchCode").value = d.inventory_system_item_code || '';
-                $('#tab-addqty').trigger('click');
-            }
-        }
-    ]
-});
-
-let tableAvail = new Tabulator("#tableSetAvailable", {
-    layout:"fitColumns",
-    height:"600px",
-    pagination:"local",
-    paginationSize:20,
-    paginationSizeSelector:PAGINATION_SIZE_SELECTOR,
-    movableColumns:true,
-    columns:[
-        {title:"Image", field:"display_image", width:80, hozAlign:"center", headerSort:false,
-            formatter:(cell)=>{
-                const d = cell.getRow().getData();
-                const rel = d.display_image || '';
-                const url = rel ? absUrl(rel) : '';
-                if(!url) return `<div class="inv-thumb-wrap"><i class="bi bi-image inv-thumb-fallback"></i></div>`;
-                return `<div class="inv-thumb-click"><div class="inv-thumb-wrap"><img src="${escHtml(url)}" onerror="this.remove();this.parentNode.innerHTML='<i class=&quot;bi bi-image inv-thumb-fallback&quot;></i>';"></div></div>`;
-            },
-            cellClick:(e, cell)=> openImgModal(cell.getRow().getData())
-        },
-        {title:"Item Code", field:"inventory_system_item_code", minWidth:170, headerFilter:"input"},
-        {title:"Category", field:"item_category_name", minWidth:220, headerFilter:"input"},
-        {title:"Description", field:"item_description", minWidth:280, headerFilter:"input", formatter:"textarea"},
-        {title:"Remaining", field:"current_unit_quantity", hozAlign:"right", width:110},
-        {title:"Critical", field:"unit_crit_level", hozAlign:"right", width:110},
-        {title:"Status", field:"status", width:140, headerFilter:"input"},
-        {title:"QR", field:"inventory_system_item_code", width:90, hozAlign:"center", headerSort:false,
-          formatter:(cell)=>{
-            const code = cell.getValue();
-            if(!code) return '';
-            const u = "../tools/qr_image.php?v=" + encodeURIComponent(code);
-            return `<img class="qr-thumb" src="${u}" data-code="${escHtml(code)}" alt="QR">`;
-          },
-          cellClick:(e, cell)=> openQrModal(cell.getRow().getData().inventory_system_item_code)
-        },
-        {
-            title:"Set Available Qty",
-            field:"current_unit_quantity",
-            width:170,
-            hozAlign:"center",
-            headerSort:false,
-            formatter:(cell)=>{
-                const d = cell.getRow().getData();
-                const remain = parseInt(d.current_unit_quantity||0,10);
-                const crit = parseInt(d.unit_crit_level||0,10);
-                const disabled = (remain < crit) ? 'disabled' : '';
-                return `
-                  <div class="d-flex gap-1 justify-content-center">
-                    <input class="form-control form-control-sm avail-input" type="number" min="${crit}" value="${remain}" style="max-width:90px" ${disabled}>
-                    <button class="btn btn-sm btn-primary avail-save" ${disabled}><i class="bi bi-save"></i></button>
-                  </div>
-                `;
-            },
-            cellClick:(e, cell)=>{
-                const target = e.target;
-                const row = cell.getRow();
-                const d = row.getData();
-
-                if(!target.classList.contains('avail-save')) return;
-
-                const wrap = target.closest('div');
-                const input = wrap.querySelector('.avail-input');
-                const newVal = parseInt(input.value || '0', 10);
-
-                $.ajax({
-                    url: PROCESS_URL,
-                    type: 'POST',
-                    dataType:'json',
-                    data: { action:'set_available_qty', inventory_id: d.inventory_id, current_unit_quantity: newVal },
-                    success: function(res){
-                        if(res && res.success){
-                            toastMsg('#setAvailMsg','<div class="alert alert-success mb-0">Saved.</div>');
-                            reloadAllTables();
-                        }else{
-                            toastMsg('#setAvailMsg','<div class="alert alert-danger mb-0">'+escHtml(res.message || 'Failed')+'</div>');
-                        }
-                    },
-                    error: function(xhr){
-                        toastMsg('#setAvailMsg','<div class="alert alert-danger mb-0">Server error.</div>');
-                        console.error(xhr.responseText);
+                    if (url) {
+                        return `
+                            <div class="inv-thumb-click" title="Click to view">
+                                <div class="inv-thumb-wrap">
+                                    <img src="${escHtml(url)}" alt="img"
+                                         onerror="this.remove(); this.parentNode.innerHTML='<i class=&quot;bi bi-image inv-thumb-fallback&quot;></i>';">
+                                </div>
+                            </div>
+                        `;
                     }
-                });
+                    return `<div class="inv-thumb-wrap"><i class="bi bi-image inv-thumb-fallback"></i></div>`;
+                },
+                cellClick: function(e, cell) {
+                    const d = cell.getRow().getData();
+                    if (d && d.display_image) openInvImageModal(d);
+                }
+            },
+            {
+                title: 'Item Code',
+                field: 'inventory_system_item_code',
+                width: 190,
+                headerFilter: 'input',
+                headerFilterPlaceholder: 'Filter...',
+                formatter: function(cell){
+                    const val = cell.getValue();
+                    return `<span class="badge bg-light text-dark border badge-code">${escHtml(val)}</span>`;
+                }
+            },
+            {
+                title: 'Description',
+                field: 'item_description',
+                widthGrow: 2,
+                headerFilter: 'input',
+                headerFilterPlaceholder: 'Filter...'
+            },
+            {
+                title: 'Category',
+                field: 'item_category_code',
+                width: 220,
+                headerFilter: 'input',
+                headerFilterPlaceholder: 'Filter...',
+                formatter: function(cell){
+                    const d = cell.getRow().getData();
+                    return escHtml(groupLabel(d.item_category_code, d.item_category_name));
+                }
+            },
+            { title: 'Actual Qty', field: 'unit_quantity', width: 100, hozAlign: 'center' },
+            { title: 'Available', field: 'current_unit_quantity', width: 100, hozAlign: 'center' },
+            { title: 'Critical', field: 'unit_crit_level', width: 95, hozAlign: 'center' },
+            {
+                title: 'Cost',
+                field: 'item_cost',
+                width: 110,
+                hozAlign: 'right',
+                formatter: function(cell){
+                    const v = cell.getValue();
+                    return v !== null && v !== '' ? parseFloat(v).toFixed(2) : '0.00';
+                }
+            },
+            { title: 'Source', field: 'source_of_funds', width: 140, headerFilter: 'input', headerFilterPlaceholder: 'Filter...' },
+            {
+                title: 'Acquired',
+                field: 'acquisition_date',
+                width: 120,
+                formatter: function(cell){
+                    return cell.getValue() || '-';
+                }
+            },
+            {
+                title: 'Last Updated',
+                field: 'last_updated',
+                width: 120,
+                formatter: function(cell){
+                    return cell.getValue() || '-';
+                }
+            },
+            {
+                title: 'QR',
+                field: 'inventory_system_item_code',
+                width: 92,
+                hozAlign: 'center',
+                headerSort: false,
+                formatter: function(cell) {
+                    const code = cell.getValue();
+                    if (!code) return '';
+                    const u = `${QR_GENERATOR_URL}?v=${encodeURIComponent(code)}`;
+                    return `<img src="${u}" data-code="${escHtml(code)}" class="qr-thumb" style="height:56px;width:56px;object-fit:contain;border:1px solid #dee2e6;border-radius:8px;background:#fff;padding:4px;cursor:pointer;" alt="QR">`;
+                }
+            },
+            {
+                title: 'Actions',
+                field: 'inventory_id',
+                width: 200,
+                hozAlign: 'center',
+                headerSort: false,
+                formatter: function(cell){
+                    const id = cell.getValue();
+                    return `
+                        <button type="button" class="btn btn-sm btn-primary me-1 btn-edit" data-id="${id}">
+                            <i class="bi bi-pencil-square"></i>
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-primary btn-available" data-id="${id}">
+                            <i class="bi bi-box-arrow-in-down"></i>
+                        </button>
+                    `;
+                }
             }
-        }
-    ]
-});
-
-/* ========== Loaders ========== */
-function reloadAllTables(){
-    loadRecent();
-    loadAllItems();
-    loadAvail();
-}
-function loadRecent(){
-    $.ajax({
-        url: PROCESS_URL,
-        type:'POST',
-        dataType:'json',
-        data:{ action:'list_recent_added' },
-        success:(res)=>{ if(res && res.success) tableRecent.setData(res.data); }
-    });
-}
-function loadAllItems(){
-    $.ajax({
-        url: PROCESS_URL,
-        type:'POST',
-        dataType:'json',
-        data:{ action:'list_all_items' },
-        success:(res)=>{ if(res && res.success) tableAll.setData(res.data); }
-    });
-}
-function loadAvail(){
-    $.ajax({
-        url: PROCESS_URL,
-        type:'POST',
-        dataType:'json',
-        data:{ action:'list_set_available' },
-        success:(res)=>{ if(res && res.success) tableAvail.setData(res.data); }
+        ]
     });
 }
 
-/* ========== Add New Item ========== */
-$('#formAddNewItem').on('submit', function(e){
-    e.preventDefault();
-    $('#addNewItemMsg').html('');
-    $('#btnAddNewItem').prop('disabled', true).text('Saving...');
+function initTableLazy() {
+    const target = document.getElementById('inventoryTable');
+    if (!target) return;
 
-    $.ajax({
-        url: PROCESS_URL,
-        type:'POST',
-        dataType:'json',
-        data: $(this).serialize() + '&action=add_new_item',
-        success: function(res){
-            if(res && res.success){
-                $('#addNewItemMsg').html('<div class="alert alert-success">Added! New Code: <span class="mono">'+escHtml(res.inventory_system_item_code)+'</span></div>');
-                $('#formAddNewItem')[0].reset();
-                reloadAllTables();
-            }else{
-                $('#addNewItemMsg').html('<div class="alert alert-danger">'+escHtml(res.message || 'Failed')+'</div>');
-            }
-        },
-        error:function(xhr){
-            $('#addNewItemMsg').html('<div class="alert alert-danger">Server error.</div>');
-            console.error(xhr.responseText);
-        },
-        complete:function(){
-            $('#btnAddNewItem').prop('disabled', false).html('<i class="bi bi-save"></i> Add Item');
-        }
-    });
-});
-
-/* ========== Add Qty (Find) ========== */
-function loadFoundItem(d){
-    if(!d){ return; }
-
-    $('#foundItemCard').show();
-    $('#formAddQty').show();
-
-    $('#addQtyInventoryId').val(d.inventory_id);
-    $('#foundItemCode').text(d.inventory_system_item_code || '—');
-    $('#foundItemDesc').text(d.item_description || '—');
-
-    const remain = parseInt(d.current_unit_quantity||0,10);
-    const crit = parseInt(d.unit_crit_level||0,10);
-    $('#foundItemMeta').html(`Current: <b>${remain}</b> | Critical: <b>${crit}</b>`);
-
-    $('#addQtySourceFunds').val(d.source_of_funds || '');
-    $('#addQtyCost').val(d.item_cost || '');
-
-    const rel = d.display_image || '';
-    const url = rel ? absUrl(rel) : '';
-    if(url){
-        $('#foundItemImgWrap').html(`<img src="${escHtml(url)}" onerror="this.remove();this.parentNode.innerHTML='<i class=&quot;bi bi-image inv-thumb-fallback&quot;></i>';">`);
-    }else{
-        $('#foundItemImgWrap').html(`<i class="bi bi-image inv-thumb-fallback"></i>`);
-    }
-}
-
-$('#btnFindItem').on('click', function(){
-    const code = ($('#addQtySearchCode').val() || '').trim();
-    if(!code){
-        $('#addQtyMsg').html('<div class="alert alert-warning">Enter or scan an item code.</div>');
+    if (!('IntersectionObserver' in window)) {
+        initTable();
+        const ph = document.getElementById('inventoryTablePlaceholder');
+        if (ph) ph.remove();
         return;
     }
 
-    $('#addQtyMsg').html('');
-
-    $.ajax({
-        url: PROCESS_URL,
-        type:'POST',
-        dataType:'json',
-        data:{ action:'find_item_by_code', inventory_system_item_code: code },
-        success: function(res){
-            if(res && res.success){
-                loadFoundItem(res.data);
-                $('#addQtyMsg').html('<div class="alert alert-success">Item loaded.</div>');
-            }else{
-                $('#foundItemCard').hide();
-                $('#formAddQty').hide();
-                $('#addQtyMsg').html('<div class="alert alert-danger">'+escHtml(res.message || 'Not found')+'</div>');
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                initTable();
+                const ph = document.getElementById('inventoryTablePlaceholder');
+                if (ph) ph.remove();
+                observer.disconnect();
             }
-        },
-        error:function(xhr){
-            $('#addQtyMsg').html('<div class="alert alert-danger">Server error.</div>');
-            console.error(xhr.responseText);
-        }
-    });
-});
+        });
+    }, { root: null, threshold: 0.1 });
 
-$('#formAddQty').on('submit', function(e){
-    e.preventDefault();
-    $('#addQtyMsg').html('');
-    $('#btnSubmitAddQty').prop('disabled', true).text('Saving...');
-
-    $.ajax({
-        url: PROCESS_URL,
-        type:'POST',
-        dataType:'json',
-        data: $(this).serialize() + '&action=add_quantity',
-        success: function(res){
-            if(res && res.success){
-                $('#addQtyMsg').html('<div class="alert alert-success">Quantity added successfully.</div>');
-                $('#formAddQty')[0].reset();
-                $('#foundItemCard').hide();
-                $('#formAddQty').hide();
-                reloadAllTables();
-            }else{
-                $('#addQtyMsg').html('<div class="alert alert-danger">'+escHtml(res.message || 'Failed')+'</div>');
-            }
-        },
-        error:function(xhr){
-            $('#addQtyMsg').html('<div class="alert alert-danger">Server error.</div>');
-            console.error(xhr.responseText);
-        },
-        complete:function(){
-            $('#btnSubmitAddQty').prop('disabled', false).html('<i class="bi bi-save"></i> Save Quantity');
-        }
-    });
-});
-
-/* ========== Buttons ========== */
-$('#btnReloadRecent').on('click', loadRecent);
-$('#btnReloadAvail').on('click', loadAvail);
-$('#btnRefreshAll').on('click', reloadAllTables);
-
-document.addEventListener("DOMContentLoaded", function(){
-    reloadAllTables();
-});
-
-/* ===================== QR Scanner (fills code box) ===================== */
-function showError(msg) {
-    const errEl = document.getElementById('scanError');
-    const loadingEl = document.getElementById('scannerLoading');
-    errEl.textContent = msg;
-    errEl.style.display = msg ? 'block' : 'none';
-    loadingEl.style.display = 'none';
+    observer.observe(target);
 }
-function setRunning(running) {
-    document.getElementById('btnStart').disabled = running;
-    document.getElementById('btnStop').disabled = !running;
-    document.getElementById('cameraSelect').disabled = running;
-    document.getElementById('scannerLoading').style.display = running ? 'block' : 'none';
-}
-let html5QrcodeScanner = null;
-let isScanning = false;
 
-async function loadCameras() {
-    showError('');
-    const cameraSelect = document.getElementById('cameraSelect');
-    cameraSelect.innerHTML = `<option value="">Loading cameras...</option>`;
+function refreshTable() {
+    const search = ($('#tableSearch').val() || '').toLowerCase().trim();
 
-    try {
-        const cameras = await Html5Qrcode.getCameras();
-        if (!cameras || cameras.length === 0) {
-            cameraSelect.innerHTML = `<option value="">No cameras found</option>`;
-            showError('No cameras found.');
+    if (!inventoryTable) return;
+
+    inventoryTable.setData(PROCESS_URL, { action: 'list_inventory' }, 'POST').then(function() {
+        if (!search) {
+            inventoryTable.clearFilter(true);
             return;
         }
-        cameraSelect.innerHTML = '';
-        cameras.forEach((cam, idx) => {
-            const opt = document.createElement('option');
-            opt.value = cam.id;
-            opt.textContent = cam.label || `Camera ${idx + 1}`;
-            cameraSelect.appendChild(opt);
+
+        inventoryTable.setFilter(function(data){
+            const hay = [
+                data.inventory_system_item_code,
+                data.item_description,
+                data.item_category_code,
+                data.item_category_name,
+                data.source_of_funds
+            ].join(' ').toLowerCase();
+
+            return hay.indexOf(search) !== -1;
         });
-        const backCam = cameras.find(c => /back|rear|environment/i.test(c.label || ''));
-        cameraSelect.value = backCam ? backCam.id : cameras[0].id;
-    } catch (e) {
-        cameraSelect.innerHTML = `<option value="">Camera permission denied</option>`;
-        showError('Cannot access cameras: ' + (e && e.message ? e.message : String(e)));
-    }
+    }).catch(function() {});
 }
 
-async function startScanner() {
-    showError('');
-    setRunning(true);
-    isScanning = true;
+function loadItemByCode(code) {
+    if (!code) return;
 
-    const selectedCamId = document.getElementById('cameraSelect').value;
-    if (!selectedCamId) {
-        showError('Select a camera first.');
-        setRunning(false);
-        isScanning = false;
-        return;
-    }
+    $.post(PROCESS_URL, { action: 'find_item_by_code', inventory_system_item_code: code }, function(res) {
+        if (res && res.success) {
+            const d = res.data;
+            $('#addQtyInventoryId').val(d.inventory_id);
+            $('#addQtySource').val(d.source_of_funds || '');
+            $('#addQtyCost').val(d.item_cost || '');
 
-    if (html5QrcodeScanner) {
-        try { await html5QrcodeScanner.stop(); } catch (e) {}
-    }
+            $('#itemInfo').html(`
+                <div class="d-flex flex-column gap-2">
+                    <div>
+                        <div class="small text-muted">Item Code</div>
+                        <div class="fw-semibold">${escHtml(d.inventory_system_item_code || '-')}</div>
+                    </div>
+                    <div class="small text-muted">${escHtml(groupLabel(d.item_category_code, d.item_category_name))}</div>
+                    <div>
+                        <div class="small text-muted">Description</div>
+                        <div>${escHtml(d.item_description || '-')}</div>
+                    </div>
+                    <div class="small text-muted">
+                        Actual Qty: <span class="fw-semibold">${escHtml(d.unit_quantity || '0')}</span>
+                        &nbsp;|&nbsp;
+                        Available: <span class="fw-semibold">${escHtml(d.current_unit_quantity || '0')}</span>
+                    </div>
+                    <div class="small text-muted">
+                        Critical: <span class="fw-semibold">${escHtml(d.unit_crit_level || '0')}</span>
+                        ${d.source_of_funds ? ` | Source: ${escHtml(d.source_of_funds)}` : ''}
+                        ${d.item_cost ? ` | Cost: ${escHtml(d.item_cost)}` : ''}
+                    </div>
+                </div>
+            `);
+        } else {
+            $('#addQtyInventoryId').val('');
+            $('#itemInfo').html('<span class="text-danger">' + escHtml((res && res.message) || 'Item not found.') + '</span>');
+        }
+    }, 'json').fail(function(xhr) {
+        let msg = 'Item not found.';
+        if (xhr.responseJSON && xhr.responseJSON.message) msg = xhr.responseJSON.message;
+        $('#addQtyInventoryId').val('');
+        $('#itemInfo').html('<span class="text-danger">' + escHtml(msg) + '</span>');
+    });
+}
 
-    html5QrcodeScanner = new Html5Qrcode('preview');
-    const config = { fps: 10, qrbox: { width: 220, height: 220 } };
+function openEditModal(id){
+    $('#editRecordMsg').html('');
 
-    try {
-        await html5QrcodeScanner.start(
-            selectedCamId,
-            config,
-            (decodedText) => {
-                document.getElementById('lastScanned').textContent = decodedText;
+    $.ajax({
+        url: PROCESS_URL,
+        type: 'POST',
+        dataType: 'json',
+        data: { action: 'get_inventory', inventory_id: id },
+        success: function(res){
+            if(!res || !res.success){
+                alert(res && res.message ? res.message : 'Record not found.');
+                return;
+            }
 
-                document.getElementById('addQtySearchCode').value = decodedText;
-                $('#tab-addqty').trigger('click');
-                $('#scanQrModal').modal('hide');
-                $('#btnFindItem').trigger('click');
+            const d = res.data;
+
+            $('#edit_inventory_id').val(d.inventory_id);
+            $('#edit_inventory_system_item_code').val(extractNumericSuffix(d.inventory_system_item_code));
+            $('#edit_item_description').val(d.item_description || '');
+            $('#edit_item_category_code').val(d.item_category_code || '').trigger('change');
+            $('#edit_unit_quantity').val(d.unit_quantity || 0);
+            $('#edit_unit_crit_level').val(d.unit_crit_level || 0);
+            $('#edit_item_cost').val(d.item_cost || 0);
+            $('#edit_source_of_funds').val(d.source_of_funds || '');
+            $('#edit_current_unit_quantity_display').val(d.current_unit_quantity || 0);
+
+            updateEditCodePreview();
+            $('#editRecordModal').modal('show');
+        },
+        error: function(xhr){
+            alert('Error loading record.');
+            console.error(xhr.responseText);
+        }
+    });
+}
+
+function openAvailableModal(id){
+    $('#availableMsg').html('');
+    $('#avail_inventory_id').val(id);
+
+    $.ajax({
+        url: PROCESS_URL,
+        type: 'POST',
+        dataType: 'json',
+        data: { action: 'get_inventory', inventory_id: id },
+        success: function(res){
+            if (res && res.success) {
+                const d = res.data;
+                $('#avail_item_label').text(`${d.inventory_system_item_code || ''} — ${String(d.item_description || '').slice(0, 60)}`);
+                $('#avail_current_unit_quantity').val(d.current_unit_quantity || 0);
+            } else {
+                $('#avail_item_label').text(`ID #${id}`);
+                $('#avail_current_unit_quantity').val(0);
+            }
+            $('#availableModal').modal('show');
+        },
+        error: function(){
+            $('#avail_item_label').text(`ID #${id}`);
+            $('#avail_current_unit_quantity').val(0);
+            $('#availableModal').modal('show');
+        }
+    });
+}
+
+$(document).ready(function() {
+    $('#categorySelect').select2({
+        placeholder: 'Select category',
+        allowClear: true,
+        width: '100%'
+    });
+
+    $('#edit_item_category_code').select2({
+        dropdownParent: $('#editRecordModal'),
+        placeholder: 'Select category',
+        allowClear: true,
+        width: '100%'
+    });
+
+    loadInventoryForDropdown();
+    initTableLazy();
+    updateCodePreview();
+
+    $('#categorySelect').on('change', updateCodePreview);
+    $('#itemCodeNumberField').on('input', updateCodePreview);
+
+    $('#edit_item_category_code').on('change', updateEditCodePreview);
+    $('#edit_inventory_system_item_code').on('input', updateEditCodePreview);
+
+    $('#unitQuantity, #currentUnitQuantity').on('input', function() {
+        const unitQty = parseInt($('#unitQuantity').val() || '0', 10);
+        const currentQty = parseInt($('#currentUnitQuantity').val() || '0', 10);
+        if (currentQty > unitQty) {
+            $('#currentUnitQuantity').val(unitQty);
+        }
+    });
+
+    $('#confirmAddItemBtn').on('click', function() {
+        submitAddItemFromReview();
+    });
+
+    $('#reviewAddItemModal').on('hidden.bs.modal', function() {
+        pendingAddItemDraft = null;
+        isSavingAddItem = false;
+        $('#reviewAddItemError').addClass('d-none').text('');
+        $('#confirmAddItemBtn').prop('disabled', false).html('<i class="bi bi-save"></i> Confirm Save');
+    });
+
+    $('#addItemForm').on('submit', function(e) {
+        e.preventDefault();
+        $('#addItemMsg').html('');
+
+        const draft = collectAddItemDraft();
+        const validationError = validateAddItemDraft(draft);
+
+        if (validationError) {
+            showMessage('#addItemMsg', 'danger', validationError);
+            return;
+        }
+
+        openReviewAddItemModal(draft);
+    });
+
+    $('#resetAddForm').on('click', function() {
+        $('#addItemForm')[0].reset();
+        $('#categorySelect').val('').trigger('change');
+        $('#addItemMsg').html('');
+        updateCodePreview();
+    });
+
+    $('#addQtyForm').on('submit', function(e) {
+        e.preventDefault();
+        $('#addQtyMsg').html('');
+
+        const inventoryId = ($('#addQtyInventoryId').val() || '').trim();
+        if (!inventoryId) {
+            showMessage('#addQtyMsg', 'danger', 'Please select or scan an item code first.');
+            return;
+        }
+
+        $.ajax({
+            url: PROCESS_URL,
+            type: 'POST',
+            dataType: 'json',
+            data: $(this).serialize() + '&action=add_quantity',
+            success: function(res) {
+                if (res && res.success) {
+                    showMessage('#addQtyMsg', 'success', 'Quantity updated successfully.');
+                    const codeVal = $('#searchItemCode').val();
+                    if (codeVal) loadItemByCode(codeVal);
+                    refreshTable();
+                    loadInventoryForDropdown();
+                } else {
+                    showMessage('#addQtyMsg', 'danger', (res && res.message) || 'Update failed.');
+                }
             },
-            () => {}
-        );
-        document.getElementById('scannerLoading').style.display = 'none';
-    } catch (e) {
-        showError('Failed to start camera: ' + (e && e.message ? e.message : String(e)));
-        setRunning(false);
-        isScanning = false;
+            error: function(xhr) {
+                let msg = 'Server error while updating quantity.';
+                if (xhr.responseJSON && xhr.responseJSON.message) msg = xhr.responseJSON.message;
+                showMessage('#addQtyMsg', 'danger', msg);
+            }
+        });
+    });
+
+    $('#tableSearch').on('keyup', function() {
+        refreshTable();
+    });
+
+    $('#inventoryTable')
+        .off('click', '.btn-edit')
+        .on('click', '.btn-edit', function(e){
+            e.preventDefault();
+            e.stopPropagation();
+            openEditModal($(this).data('id'));
+        });
+
+    $('#inventoryTable')
+        .off('click', '.btn-available')
+        .on('click', '.btn-available', function(e){
+            e.preventDefault();
+            e.stopPropagation();
+            openAvailableModal($(this).data('id'));
+        });
+
+    $('#inventoryTable')
+        .off('click', '.qr-thumb')
+        .on('click', '.qr-thumb', function(e){
+            e.preventDefault();
+            e.stopPropagation();
+            const code = $(this).data('code');
+            if (!code) return;
+            updateQrPreview(code);
+            $('html, body').animate({
+                scrollTop: $('#qrPreviewWrap').offset().top - 120
+            }, 250);
+        });
+
+    $('#editInventoryForm').on('submit', function(e){
+        e.preventDefault();
+        $('#editRecordMsg').html('');
+
+        $.ajax({
+            url: PROCESS_URL,
+            type: 'POST',
+            data: $(this).serialize() + '&action=update_inventory',
+            success: function(response){
+                if ($.trim(response) === 'success') {
+                    $('#editRecordModal').modal('hide');
+                    refreshTable();
+                    loadInventoryForDropdown();
+                } else {
+                    $('#editRecordMsg').html('<div class="alert alert-danger">' + response + '</div>');
+                }
+            },
+            error: function(xhr){
+                $('#editRecordMsg').html('<div class="alert alert-danger">Error updating record.</div>');
+                console.error(xhr.responseText);
+            }
+        });
+    });
+
+    $('#availableForm').on('submit', function(e){
+        e.preventDefault();
+        $('#availableMsg').html('');
+
+        $.ajax({
+            url: PROCESS_URL,
+            type: 'POST',
+            data: $(this).serialize() + '&action=update_available_qty',
+            success: function(response){
+                if ($.trim(response) === 'success') {
+                    $('#availableModal').modal('hide');
+                    refreshTable();
+                    loadInventoryForDropdown();
+                } else {
+                    $('#availableMsg').html('<div class="alert alert-danger">' + response + '</div>');
+                }
+            },
+            error: function(xhr){
+                let msg = 'Error updating available quantity.';
+                if (xhr.responseText) msg = xhr.responseText;
+                $('#availableMsg').html('<div class="alert alert-danger">' + escHtml(msg) + '</div>');
+            }
+        });
+    });
+
+    if (typeof initQrSearch === 'function') {
+        initQrSearch({
+            modalId: '#searchQrModal',
+            openButton: '#openSearchScanner',
+            searchInput: '#tableSearch',
+            cameraSelectId: '#searchCameraSelect',
+            startBtnId: '#searchBtnStart',
+            stopBtnId: '#searchBtnStop',
+            previewId: '#searchPreview',
+            lastScannedId: '#searchLastScanned',
+            errorId: '#searchScanError',
+            loadingId: '#searchScannerLoading',
+            qrboxSize: 220,
+            aspectRatio: 1,
+            onSearch: function(decodedText) {
+                if (!decodedText) return;
+                $('#tableSearch').val(decodedText);
+                refreshTable();
+            }
+        });
+
+        initQrSearch({
+            modalId: '#addQtyQrModal',
+            openButton: '#openAddQtyScanner',
+            searchInput: '',
+            cameraSelectId: '#addQtyCameraSelect',
+            startBtnId: '#addQtyBtnStart',
+            stopBtnId: '#addQtyBtnStop',
+            previewId: '#addQtyPreview',
+            lastScannedId: '#addQtyScanLast',
+            errorId: '#addQtyScanError',
+            loadingId: '#addQtyScannerLoading',
+            qrboxSize: 220,
+            aspectRatio: 1,
+            onSearch: function(decodedText) {
+                if (!decodedText) return;
+                $('#addQtyLastScanned').text(decodedText);
+                if ($('#searchItemCode option[value="' + decodedText + '"]').length === 0) {
+                    $('#searchItemCode').append(new Option(decodedText, decodedText, true, true));
+                }
+                $('#searchItemCode').val(decodedText).trigger('change');
+                loadItemByCode(decodedText);
+            }
+        });
     }
-}
-
-async function stopScanner() {
-    showError('');
-    if (!html5QrcodeScanner || !isScanning) return;
-    try { await html5QrcodeScanner.stop(); } catch (e) {}
-    setRunning(false);
-    isScanning = false;
-}
-
-$('#scanQrModal').on('shown.bs.modal', function () {
-    loadCameras();
-    setRunning(false);
-    document.getElementById('lastScanned').textContent = '—';
-    document.getElementById('preview').innerHTML = '';
 });
-$('#scanQrModal').on('hidden.bs.modal', function () {
-    stopScanner();
-    document.getElementById('preview').innerHTML = '';
-});
-
-$('#btnStart').on('click', startScanner);
-$('#btnStop').on('click', stopScanner);
 </script>
-
 </body>
 </html>
