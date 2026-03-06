@@ -165,10 +165,7 @@ $categories = getAllCategories();
             }
         }
 
-        /* ===== QR camera preview fixes =====
-           Removes weird black strip / bottom gap by forcing scanner internals
-           to fill the preview box cleanly.
-        */
+        /* ===== QR camera preview fixes ===== */
         .qr-camera-shell{
             width:100%;
             max-width:420px;
@@ -197,8 +194,6 @@ $categories = getAllCategories();
             height:100%;
             background:#111;
         }
-
-        /* html5-qrcode internals */
         #searchPreview video,
         #searchPreview canvas,
         #addQtyPreview video,
@@ -217,12 +212,6 @@ $categories = getAllCategories();
             width:100% !important;
             height:100% !important;
         }
-        #searchPreview region,
-        #addQtyPreview region{
-            display:none !important;
-        }
-
-        /* Sometimes html5-qrcode injects an extra shaded area/table */
         #searchPreview img,
         #addQtyPreview img{
             max-width:none !important;
@@ -238,7 +227,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 
 <main id="main" class="main">
     <div class="pagetitle">
-        <h1 class="h4 fw-semibold mb-1">Manage Consumable Inventory</h1>
+        <h1 class="h4 fw-semibold mb-1">Manage Available Consumables</h1>
         <p class="text-muted small mb-0">Add records, review inventory, scan QR, and update available quantities.</p>
     </div>
 
@@ -357,7 +346,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                         <div class="card-header-tools">
                             <div class="title-wrap">
                                 <i class="bi bi-plus-square"></i>
-                                <span>Add Quantity </span>
+                                <span>Add Quantity</span>
                             </div>
                             <div class="header-actions">
                                 <button class="btn btn-sm btn-light" type="button" id="openAddQtyScanner" title="Scan QR Code">
@@ -412,7 +401,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                 <div class="card section-card h-100">
                     <div class="card-header">
                         <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-md-between gap-2">
-                            <span><i class="bi bi-table"></i>&ensp;Inventory List</span>
+                            <span><i class="bi bi-table"></i>&ensp;Recently Added Inventory</span>
                             <div class="input-group" style="max-width:360px;">
                                 <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
                                 <input type="text" class="form-control form-control-sm" id="tableSearch" placeholder="Search item code, category, or description">
@@ -424,7 +413,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                     </div>
                     <div class="card-body">
                         <div id="inventoryTablePlaceholder" class="text-muted small mb-2">
-                            Scroll to load recent inventory table.
+                            Scroll to load recently added inventory table.
                         </div>
                         <div id="inventoryTable"></div>
                     </div>
@@ -1041,10 +1030,13 @@ function initTable() {
         ajaxConfig: 'POST',
         layout: 'fitColumns',
         responsiveLayout: 'collapse',
-        placeholder: 'No items found',
+        placeholder: 'No recently added items found',
         pagination: 'local',
         paginationSize: 10,
         paginationSizeSelector: [5, 10, 20, 50, true],
+        initialSort: [
+            { column: "created_at", dir: "desc" }
+        ],
         ajaxResponse: function(url, params, response) {
             const data = response && response.data ? response.data : [];
             inventoryCache = data;
@@ -1123,16 +1115,28 @@ function initTable() {
             },
             { title: 'Source', field: 'source_of_funds', width: 140, headerFilter: 'input', headerFilterPlaceholder: 'Filter...' },
             {
-                title: 'Acquired',
-                field: 'acquisition_date',
-                width: 120,
+                title: 'Date Added',
+                field: 'created_at',
+                width: 170,
+                sorter: 'datetime',
+                sorterParams: { format: 'yyyy-MM-dd HH:mm:ss' },
                 formatter: function(cell){
-                    return cell.getValue() || '-';
+                    const value = cell.getValue();
+                    if (!value) return '-';
+                    const d = new Date(value.replace(' ', 'T'));
+                    if (isNaN(d.getTime())) return value;
+                    return d.toLocaleString('en-US', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit'
+                    });
                 }
             },
             {
-                title: 'Last Updated',
-                field: 'last_updated',
+                title: 'Acquired',
+                field: 'acquisition_date',
                 width: 120,
                 formatter: function(cell){
                     return cell.getValue() || '-';
@@ -1203,9 +1207,10 @@ function refreshTable() {
 
     if (!inventoryTable) return;
 
-    inventoryTable.setData(PROCESS_URL, { action: 'list_inventory' }, 'POST').then(function() {
+    inventoryTable.setData(PROCESS_URL, { action: 'list_recent_added' }, 'POST').then(function() {
         if (!search) {
             inventoryTable.clearFilter(true);
+            inventoryTable.setSort("created_at", "desc");
             return;
         }
 
@@ -1220,6 +1225,7 @@ function refreshTable() {
 
             return hay.indexOf(search) !== -1;
         });
+        inventoryTable.setSort("created_at", "desc");
     }).catch(function() {});
 }
 

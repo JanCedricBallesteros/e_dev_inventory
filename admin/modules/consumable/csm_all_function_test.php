@@ -208,6 +208,10 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 ?>
 
 <main id="main" class="main">
+  <div class="pagetitle">
+    <h1 class="h4 fw-semibold mb-1">Manage Consumable Inventory</h1>
+    <p class="text-muted small mb-0">Add records, review inventory, scan QR, update available quantities and etc.</p>
+  </div>
   <section class="section">
     <div class="card">
 

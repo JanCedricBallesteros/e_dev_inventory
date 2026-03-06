@@ -63,7 +63,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
     <section class="section">
         <div class="card">
             <div class="card-header bg-eclearance text-white fw-semibold">
-                <i class="bi bi-qr-code"></i>&ensp;CSM QR Codes (Consumable Inventory)
+                <i class="bi bi-qr-code"></i>&ensp;CSM QR Codes
             </div>
 
             <div class="card-body mt-3 bg-white">

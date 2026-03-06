@@ -104,6 +104,10 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 ?>
 
 <main id="main" class="main">
+    <div class="pagetitle">
+      <h1 class="h4 fw-semibold mb-1">Consumable Categories</h1>
+      <p class="text-muted small mb-0">Manage item categories for consumable inventory.</p>
+    </div>
     <section class="section">
         <div class="card">
             <div class="card-header bg-eclearance text-white fw-semibold d-flex align-items-center justify-content-between flex-wrap gap-2">
