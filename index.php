@@ -11,7 +11,7 @@ if (!isset($g_user_role) || empty($g_user_role)) {
 }
 
 if (role_has("SUPER_ADMIN")) {
-	header("Location: " . BASE_URL . "superadmin/pages/main_superadmin.php");
+	header("Location: " . BASE_URL . "superadmin/pages/user_information.php");
 	exit();
 }
 

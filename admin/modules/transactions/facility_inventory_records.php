@@ -29,6 +29,9 @@ if (!(role_has("ADMIN") || $staffAccess)) {
         .unit-pill { border: 1px solid #dee2e6; border-radius: 999px; padding: 4px 10px; background: #fff; cursor: pointer; font-size: 0.85rem; }
         .unit-pill.active { border-color: #0d6efd; color: #0d6efd; background: #eef5ff; }
         .select2-container { width: 100% !important; }
+        .assign-search-wrap { display: flex; align-items: stretch; gap: .5rem; }
+        .assign-search-wrap .search-select-holder { flex: 1 1 auto; min-width: 0; }
+        .assign-search-wrap .btn { flex: 0 0 auto; }
     </style>
 </head>
 
@@ -197,22 +200,16 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                     </div>
                     <div class="col-md-8">
                         <label class="form-label fw-semibold">Search</label>
-                        <input type="text" id="assignSearch" class="form-control" placeholder="Item code/description">
+                        <div class="assign-search-wrap">
+                            <div class="search-select-holder">
+                                <select id="assignSearchSelect" class="form-select"></select>
+                            </div>
+                            <button class="btn btn-outline-secondary" type="button" id="openAssignSearchScanner" title="Scan QR">
+                                <i class="bi bi-qr-code-scan"></i>
+                            </button>
+                        </div>
+                        <input type="hidden" id="assignSearch">
                     </div>
-                </div>
-                <div class="mt-3 table-responsive" style="max-height:260px;">
-                    <table class="table table-sm table-bordered" id="assignItemTable">
-                        <thead>
-                            <tr>
-                                <th>Code</th>
-                                <th>Description</th>
-                                <th>Available</th>
-                                <th>Unit</th>
-                                <th></th>
-                            </tr>
-                        </thead>
-                        <tbody></tbody>
-                    </table>
                 </div>
                 <div class="row g-2 mt-2">
                     <div class="col-md-6">
@@ -231,17 +228,14 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                     </div>
                 </div>
                 <div class="row g-2 mt-2">
-                    <div class="col-md-4">
+                    <div class="col-md-6">
                         <label class="form-label fw-semibold">Issued To</label>
                         <select id="assignIssuedToUserId" class="form-select"></select>
                     </div>
-                    <div class="col-md-4">
-                        <label class="form-label fw-semibold">Accountable</label>
-                        <select id="assignAccountableUserId" class="form-select"></select>
-                    </div>
-                    <div class="col-md-4">
-                        <label class="form-label fw-semibold">Managed By</label>
-                        <select id="assignManagedByUserId" class="form-select"></select>
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold">Managed By (Facility Unit Manager)</label>
+                        <input type="text" id="assignManagedByName" class="form-control" readonly>
+                        <input type="hidden" id="assignManagedByUserId">
                     </div>
                 </div>
                 <div id="assignMsg" class="mt-2"></div>
@@ -254,8 +248,42 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
     </div>
 </div>
 
+<!-- SEARCH QR MODAL -->
+<div class="modal fade" id="assignSearchQrModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-semibold"><i class="bi bi-qr-code-scan"></i>&ensp;Scan QR to Search Item</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex gap-2 mb-2">
+                    <select id="assignSearchCameraSelect" class="form-select form-select-sm" style="max-width: 260px;">
+                        <option value="">Loading cameras...</option>
+                    </select>
+                    <button type="button" id="assignSearchBtnStart" class="btn btn-success btn-sm">Start</button>
+                    <button type="button" id="assignSearchBtnStop" class="btn btn-outline-danger btn-sm" disabled>Stop</button>
+                </div>
+                <div style="width:100%;max-width:420px;margin:0 auto;position:relative;background:#000;border-radius:10px;overflow:hidden;aspect-ratio:1;">
+                    <div id="assignSearchPreview" style="position:absolute;top:0;left:0;width:100%;height:100%;"></div>
+                    <div id="assignSearchScannerLoading" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;font-size:14px;z-index:10;text-align:center;">
+                        <div>Initializing camera...</div>
+                    </div>
+                </div>
+                <div class="mt-2 small">
+                    <span class="text-muted">Last scanned:</span>
+                    <span id="assignSearchLastScanned" class="fw-semibold">-</span>
+                </div>
+                <div id="assignSearchScanError" class="text-danger small mt-1" style="display:none;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
 </body>
 <?php include_once DOMAIN_PATH . '/global/include_bottom.php'; ?>
+<script src="https://unpkg.com/html5-qrcode"></script>
+<script src="<?= BASE_URL ?>assets/js/qr_search.js"></script>
 <script src="<?= BASE_URL ?>assets/js/select2.min.js"></script>
 <script>
 const PROCESS_URL = <?php echo json_encode(BASE_URL . 'admin/modules/transactions/facility_inventory_records_process.php'); ?>;
@@ -265,13 +293,51 @@ let assignmentList = [];
 let selectedFacility = null;
 let selectedUnit = null;
 let assignItemsCache = [];
-let userOptionsCache = [];
-let unitManagerOptionsCache = [];
+let assignItemSearchMap = {};
 
 function showPageError(msg){
     const el = $('#pageMsg');
     if (!msg) { el.addClass('d-none').text(''); return; }
     el.removeClass('d-none').text(msg);
+}
+
+function notifySuccess(msg){
+    if (typeof success_notif === 'function') return success_notif(msg);
+    if ($.notify) return $.notify({ message: msg }, { type: 'success', delay: 2500, placement: { from: 'top', align: 'right' } });
+    alert(msg);
+}
+
+function notifyError(msg){
+    if (typeof error_notif === 'function') return error_notif(msg);
+    if ($.notify) return $.notify({ message: msg }, { type: 'danger', delay: 3000, placement: { from: 'top', align: 'right' } });
+    alert(msg);
+}
+
+function normalizeScannedCode(raw){
+    let text = String(raw || '').trim();
+    if (!text) return '';
+
+    try {
+        const parsed = JSON.parse(text);
+        if (parsed && typeof parsed === 'object') {
+            if (parsed.item_code) return String(parsed.item_code).trim();
+            if (parsed.property_code) return String(parsed.property_code).trim();
+            if (parsed.code) return String(parsed.code).trim();
+        }
+    } catch (e) {}
+
+    // If QR contains URL, try common query params.
+    if (/^https?:\/\//i.test(text)) {
+        try {
+            const u = new URL(text);
+            const qp = u.searchParams.get('item_code') || u.searchParams.get('property_code') || u.searchParams.get('code') || '';
+            if (qp) return qp.trim();
+            const seg = u.pathname.split('/').filter(Boolean).pop();
+            if (seg) return decodeURIComponent(seg).trim();
+        } catch (e) {}
+    }
+
+    return text.replace(/\s+/g, ' ').trim();
 }
 
 function loadFacilities(){
@@ -316,61 +382,63 @@ function loadUnits(){
     }, 'json');
 }
 
-function renderUserSelect($select, selectedValue, includeBlankLabel){
-    const blankLabel = includeBlankLabel || 'Select user';
-    $select.empty();
-    $select.append(`<option value="">${blankLabel}</option>`);
-    userOptionsCache.forEach(function(u){
-        const role = u.role_name ? ` [${u.role_name}]` : '';
-        const label = `${u.full_name || ''}${u.email ? ' - ' + u.email : ''}${role}`;
-        $select.append(`<option value="${u.user_id}">${label}</option>`);
+function formatUserOption(u){
+    const roleMap = { '1': 'SUPER ADMIN', '2': 'ADMIN', '3': 'ADMIN STAFF', '4': 'USER' };
+    const roleId = u.role_id != null ? String(u.role_id) : '';
+    const role = roleMap[roleId] ? ` [${roleMap[roleId]}]` : '';
+    const email = u.email ? ` - ${u.email}` : '';
+    return `${u.full_name || ''}${email}${role}`;
+}
+
+function initUserSelect2(){
+    if (!$.fn.select2) return;
+
+    const commonAjax = function(permanentOnly){
+        return {
+            url: PROCESS_URL,
+            type: 'POST',
+            dataType: 'json',
+            delay: 250,
+            data: function(params){
+                return {
+                    action: 'list_users',
+                    permanent_only: permanentOnly ? 1 : 0,
+                    search: params.term || ''
+                };
+            },
+            processResults: function(res){
+                if (!(res && res.success)) {
+                    return { results: [] };
+                }
+                const items = (res.data || []).map(function(u){
+                    return { id: String(u.user_id), text: formatUserOption(u) };
+                });
+                return { results: items };
+            }
+        };
+    };
+
+    if ($('#unitManagerUserId').hasClass('select2-hidden-accessible')) {
+        $('#unitManagerUserId').select2('destroy');
+    }
+    $('#unitManagerUserId').select2({
+        placeholder: 'Select facility unit manager',
+        allowClear: true,
+        width: '100%',
+        dropdownParent: $('#unitModal'),
+        ajax: commonAjax(true)
     });
-    if (selectedValue) {
-        $select.val(String(selectedValue));
-    }
-}
 
-function renderUnitManagerSelect(selectedValue){
-    const $select = $('#unitManagerUserId');
-    $select.empty();
-    $select.append('<option value="">Select facility unit manager</option>');
-    unitManagerOptionsCache.forEach(function(u){
-        const role = u.role_name ? ` [${u.role_name}]` : '';
-        const label = `${u.full_name || ''}${u.email ? ' - ' + u.email : ''}${role}`;
-        $select.append(`<option value="${u.user_id}">${label}</option>`);
+    if ($('#assignIssuedToUserId').hasClass('select2-hidden-accessible')) {
+        $('#assignIssuedToUserId').select2('destroy');
+    }
+    $('#assignIssuedToUserId').select2({
+        placeholder: 'Search user',
+        allowClear: true,
+        width: '100%',
+        dropdownParent: $('#assignModal'),
+        ajax: commonAjax(false)
     });
-    if (selectedValue) {
-        $select.val(String(selectedValue));
-    }
-    if ($.fn.select2 && $select.hasClass('select2-hidden-accessible')) {
-        $select.trigger('change.select2');
-    }
-}
-
-function loadUnitManagers(){
-    return $.post(PROCESS_URL, { action: 'list_users', permanent_only: 1 }, function(res){
-        if (!res.success) { return; }
-        unitManagerOptionsCache = (res.data || []).map(function(u){
-            const roleMap = { '1': 'SUPER ADMIN', '2': 'ADMIN', '3': 'ADMIN STAFF', '4': 'USER' };
-            u.role_name = roleMap[String(u.role_id)] || '';
-            return u;
-        });
-        renderUnitManagerSelect('');
-    }, 'json');
-}
-
-function loadUsers(){
-    return $.post(PROCESS_URL, { action: 'list_users' }, function(res){
-        if (!res.success) { return; }
-        userOptionsCache = (res.data || []).map(function(u){
-            const roleMap = { '1': 'SUPER ADMIN', '2': 'ADMIN', '3': 'ADMIN STAFF', '4': 'USER' };
-            u.role_name = roleMap[String(u.role_id)] || '';
-            return u;
-        });
-        renderUserSelect($('#assignIssuedToUserId'), '', 'Optional');
-        renderUserSelect($('#assignAccountableUserId'), '', 'Optional');
-        renderUserSelect($('#assignManagedByUserId'), '', 'Optional');
-    }, 'json');
 }
 
 function renderUnits(){
@@ -456,48 +524,138 @@ function renderAssignments(){
 }
 
 function loadAssignableItems(){
-    const moduleType = $('#assignModule').val();
     const search = ($('#assignSearch').val() || '').trim();
-    $.post(PROCESS_URL, { action: 'list_available_items', module_type: moduleType, search: search }, function(res){
-        if (!res.success) {
-            $('#assignMsg').html('<div class="alert alert-danger mb-0">' + (res.message || 'Failed to load items.') + '</div>');
-            return;
-        }
-        assignItemsCache = res.data || [];
-        const tbody = $('#assignItemTable tbody');
-        tbody.empty();
-        if (!assignItemsCache.length){
-            tbody.html('<tr><td colspan="5" class="text-muted text-center">No available items.</td></tr>');
-            return;
-        }
-        assignItemsCache.forEach(function(it){
-            tbody.append(`
-                <tr>
-                    <td>${it.item_code || ''}</td>
-                    <td>${it.item_description || ''}</td>
-                    <td class="text-center">${it.available_qty || 0}</td>
-                    <td>${it.unit || ''}</td>
-                    <td><button class="btn btn-sm btn-primary btn-pick-item" data-id="${it.source_item_id}" data-code="${it.item_code}">Pick</button></td>
-                </tr>
-            `);
-        });
-    }, 'json');
+    if (!search) return;
+    pickAssignableItemByCode(search);
 }
 
-function initSelect2Controls(){
+function applyPickedItem(item){
+    if (!item) return;
+    $('#assignSourceItemId').val(item.source_item_id || '');
+    $('#assignItemCode').val(item.item_code || '');
+    $('#assignSelected').val((item.item_code || '') + ' - ' + (item.item_description || ''));
+    if ($('#assignModule').val() === 'AST') {
+        $('#assignQty').val(1).prop('readonly', true);
+    } else {
+        $('#assignQty').prop('readonly', false);
+    }
+    $('#assignMsg').html('');
+}
+
+function initAssignableItemSelect2(){
     if (!$.fn.select2) return;
-    $('#unitManagerUserId').select2({
+    const $sel = $('#assignSearchSelect');
+    if ($sel.hasClass('select2-hidden-accessible')) {
+        $sel.select2('destroy');
+    }
+    assignItemSearchMap = {};
+    $sel.empty();
+    $sel.select2({
+        placeholder: 'Search item code/description',
+        allowClear: true,
         width: '100%',
-        dropdownParent: $('#unitModal'),
-        placeholder: 'Select facility unit manager',
-        allowClear: true
+        dropdownParent: $('#assignModal'),
+        ajax: {
+            url: PROCESS_URL,
+            type: 'POST',
+            dataType: 'json',
+            delay: 250,
+            data: function(params){
+                return {
+                    action: 'list_available_items',
+                    module_type: $('#assignModule').val(),
+                    search: params.term || ''
+                };
+            },
+            processResults: function(res){
+                if (!(res && res.success)) return { results: [] };
+                const results = (res.data || []).map(function(it){
+                    const key = String(it.source_item_id) + '::' + String(it.item_code || '');
+                    assignItemSearchMap[key] = it;
+                    return { id: key, text: `${it.item_code || ''} - ${it.item_description || ''}` };
+                });
+                return { results: results };
+            }
+        }
+    });
+
+    $sel.off('select2:select').on('select2:select', function(e){
+        const id = e.params && e.params.data ? e.params.data.id : '';
+        const item = assignItemSearchMap[id] || null;
+        applyPickedItem(item);
+    });
+    $sel.off('select2:clear').on('select2:clear', function(){
+        $('#assignSourceItemId').val('');
+        $('#assignItemCode').val('');
+        $('#assignSelected').val('');
     });
 }
 
+function pickAssignableItemByCode(code){
+    const q = normalizeScannedCode(code);
+    if (!q) return;
+    const selectedModule = $('#assignModule').val();
+    let moduleType = selectedModule;
+    const qUpper = q.toUpperCase();
+    let forcedByPrefix = false;
+    if (qUpper.startsWith('AST-')) { moduleType = 'AST'; forcedByPrefix = true; }
+    if (qUpper.startsWith('CSM-')) { moduleType = 'CSM'; forcedByPrefix = true; }
+    if ($('#assignModule').val() !== moduleType) {
+        $('#assignModule').val(moduleType);
+        initAssignableItemSelect2();
+    }
+
+    const runSearch = function(mod){
+        $.post(PROCESS_URL, {
+            action: 'list_available_items',
+            module_type: mod,
+            search: q
+        }, function(res){
+            if (!(res && res.success)) {
+                $('#assignMsg').html('<div class="alert alert-danger mb-0">' + ((res && res.message) || 'Failed to search item.') + '</div>');
+                return;
+            }
+            const rows = res.data || [];
+            if (!rows.length) {
+                return $.post(PROCESS_URL, {
+                    action: 'diagnose_item_search',
+                    module_type: mod,
+                    search: q
+                }, function(diag){
+                    const msg = (diag && diag.message) ? diag.message : 'No matching available item found.';
+                    $('#assignMsg').html('<div class="alert alert-warning mb-0">' + msg + '</div>');
+                }, 'json').fail(function(){
+                    $('#assignMsg').html('<div class="alert alert-warning mb-0">No matching available item found.</div>');
+                });
+            }
+            const exact = rows.find(function(it){
+                return String(it.item_code || '').toLowerCase() === q.toLowerCase();
+            });
+            const picked = exact || rows[0];
+            const key = String(picked.source_item_id) + '::' + String(picked.item_code || '');
+            assignItemSearchMap[key] = picked;
+            const opt = new Option(`${picked.item_code || ''} - ${picked.item_description || ''}`, key, true, true);
+            $('#assignSearchSelect').append(opt).trigger('change');
+            applyPickedItem(picked);
+            if (!exact && rows.length > 1) {
+                $('#assignMsg').html('<div class="alert alert-warning mb-0">Multiple matches found. Picked first match. Refine search if needed.</div>');
+            }
+        }, 'json').fail(function(){
+            $('#assignMsg').html('<div class="alert alert-danger mb-0">Server error while searching item.</div>');
+        });
+    };
+
+    // Keep diagnostics aligned with the user's chosen module.
+    // Only prefix-based module override is allowed to prevent misleading messages.
+    if (!forcedByPrefix && selectedModule !== moduleType) {
+        moduleType = selectedModule;
+    }
+    runSearch(moduleType);
+}
+
 $(document).ready(function(){
-    initSelect2Controls();
-    loadUnitManagers();
-    loadUsers();
+    initUserSelect2();
+    initAssignableItemSelect2();
     loadFacilities();
 
     $('#facilityList').on('click', '.facility-card', function(e){
@@ -545,7 +703,7 @@ $(document).ready(function(){
             }
             $('#facilityModal').modal('hide');
             loadFacilities();
-            success_notif(res.message || 'Saved');
+            notifySuccess(res.message || 'Saved');
         }, 'json');
     });
 
@@ -555,7 +713,7 @@ $(document).ready(function(){
         $('#unitType').val('ROOM');
         $('#unitCode').val('');
         $('#unitName').val('');
-        $('#unitManagerUserId').val('').trigger('change');
+        $('#unitManagerUserId').val(null).trigger('change');
         $('#unitMsg').html('');
         $('#unitModal').modal('show');
     });
@@ -579,7 +737,14 @@ $(document).ready(function(){
         $('#unitType').val(u.unit_type || 'ROOM');
         $('#unitCode').val(u.unit_code || '');
         $('#unitName').val(u.unit_name || '');
-        $('#unitManagerUserId').val(u.facility_unit_manager_user_id ? String(u.facility_unit_manager_user_id) : '').trigger('change');
+        const managerId = u.facility_unit_manager_user_id ? String(u.facility_unit_manager_user_id) : '';
+        const managerName = u.unit_manager_name ? String(u.unit_manager_name) : '';
+        if (managerId) {
+            const opt = new Option(managerName || ('User #' + managerId), managerId, true, true);
+            $('#unitManagerUserId').append(opt).trigger('change');
+        } else {
+            $('#unitManagerUserId').val(null).trigger('change');
+        }
         $('#unitMsg').html('');
         $('#unitModal').modal('show');
     });
@@ -605,7 +770,7 @@ $(document).ready(function(){
             }
             $('#unitModal').modal('hide');
             loadUnits();
-            success_notif(res.message || 'Saved');
+            notifySuccess(res.message || 'Saved');
         }, 'json');
     });
 
@@ -617,13 +782,14 @@ $(document).ready(function(){
         $('#assignSelected').val('');
         $('#assignSourceItemId').val('');
         $('#assignItemCode').val('');
+        $('#assignSearch').val('');
+        $('#assignSearchSelect').val(null).trigger('change');
         $('#assignQty').val(1);
         $('#assignRemarks').val('');
-        $('#assignIssuedToUserId').val('');
-        $('#assignAccountableUserId').val(selectedUnit && selectedUnit.facility_unit_manager_user_id ? String(selectedUnit.facility_unit_manager_user_id) : '');
-        $('#assignManagedByUserId').val('');
-        $('#assignMsg').html('');
-        loadAssignableItems();
+        $('#assignIssuedToUserId').val(null).trigger('change');
+        $('#assignManagedByUserId').val(selectedUnit && selectedUnit.facility_unit_manager_user_id ? String(selectedUnit.facility_unit_manager_user_id) : '');
+        $('#assignManagedByName').val(selectedUnit && selectedUnit.unit_manager_name ? String(selectedUnit.unit_manager_name) : '');
+        $('#assignMsg').html('<div class="alert alert-info mb-0">Search item code/description or scan QR.</div>');
         $('#assignModal').modal('show');
     });
 
@@ -631,29 +797,18 @@ $(document).ready(function(){
         $('#assignSelected').val('');
         $('#assignSourceItemId').val('');
         $('#assignItemCode').val('');
+        $('#assignSearch').val('');
+        $('#assignSearchSelect').val(null).trigger('change');
         $('#assignQty').val(1);
-        loadAssignableItems();
+        initAssignableItemSelect2();
     });
-    $('#assignSearch').on('input', loadAssignableItems);
-
-    $('#assignItemTable').on('click', '.btn-pick-item', function(){
-        const sourceId = $(this).data('id');
-        const code = $(this).data('code');
-        const item = assignItemsCache.find(x => String(x.source_item_id) === String(sourceId) && String(x.item_code) === String(code));
-        if (!item) return;
-        $('#assignSourceItemId').val(item.source_item_id);
-        $('#assignItemCode').val(item.item_code);
-        $('#assignSelected').val((item.item_code || '') + ' - ' + (item.item_description || ''));
-        if ($('#assignModule').val() === 'AST') {
-            $('#assignQty').val(1).prop('readonly', true);
-        } else {
-            $('#assignQty').prop('readonly', false);
-        }
-    });
-
     $('#confirmAssignBtn').on('click', function(){
         if (!selectedFacility || !selectedUnit){
             $('#assignMsg').html('<div class="alert alert-danger mb-0">Select facility and unit first.</div>');
+            return;
+        }
+        if (!$('#assignSourceItemId').val() || !$('#assignItemCode').val()) {
+            $('#assignMsg').html('<div class="alert alert-danger mb-0">No item selected. Search or scan QR first.</div>');
             return;
         }
         const payload = {
@@ -666,7 +821,7 @@ $(document).ready(function(){
             qty: $('#assignQty').val(),
             remarks: $('#assignRemarks').val().trim(),
             issued_to_user_id: $('#assignIssuedToUserId').val(),
-            accountable_user_id: $('#assignAccountableUserId').val(),
+            accountable_user_id: $('#assignIssuedToUserId').val(),
             managed_by_user_id: $('#assignManagedByUserId').val()
         };
         $.post(PROCESS_URL, payload, function(res){
@@ -678,7 +833,7 @@ $(document).ready(function(){
             loadAssignments();
             loadUnits();
             loadFacilities();
-            success_notif(res.message || 'Assigned');
+            notifySuccess(res.message || 'Assigned');
         }, 'json');
     });
 
@@ -686,11 +841,11 @@ $(document).ready(function(){
         const id = $(this).data('id');
         const remarks = prompt('Report remarks (optional):') || '';
         $.post(PROCESS_URL, { action: 'set_assignment_status', assignment_id: id, status: 'REPORTED', remarks: remarks }, function(res){
-            if (!res.success){ error_notif(res.message || 'Failed to update status'); return; }
+            if (!res.success){ notifyError(res.message || 'Failed to update status'); return; }
             loadAssignments();
             loadUnits();
             loadFacilities();
-            success_notif(res.message || 'Updated');
+            notifySuccess(res.message || 'Updated');
         }, 'json');
     });
 
@@ -698,13 +853,31 @@ $(document).ready(function(){
         const id = $(this).data('id');
         if (!confirm('Mark this assignment as returned?')) return;
         $.post(PROCESS_URL, { action: 'set_assignment_status', assignment_id: id, status: 'RETURNED' }, function(res){
-            if (!res.success){ error_notif(res.message || 'Failed to update status'); return; }
+            if (!res.success){ notifyError(res.message || 'Failed to update status'); return; }
             loadAssignments();
             loadUnits();
             loadFacilities();
-            success_notif(res.message || 'Updated');
+            notifySuccess(res.message || 'Updated');
         }, 'json');
     });
+
+    if (typeof initQrSearch === 'function') {
+        initQrSearch({
+            modalId: '#assignSearchQrModal',
+            openButton: '#openAssignSearchScanner',
+            searchInput: '#assignSearch',
+            onSearch: function () {
+                pickAssignableItemByCode($('#assignSearch').val() || '');
+            },
+            cameraSelectId: '#assignSearchCameraSelect',
+            startBtnId: '#assignSearchBtnStart',
+            stopBtnId: '#assignSearchBtnStop',
+            previewId: '#assignSearchPreview',
+            lastScannedId: '#assignSearchLastScanned',
+            errorId: '#assignSearchScanError',
+            loadingId: '#assignSearchScannerLoading'
+        });
+    }
 });
 </script>
 </html>

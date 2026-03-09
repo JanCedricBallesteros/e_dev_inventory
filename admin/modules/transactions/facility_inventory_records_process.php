@@ -257,6 +257,9 @@ try {
         case 'list_users':
             $search = _post('search');
             $permanent_only = _int(_post('permanent_only'), 0) === 1;
+            $limit = _int(_post('limit'), 500);
+            if ($limit <= 0) $limit = 500;
+            if ($limit > 500) $limit = 500;
             $hasEmail = fr_column_exists('users', 'email');
             $hasEmailAddress = fr_column_exists('users', 'email_address');
             $hasRoleId = fr_column_exists('users', 'role_id');
@@ -289,7 +292,7 @@ try {
                         LEFT JOIN employment_status es ON es.employment_status_id = u.employment_status_id
                         {$where}
                         ORDER BY u.l_name ASC, u.f_name ASC
-                        LIMIT 500";
+                        LIMIT " . (int)$limit;
             } else {
                 if ($permanent_only) {
                     // If employment-status schema is unavailable, do not hard-fail UI.
@@ -308,7 +311,7 @@ try {
                         FROM users u
                         {$where}
                         ORDER BY u.l_name ASC, u.f_name ASC
-                        LIMIT 500";
+                        LIMIT " . (int)$limit;
             }
             $res = call_mysql_query($sql);
             $rows = array();
@@ -324,12 +327,17 @@ try {
             $module_type = strtoupper(_post('module_type', 'AST'));
             $search = _post('search');
             $rows = array();
+            $search = trim(preg_replace('/\s+/', ' ', (string)$search));
 
             if ($module_type === 'CSM') {
                 $where = "WHERE c.status = 'available' AND c.current_unit_quantity > 0";
                 if ($search !== '') {
                     $s = _esc('%' . $search . '%');
-                    $where .= " AND (c.inventory_system_item_code LIKE '{$s}' OR c.item_description LIKE '{$s}')";
+                    $where .= " AND (
+                        c.inventory_system_item_code LIKE '{$s}'
+                        OR c.item_description LIKE '{$s}'
+                        OR CONCAT_WS(' ', c.inventory_system_item_code, c.item_description) LIKE '{$s}'
+                    )";
                 }
                 $sql = "SELECT
                             c.inventory_id AS source_item_id,
@@ -339,14 +347,18 @@ try {
                             '' AS unit
                         FROM csm_inventory c
                         {$where}
-                        ORDER BY c.inventory_system_item_code ASC
-                        LIMIT 300";
+                        ORDER BY c.inventory_system_item_code ASC";
             } else {
                 $module_type = 'AST';
                 $where = "WHERE a.is_available = 1 AND a.available_qty > 0";
                 if ($search !== '') {
                     $s = _esc('%' . $search . '%');
-                    $where .= " AND (a.property_code LIKE '{$s}' OR a.item_description LIKE '{$s}' OR a.serial_number LIKE '{$s}')";
+                    $where .= " AND (
+                        a.property_code LIKE '{$s}'
+                        OR a.item_description LIKE '{$s}'
+                        OR a.serial_number LIKE '{$s}'
+                        OR CONCAT_WS(' ', a.property_code, a.item_description, a.serial_number) LIKE '{$s}'
+                    )";
                 }
                 $sql = "SELECT
                             a.item_id AS source_item_id,
@@ -356,8 +368,7 @@ try {
                             a.unit
                         FROM ast_inventory a
                         {$where}
-                        ORDER BY a.property_code ASC
-                        LIMIT 300";
+                        ORDER BY a.property_code ASC";
             }
             $res = call_mysql_query($sql);
             if ($res) {
@@ -367,6 +378,83 @@ try {
                 }
             }
             json_response(array('success' => true, 'data' => $rows));
+            break;
+
+        case 'diagnose_item_search':
+            $module_type = strtoupper(_post('module_type', 'AST'));
+            $search = trim(preg_replace('/\s+/', ' ', (string)_post('search')));
+            if ($search === '') {
+                json_response(array('success' => true, 'message' => 'Enter item code or description to search.'));
+            }
+
+            if (!in_array($module_type, array('AST', 'CSM'), true)) {
+                $module_type = 'AST';
+            }
+            $s = _esc('%' . $search . '%');
+
+            if ($module_type === 'AST') {
+                $sqlAny = "SELECT property_code, item_description, available_qty, is_available
+                           FROM ast_inventory
+                           WHERE property_code LIKE '{$s}'
+                              OR item_description LIKE '{$s}'
+                              OR serial_number LIKE '{$s}'
+                           ORDER BY property_code ASC
+                           LIMIT 1";
+                $anyRes = call_mysql_query($sqlAny);
+                $any = $anyRes ? call_mysql_fetch_array($anyRes) : null;
+                if ($any) {
+                    $aq = (int)($any['available_qty'] ?? 0);
+                    $ia = (int)($any['is_available'] ?? 0);
+                    if ($aq <= 0 || $ia !== 1) {
+                        json_response(array(
+                            'success' => true,
+                            'message' => "Found AST item {$any['property_code']}, but it is not available for assignment (available qty: {$aq}, is_available: {$ia})."
+                        ));
+                    }
+                    json_response(array(
+                        'success' => true,
+                        'message' => "AST item {$any['property_code']} exists and is available. Please select it from the dropdown results."
+                    ));
+                }
+
+                $altRes = call_mysql_query("SELECT inventory_system_item_code FROM csm_inventory
+                                            WHERE inventory_system_item_code LIKE '{$s}' OR item_description LIKE '{$s}'
+                                            LIMIT 1");
+                if ($altRes && ($alt = call_mysql_fetch_array($altRes))) {
+                    json_response(array('success' => true, 'message' => "No AST match. Found similar item in CSM ({$alt['inventory_system_item_code']}). Try switching module to CSM."));
+                }
+                json_response(array('success' => true, 'message' => 'No AST item matched your search.'));
+            } else {
+                $sqlAny = "SELECT inventory_system_item_code, item_description, status, current_unit_quantity
+                           FROM csm_inventory
+                           WHERE inventory_system_item_code LIKE '{$s}'
+                              OR item_description LIKE '{$s}'
+                           ORDER BY inventory_system_item_code ASC
+                           LIMIT 1";
+                $anyRes = call_mysql_query($sqlAny);
+                $any = $anyRes ? call_mysql_fetch_array($anyRes) : null;
+                if ($any) {
+                    $qty = (int)($any['current_unit_quantity'] ?? 0);
+                    $status = strtolower((string)($any['status'] ?? ''));
+                    if ($status !== 'available' || $qty <= 0) {
+                        json_response(array(
+                            'success' => true,
+                            'message' => "Found CSM item {$any['inventory_system_item_code']}, but it is not available for assignment (status: {$any['status']}, current qty: {$qty})."
+                        ));
+                    }
+                    json_response(array(
+                        'success' => true,
+                        'message' => "CSM item {$any['inventory_system_item_code']} exists and is available. Please select it from the dropdown results."
+                    ));
+                }
+                $altRes = call_mysql_query("SELECT property_code FROM ast_inventory
+                                            WHERE property_code LIKE '{$s}' OR item_description LIKE '{$s}' OR serial_number LIKE '{$s}'
+                                            LIMIT 1");
+                if ($altRes && ($alt = call_mysql_fetch_array($altRes))) {
+                    json_response(array('success' => true, 'message' => "No CSM match. Found similar item in AST ({$alt['property_code']}). Try switching module to AST."));
+                }
+                json_response(array('success' => true, 'message' => 'No CSM item matched your search.'));
+            }
             break;
 
         case 'list_unit_inventory':
@@ -413,7 +501,8 @@ try {
             $qty = _float(_post('qty'), 1);
             $remarks = _post('remarks');
             $issued_to_user_id = _int(_post('issued_to_user_id'), 0);
-            $accountable_user_id = _int(_post('accountable_user_id'), 0);
+            // Business rule: accountable officer is the same as issued-to user.
+            $accountable_user_id = $issued_to_user_id > 0 ? $issued_to_user_id : 0;
             $managed_by_user_id = _int(_post('managed_by_user_id'), 0);
             $hasManagedBy = fr_column_exists('facility_records_assignments', 'managed_by_user_id');
 
@@ -421,6 +510,19 @@ try {
                 json_response(array('success' => false, 'message' => 'Invalid assignment payload.'), 422);
             }
             if ($qty <= 0) $qty = 1;
+
+            // Force managed-by from facility unit manager.
+            $hasUnitManager = fr_column_exists('facility_records_units', 'facility_unit_manager_user_id');
+            $hasUnitManagerLegacy = fr_column_exists('facility_records_units', 'accountable_user_id');
+            $unitManagerCol = $hasUnitManager ? 'facility_unit_manager_user_id' : ($hasUnitManagerLegacy ? 'accountable_user_id' : '');
+            if ($unitManagerCol !== '') {
+                $mgrRes = call_mysql_query("SELECT {$unitManagerCol} AS unit_manager_user_id
+                                            FROM facility_records_units
+                                            WHERE unit_id = {$unit_id}
+                                            LIMIT 1");
+                $mgrRow = $mgrRes ? call_mysql_fetch_array($mgrRes) : null;
+                $managed_by_user_id = (int)($mgrRow['unit_manager_user_id'] ?? 0);
+            }
 
             $item_description = '';
             $item_unit = '';

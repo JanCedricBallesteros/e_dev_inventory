@@ -685,7 +685,7 @@ function initTable() {
                 const code = cell.getValue();
                 return `<button class="btn btn-sm btn-outline-primary btn-set-availability" data-code="${code}">Set</button>`;
             }},
-            { title: "Date", field: "created_at", width: 130, headerFilter: "input", headerFilterPlaceholder: "YYYY-MM-DD", formatter: function(cell){
+            { title: "Date", field: "created_at", width: 130 , formatter: function(cell){
                 const d = parseDate(cell.getValue());
                 return d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '-';
             }}

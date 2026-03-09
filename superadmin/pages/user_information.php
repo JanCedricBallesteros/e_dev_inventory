@@ -248,15 +248,19 @@ $json_table = output($table_array);
                     <form id="accessForm">
                         <input type="hidden" id="accessUserId" name="user_id">
                         <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="accessCSM" value="CSM">
+                            <input class="form-check-input" type="radio" name="accessRadio" id="accessNone" value="">
+                            <label class="form-check-label" for="accessNone">None</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="accessRadio" id="accessCSM" value="CSM">
                             <label class="form-check-label" for="accessCSM">Consumable (CSM)</label>
                         </div>
                         <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="accessAST" value="AST">
+                            <input class="form-check-input" type="radio" name="accessRadio" id="accessAST" value="AST">
                             <label class="form-check-label" for="accessAST">Non-Consumable (AST)</label>
                         </div>
                         <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="accessPO" value="PO">
+                            <input class="form-check-input" type="radio" name="accessRadio" id="accessPO" value="PO">
                             <label class="form-check-label" for="accessPO">Procurement (PO)</label>
                         </div>
                     </form>
@@ -360,9 +364,10 @@ document.addEventListener("DOMContentLoaded", function () {
         document.getElementById('accessUserInfo').innerHTML = `<strong>${userName}</strong> (ID: ${generalId})`;
 
         const codes = Array.isArray(accessCodes) ? accessCodes : [];
-        document.getElementById('accessCSM').checked = codes.includes('CSM');
-        document.getElementById('accessAST').checked = codes.includes('AST');
-        document.getElementById('accessPO').checked = codes.includes('PO');
+        const selected = codes.length ? codes[0] : '';
+        document.querySelectorAll('input[name="accessRadio"]').forEach(r => {
+            r.checked = r.value === selected;
+        });
 
         $('#accessModal').modal('show');
     };
@@ -434,10 +439,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
     document.getElementById('saveAccessBtn').addEventListener('click', function() {
         const userId = document.getElementById('accessUserId').value;
-        const access = [];
-        if (document.getElementById('accessCSM').checked) access.push('CSM');
-        if (document.getElementById('accessAST').checked) access.push('AST');
-        if (document.getElementById('accessPO').checked) access.push('PO');
+        const selected = document.querySelector('input[name="accessRadio"]:checked');
+        const access = (selected && selected.value) ? [selected.value] : [];
 
         const formData = new FormData();
         formData.append('user_id', userId);
