@@ -37,6 +37,10 @@ if (!(
     ?>
 
     <main id="main" class="main">
+        <div class="pagetitle">
+            <h1 class="h4 fw-semibold mb-1">Physical Checking (CSM)</h1>
+            <p class="text-muted small mb-0">Create audit sessions and record physical checks for consumable items.</p>
+        </div>
         <section class="section">
             <div class="card">
                 <div class="card-header bg-eclearance text-white fw-semibold">
