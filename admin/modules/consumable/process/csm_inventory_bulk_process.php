@@ -25,21 +25,6 @@ function _esc($v) {
 }
 function _today() { return date('Y-m-d'); }
 
-/**
- * Accepts:
- * - blank => ''
- * - numbers only => '1'
- * - full code => 'CSM-0002-0001' or 'CSM-CSM0002-0001' (we normalize cat part)
- *
- * Returns array:
- *  [
- *    'ok' => bool,
- *    'type' => 'blank'|'digits'|'full',
- *    'digits' => ''|'1',
- *    'cat_from_code' => ''|'0002',
- *    'error' => ''|string
- *  ]
- */
 function _parse_item_code_input($raw) {
     $s = trim((string)$raw);
     if ($s === '') return ['ok'=>true, 'type'=>'blank', 'digits'=>'', 'cat_from_code'=>'', 'error'=>''];
@@ -48,7 +33,7 @@ function _parse_item_code_input($raw) {
         return ['ok'=>true, 'type'=>'digits', 'digits'=>$s, 'cat_from_code'=>'', 'error'=>''];
     }
 
-    if (preg_match('/^CSM-([A-Za-z0-9\-_]+)-(\d{4})$/i', $s, $m)) {
+    if (preg_match('/^CSM-([A-Za-z0-9\-_]+)-(\d{4})$/', $s, $m)) {
         $cat = (string)$m[1];
         if (preg_match('/^CSM-?(\d+)$/i', $cat, $mm)) $cat = (string)$mm[1];
 
@@ -297,9 +282,32 @@ function normalize_allowed_employment_csm_bulk($raw) {
     ];
 }
 
-function _compute_status_from_state_bulk($currentQty, $allowedRaw) {
+/*
+0 = Unavailable
+1 = Available
+2 = Stock Critical
+3 = Out of Stock
+*/
+function _compute_status_from_state_bulk($currentQty, $critLevel, $allowedRaw) {
+    $currentQty = (int)$currentQty;
+    $critLevel  = (int)$critLevel;
+
     $norm = normalize_allowed_employment_csm_bulk($allowedRaw);
-    return ((int)$currentQty > 0 && ($norm['mode'] ?? 'all') !== 'none') ? 1 : 0;
+    $mode = $norm['mode'] ?? 'all';
+
+    if ($mode === 'none') {
+        return 0;
+    }
+
+    if ($currentQty <= 0) {
+        return 3;
+    }
+
+    if ($critLevel > 0 && $currentQty <= $critLevel) {
+        return 2;
+    }
+
+    return 1;
 }
 
 // -------------------- ROUTING --------------------
@@ -346,9 +354,6 @@ if ($action === 'download_template') {
     exit();
 }
 
-/**
- * EXPORT CSV (SERVER)
- */
 if ($action === 'export_csv') {
     $cat = isset($_GET['item_category_code']) ? trim((string)$_GET['item_category_code']) : '';
 
@@ -423,7 +428,6 @@ if ($action !== 'bulk_import') {
     exit();
 }
 
-// -------------------- BULK IMPORT --------------------
 header('Content-Type: application/json; charset=utf-8');
 
 $mode = isset($_POST['mode']) ? trim((string)$_POST['mode']) : 'upsert';
@@ -545,15 +549,13 @@ foreach ($rows as $r) {
     $allowedNorm = normalize_allowed_payload_csm_bulk($allowedRaw);
     $allowed_json = $allowedNorm['json'];
 
-    // Status column is accepted, but final status is auto-computed from qty + rules.
-    // We still validate the CSV value if present so bad imports are caught.
-    if ($statusCsvRaw !== '' && !in_array($statusCsvRaw, ['0', '1'], true)) {
-        if (count($errors) < $errorsLimit) $errors[] = "Row {$rowNum}: status must be 0 or 1 when provided.";
+    if ($statusCsvRaw !== '' && !in_array($statusCsvRaw, ['0', '1', '2', '3'], true)) {
+        if (count($errors) < $errorsLimit) $errors[] = "Row {$rowNum}: status must be 0, 1, 2, or 3 when provided.";
         $skipped++;
         continue;
     }
 
-    $finalStatus = _compute_status_from_state_bulk($current_unit_quantity, $allowed_json);
+    $finalStatus = _compute_status_from_state_bulk($current_unit_quantity, $unit_crit_level, $allowed_json);
 
     $codeEsc = _esc($fullCode);
     $existsRes = call_mysql_query("SELECT inventory_id FROM csm_inventory WHERE inventory_system_item_code='{$codeEsc}' LIMIT 1");
