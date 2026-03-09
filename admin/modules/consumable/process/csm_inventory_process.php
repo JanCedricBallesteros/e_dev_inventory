@@ -45,13 +45,10 @@ function _only_digits_or_blank($s) {
     $s = trim((string)$s);
     if ($s === '') return '';
 
-    // remove spaces
     $compact = preg_replace('/\s+/', '', $s);
 
-    // digits only (allow leading zeros)
     if (preg_match('/^\d+$/', $compact)) return $compact;
 
-    // allow: CSM0001 / CSM-0001 / CSM_0001 / csm0001
     if (preg_match('/^CSM[-_]*\d+$/i', $compact)) {
         if (preg_match('/\d+$/', $compact, $m)) return (string)$m[0];
     }
@@ -128,7 +125,6 @@ function _canon_item_code($code) {
     $code = trim((string)$code);
     if ($code === '') return '';
     $c = preg_replace('/\s+/', '', $code);
-    // Normalize to CSM-... if it matches
     if (preg_match('/^CSM-([A-Za-z0-9\-_]+)-(\d{4})$/i', $c, $m)) {
         return "CSM-" . $m[1] . "-" . $m[2];
     }
@@ -136,7 +132,231 @@ function _canon_item_code($code) {
 }
 
 /**
- * Resolve display_image (same logic you suggested)
+ * -------------------- EMPLOYMENT STATUS HELPERS --------------------
+ * AST-style support:
+ * - ALL  => NULL
+ * - NONE => {"none":true}
+ * - STRUCTURED => {"teaching":[...],"non_teaching":[...]}
+ * - LEGACY CSV  => "1,2,3" becomes structured on save
+ */
+
+function get_employment_status_map_csm() {
+    $map = [];
+    $res = call_mysql_query("SELECT employment_status_id, status_name, status_code FROM employment_status ORDER BY employment_status_id ASC");
+    if ($res) {
+        while ($row = call_mysql_fetch_array($res)) {
+            $map[(int)$row['employment_status_id']] = [
+                'status_name' => $row['status_name'] ?: ($row['status_code'] ?? ''),
+                'status_code' => $row['status_code'] ?? ''
+            ];
+        }
+    }
+    return $map;
+}
+
+function normalize_allowed_employment_csm($raw) {
+    if ($raw === null || $raw === '') {
+        return [
+            'mode' => 'all',
+            'teaching' => [],
+            'non_teaching' => [],
+            'selected_ids' => []
+        ];
+    }
+
+    $decoded = is_array($raw) ? $raw : json_decode((string)$raw, true);
+
+    if (!is_array($decoded)) {
+        $s = trim((string)$raw);
+
+        if ($s === '' || strcasecmp($s, 'ALL') === 0) {
+            return ['mode' => 'all', 'teaching' => [], 'non_teaching' => [], 'selected_ids' => []];
+        }
+
+        if (strcasecmp($s, 'NONE') === 0) {
+            return ['mode' => 'none', 'teaching' => [], 'non_teaching' => [], 'selected_ids' => []];
+        }
+
+        $parts = preg_split('/\s*,\s*/', $s);
+        $ids = array_values(array_filter(array_map('intval', $parts)));
+
+        if (!empty($ids)) {
+            return [
+                'mode' => 'legacy',
+                'teaching' => $ids,
+                'non_teaching' => $ids,
+                'selected_ids' => $ids
+            ];
+        }
+
+        return ['mode' => 'all', 'teaching' => [], 'non_teaching' => [], 'selected_ids' => []];
+    }
+
+    if (!empty($decoded['none'])) {
+        return ['mode' => 'none', 'teaching' => [], 'non_teaching' => [], 'selected_ids' => []];
+    }
+
+    if (array_key_exists('teaching', $decoded) || array_key_exists('non_teaching', $decoded)) {
+        $teaching = array_values(array_filter(array_map('intval', (array)($decoded['teaching'] ?? []))));
+        $non = array_values(array_filter(array_map('intval', (array)($decoded['non_teaching'] ?? []))));
+        $selected = array_values(array_unique(array_merge($teaching, $non)));
+
+        if (empty($teaching) && empty($non)) {
+            return ['mode' => 'all', 'teaching' => [], 'non_teaching' => [], 'selected_ids' => []];
+        }
+
+        return [
+            'mode' => 'structured',
+            'teaching' => $teaching,
+            'non_teaching' => $non,
+            'selected_ids' => $selected
+        ];
+    }
+
+    $list = array_values($decoded);
+    $listStr = array_map('strval', $list);
+
+    if (in_array('NONE', $listStr, true)) {
+        return ['mode' => 'none', 'teaching' => [], 'non_teaching' => [], 'selected_ids' => []];
+    }
+
+    $ids = array_values(array_filter(array_map('intval', $list)));
+    if (empty($ids)) {
+        return ['mode' => 'all', 'teaching' => [], 'non_teaching' => [], 'selected_ids' => []];
+    }
+
+    return [
+        'mode' => 'legacy',
+        'teaching' => $ids,
+        'non_teaching' => $ids,
+        'selected_ids' => $ids
+    ];
+}
+
+function normalize_allowed_payload_csm($raw) {
+    if ($raw === null || $raw === '') {
+        return [
+            'mode' => 'all',
+            'json' => null,
+            'teaching' => [],
+            'non_teaching' => []
+        ];
+    }
+
+    $s = trim((string)$raw);
+
+    if ($s === '' || strcasecmp($s, 'ALL') === 0) {
+        return ['mode' => 'all', 'json' => null, 'teaching' => [], 'non_teaching' => []];
+    }
+
+    if (strcasecmp($s, 'NONE') === 0) {
+        return [
+            'mode' => 'none',
+            'json' => json_encode(['none' => true]),
+            'teaching' => [],
+            'non_teaching' => []
+        ];
+    }
+
+    $decoded = json_decode($s, true);
+    if (is_array($decoded) && (array_key_exists('teaching', $decoded) || array_key_exists('non_teaching', $decoded) || array_key_exists('none', $decoded))) {
+        if (!empty($decoded['none'])) {
+            return [
+                'mode' => 'none',
+                'json' => json_encode(['none' => true]),
+                'teaching' => [],
+                'non_teaching' => []
+            ];
+        }
+
+        $teaching = array_values(array_filter(array_map('intval', (array)($decoded['teaching'] ?? []))));
+        $non = array_values(array_filter(array_map('intval', (array)($decoded['non_teaching'] ?? []))));
+
+        if (empty($teaching) && empty($non)) {
+            return ['mode' => 'all', 'json' => null, 'teaching' => [], 'non_teaching' => []];
+        }
+
+        return [
+            'mode' => 'structured',
+            'json' => json_encode(['teaching' => $teaching, 'non_teaching' => $non]),
+            'teaching' => $teaching,
+            'non_teaching' => $non
+        ];
+    }
+
+    $parts = preg_split('/\s*,\s*/', $s);
+    $ids = array_values(array_filter(array_map('intval', $parts)));
+
+    if (empty($ids)) {
+        return ['mode' => 'all', 'json' => null, 'teaching' => [], 'non_teaching' => []];
+    }
+
+    return [
+        'mode' => 'legacy',
+        'json' => json_encode(['teaching' => $ids, 'non_teaching' => $ids]),
+        'teaching' => $ids,
+        'non_teaching' => $ids
+    ];
+}
+
+function build_allowed_status_label_csm($norm, $statusMap) {
+    $mode = $norm['mode'] ?? 'all';
+
+    if ($mode === 'none') return 'None';
+    if ($mode === 'all') return 'All';
+
+    $teach = $norm['teaching'] ?? [];
+    $non = $norm['non_teaching'] ?? [];
+    $labels = [];
+
+    if (!empty($teach)) {
+        $names = [];
+        foreach ($teach as $sid) {
+            $sid = (int)$sid;
+            if (isset($statusMap[$sid])) $names[] = $statusMap[$sid]['status_name'];
+        }
+        $labels[] = 'Teaching: ' . (!empty($names) ? implode(', ', $names) : 'None');
+    } else {
+        $labels[] = 'Teaching: None';
+    }
+
+    if (!empty($non)) {
+        $names = [];
+        foreach ($non as $sid) {
+            $sid = (int)$sid;
+            if (isset($statusMap[$sid])) $names[] = $statusMap[$sid]['status_name'];
+        }
+        $labels[] = 'Non-Teaching: ' . (!empty($names) ? implode(', ', $names) : 'None');
+    } else {
+        $labels[] = 'Non-Teaching: None';
+    }
+
+    return implode(' | ', $labels);
+}
+
+function _compute_status_from_state($currentQty, $allowedRaw) {
+    $norm = normalize_allowed_employment_csm($allowedRaw);
+    return ((int)$currentQty > 0 && ($norm['mode'] ?? 'all') !== 'none') ? 1 : 0;
+}
+
+function enrich_csm_row($row, $statusMap) {
+    if (!$row) return $row;
+
+    $norm = normalize_allowed_employment_csm($row['allowed_employment_status'] ?? '');
+    $row['allowed_status_names'] = build_allowed_status_label_csm($norm, $statusMap);
+    $row['allowed_employment_status'] = [
+        'mode' => $norm['mode'],
+        'teaching' => $norm['teaching'],
+        'non_teaching' => $norm['non_teaching'],
+        'selected_ids' => $norm['selected_ids']
+    ];
+    $row['status'] = (int)($row['status'] ?? 0);
+
+    return $row;
+}
+
+/**
+ * Resolve display_image
  */
 function _list_inventory_sql($where = "", $order = "ORDER BY i.created_at DESC", $limit = "") {
     $whereSql = $where ? "WHERE {$where}" : "";
@@ -148,7 +368,6 @@ function _list_inventory_sql($where = "", $order = "ORDER BY i.created_at DESC",
             c.category_id AS category_id_ref,
             c.item_category_name,
 
-            /* Resolved per-inventory assigned image (if item_category_img is numeric) */
             (
                 CASE
                     WHEN i.item_category_img IS NULL OR TRIM(i.item_category_img) = '' THEN NULL
@@ -164,7 +383,6 @@ function _list_inventory_sql($where = "", $order = "ORDER BY i.created_at DESC",
                 END
             ) AS assigned_image_url,
 
-            /* Final image for UI: assigned first, else category primary */
             COALESCE(
                 (
                     CASE
@@ -211,7 +429,7 @@ try {
 
         // ============ CREATE ============
         case 'add_inventory': {
-            $raw_code_numeric   = _post('inventory_system_item_code'); // numbers only or blank (also accepts CSM0001/CSM-0001)
+            $raw_code_numeric   = _post('inventory_system_item_code');
             $item_description   = _post('item_description');
             $item_category_code = _post('item_category_code');
 
@@ -221,6 +439,9 @@ try {
 
             $item_cost       = _float(_post('item_cost'));
             $source_of_funds = _post('source_of_funds');
+
+            // default rule = ALL
+            $allowed_norm = normalize_allowed_payload_csm(_post('allowed_status', 'ALL'));
 
             if ($item_description === '' || $item_category_code === '') {
                 http_response_code(422);
@@ -237,6 +458,11 @@ try {
                 echo "Quantity/Critical level cannot be negative.";
                 exit();
             }
+            if ($current_unit_quantity > $unit_quantity) {
+                http_response_code(422);
+                echo "Available to Issue cannot exceed Actual Qty.";
+                exit();
+            }
 
             $digitsRaw = _only_digits_or_blank($raw_code_numeric);
             if ($digitsRaw === '__INVALID__') {
@@ -245,7 +471,6 @@ try {
                 exit();
             }
 
-            // normalize "0001" => "1"
             $digits = ($digitsRaw === '') ? '' : (string)intval($digitsRaw, 10);
             if ($digits !== '' && $digits === '0') {
                 http_response_code(422);
@@ -253,7 +478,6 @@ try {
                 exit();
             }
 
-            // Build FULL code: CSM-[category]-NNNN
             if ($digits === '') {
                 $inventory_system_item_code = _generate_item_code_auto($item_category_code);
             } else {
@@ -265,7 +489,6 @@ try {
                 }
             }
 
-            // uniqueness check
             $codeEsc = _esc($inventory_system_item_code);
             $checkSql = "SELECT inventory_id FROM csm_inventory
                          WHERE inventory_system_item_code = '{$codeEsc}' LIMIT 1";
@@ -277,6 +500,8 @@ try {
             }
 
             $today = _today();
+            $allowed_json = $allowed_norm['json'];
+            $status = _compute_status_from_state($current_unit_quantity, $allowed_json);
 
             $sql = "
                 INSERT INTO csm_inventory
@@ -291,6 +516,7 @@ try {
                     unit_quantity,
                     current_unit_quantity,
                     unit_crit_level,
+                    allowed_employment_status,
                     last_updated
                 )
                 VALUES
@@ -301,10 +527,11 @@ try {
                     " . (float)$item_cost . ",
                     '" . _esc($source_of_funds) . "',
                     '" . _esc($item_category_code) . "',
-                    'available',
+                    " . (int)$status . ",
                     " . (int)$unit_quantity . ",
                     " . (int)$current_unit_quantity . ",
                     " . (int)$unit_crit_level . ",
+                    " . ($allowed_json ? "'" . _esc($allowed_json) . "'" : "NULL") . ",
                     '" . _esc($today) . "'
                 )
             ";
@@ -321,13 +548,15 @@ try {
         case 'list_inventory': {
             header('Content-Type: application/json; charset=utf-8');
 
-            // UPDATED: include display_image resolution
             $sql = _list_inventory_sql("", "ORDER BY i.created_at DESC", "");
             $result = call_mysql_query($sql);
 
             $items = [];
+            $statusMap = get_employment_status_map_csm();
             if ($result) {
-                while ($row = call_mysql_fetch_array($result)) $items[] = $row;
+                while ($row = call_mysql_fetch_array($result)) {
+                    $items[] = enrich_csm_row($row, $statusMap);
+                }
             }
             echo json_encode(['success' => true, 'data' => $items]);
             exit();
@@ -341,8 +570,11 @@ try {
             $result = call_mysql_query($sql);
 
             $items = [];
+            $statusMap = get_employment_status_map_csm();
             if ($result) {
-                while ($row = call_mysql_fetch_array($result)) $items[] = $row;
+                while ($row = call_mysql_fetch_array($result)) {
+                    $items[] = enrich_csm_row($row, $statusMap);
+                }
             }
             echo json_encode(['success' => true, 'data' => $items]);
             exit();
@@ -368,6 +600,9 @@ try {
                 exit();
             }
 
+            $statusMap = get_employment_status_map_csm();
+            $row = enrich_csm_row($row, $statusMap);
+
             echo json_encode(['success' => true, 'data' => $row]);
             exit();
         }
@@ -384,7 +619,6 @@ try {
             }
 
             $codeEsc = _esc($codeIn);
-
             $sql = _list_inventory_sql("i.inventory_system_item_code = '{$codeEsc}'", "ORDER BY i.inventory_id DESC", "1");
             $result = call_mysql_query($sql);
             $row = $result ? call_mysql_fetch_array($result) : null;
@@ -395,11 +629,131 @@ try {
                 exit();
             }
 
+            $statusMap = get_employment_status_map_csm();
+            $row = enrich_csm_row($row, $statusMap);
+
             echo json_encode(['success' => true, 'data' => $row]);
             exit();
         }
 
-        // ============ UPDATE (MAIN RECORD, does NOT touch current_unit_quantity) ============
+        // ============ EMPLOYMENT STATUS LIST ============
+        case 'list_employment_status': {
+            header('Content-Type: application/json; charset=utf-8');
+
+            $rows = [];
+            $res = call_mysql_query("SELECT employment_status_id, status_name, status_code FROM employment_status ORDER BY employment_status_id ASC");
+            if ($res) {
+                while ($row = call_mysql_fetch_array($res)) {
+                    $rows[] = [
+                        'employment_status_id' => (int)$row['employment_status_id'],
+                        'status_name' => $row['status_name'],
+                        'status_code' => $row['status_code']
+                    ];
+                }
+            }
+
+            echo json_encode(['success' => true, 'data' => $rows]);
+            exit();
+        }
+
+        // ============ GET AVAILABILITY SETTINGS ============
+        case 'get_availability_settings': {
+            header('Content-Type: application/json; charset=utf-8');
+
+            $inventory_id = _int(_post('inventory_id'));
+            if ($inventory_id <= 0) {
+                http_response_code(422);
+                echo json_encode(['success' => false, 'message' => 'Invalid inventory_id.']);
+                exit();
+            }
+
+            $sql = "SELECT inventory_id, inventory_system_item_code, item_description, unit_quantity, current_unit_quantity, unit_crit_level, status, allowed_employment_status
+                    FROM csm_inventory
+                    WHERE inventory_id = {$inventory_id}
+                    LIMIT 1";
+            $res = call_mysql_query($sql);
+            $row = $res ? call_mysql_fetch_array($res) : null;
+
+            if (!$row) {
+                http_response_code(404);
+                echo json_encode(['success' => false, 'message' => 'Item not found.']);
+                exit();
+            }
+
+            $norm = normalize_allowed_employment_csm($row['allowed_employment_status'] ?? '');
+            $row['allowed_employment_status'] = [
+                'mode' => $norm['mode'],
+                'teaching' => $norm['teaching'],
+                'non_teaching' => $norm['non_teaching'],
+                'selected_ids' => $norm['selected_ids']
+            ];
+            $row['status'] = (int)($row['status'] ?? 0);
+
+            echo json_encode(['success' => true, 'data' => $row]);
+            exit();
+        }
+
+        // ============ UPDATE AVAILABILITY SETTINGS / RULES ============
+        case 'update_availability_settings': {
+            header('Content-Type: application/json; charset=utf-8');
+
+            $inventory_id = _int(_post('inventory_id'));
+            $current_unit_quantity = _int(_post('current_unit_quantity'));
+            $allowed_norm = normalize_allowed_payload_csm(_post('allowed_status', 'ALL'));
+
+            if ($inventory_id <= 0) {
+                http_response_code(422);
+                echo json_encode(['success' => false, 'message' => 'Invalid inventory_id.']);
+                exit();
+            }
+            if ($current_unit_quantity < 0) {
+                http_response_code(422);
+                echo json_encode(['success' => false, 'message' => 'Available quantity cannot be negative.']);
+                exit();
+            }
+
+            $chk = call_mysql_query("SELECT inventory_id, unit_crit_level, unit_quantity FROM csm_inventory WHERE inventory_id={$inventory_id} LIMIT 1");
+            $r = $chk ? call_mysql_fetch_array($chk) : null;
+            if (!$r) {
+                http_response_code(404);
+                echo json_encode(['success' => false, 'message' => 'Record not found.']);
+                exit();
+            }
+
+            $unitQty = (int)$r['unit_quantity'];
+            if ($current_unit_quantity > $unitQty) {
+                http_response_code(422);
+                echo json_encode(['success' => false, 'message' => "Available quantity cannot exceed total quantity ({$unitQty})."]);
+                exit();
+            }
+
+            $allowed_json = $allowed_norm['json'];
+            $status = _compute_status_from_state($current_unit_quantity, $allowed_json);
+            $today = _today();
+
+            $sql = "
+                UPDATE csm_inventory
+                SET
+                    current_unit_quantity = " . (int)$current_unit_quantity . ",
+                    allowed_employment_status = " . ($allowed_json ? "'" . _esc($allowed_json) . "'" : "NULL") . ",
+                    status = " . (int)$status . ",
+                    last_updated = '" . _esc($today) . "'
+                WHERE inventory_id = {$inventory_id}
+                LIMIT 1
+            ";
+
+            $res = call_mysql_query($sql);
+            if ($res) {
+                echo json_encode(['success' => true, 'message' => 'Availability rules updated.']);
+                exit();
+            }
+
+            http_response_code(500);
+            echo json_encode(['success' => false, 'message' => 'Database update failed.']);
+            exit();
+        }
+
+        // ============ UPDATE (MAIN RECORD) ============
         case 'update_inventory': {
             $inventory_id = _int(_post('inventory_id'));
             if ($inventory_id <= 0) {
@@ -408,7 +762,7 @@ try {
                 exit();
             }
 
-            $raw_code_numeric   = _post('inventory_system_item_code'); // numbers only or blank (also accepts CSM0001/CSM-0001)
+            $raw_code_numeric   = _post('inventory_system_item_code');
             $item_description   = _post('item_description');
             $item_category_code = _post('item_category_code');
 
@@ -441,7 +795,6 @@ try {
                 exit();
             }
 
-            // normalize "0001" => "1"
             $digits = ($digitsRaw === '') ? '' : (string)intval($digitsRaw, 10);
             if ($digits !== '' && $digits === '0') {
                 http_response_code(422);
@@ -449,7 +802,6 @@ try {
                 exit();
             }
 
-            // Build FULL code
             if ($digits === '') {
                 $inventory_system_item_code = _generate_item_code_auto($item_category_code);
             } else {
@@ -461,7 +813,6 @@ try {
                 }
             }
 
-            // prevent duplicates
             $codeEsc = _esc($inventory_system_item_code);
             $dupSql = "SELECT inventory_id FROM csm_inventory
                        WHERE inventory_system_item_code = '{$codeEsc}'
@@ -474,6 +825,13 @@ try {
                 exit();
             }
 
+            // keep current available qty/status valid if total qty is lowered
+            $oldRes = call_mysql_query("SELECT current_unit_quantity, allowed_employment_status FROM csm_inventory WHERE inventory_id={$inventory_id} LIMIT 1");
+            $oldRow = $oldRes ? call_mysql_fetch_array($oldRes) : null;
+            $currentQty = $oldRow ? (int)$oldRow['current_unit_quantity'] : 0;
+            if ($currentQty > $unit_quantity) $currentQty = $unit_quantity;
+            $status = _compute_status_from_state($currentQty, $oldRow['allowed_employment_status'] ?? null);
+
             $today = _today();
 
             $sql = "
@@ -483,9 +841,11 @@ try {
                     item_description = '" . _esc($item_description) . "',
                     item_category_code = '" . _esc($item_category_code) . "',
                     unit_quantity = " . (int)$unit_quantity . ",
+                    current_unit_quantity = " . (int)$currentQty . ",
                     unit_crit_level = " . (int)$unit_crit_level . ",
                     item_cost = " . (float)$item_cost . ",
                     source_of_funds = '" . _esc($source_of_funds) . "',
+                    status = " . (int)$status . ",
                     last_updated = '" . _esc($today) . "'
                 WHERE inventory_id = {$inventory_id}
                 LIMIT 1
@@ -506,8 +866,8 @@ try {
             $inventory_id = _int(_post('inventory_id'));
             $add_qty      = _int(_post('add_quantity'));
 
-            $source_of_funds = _post('source_of_funds'); // optional; if blank => keep current
-            $item_cost_raw   = _post('item_cost');       // optional; if blank => keep current
+            $source_of_funds = _post('source_of_funds');
+            $item_cost_raw   = _post('item_cost');
 
             if ($inventory_id <= 0) {
                 http_response_code(422);
@@ -520,8 +880,7 @@ try {
                 exit();
             }
 
-            // Fetch existing
-            $q = call_mysql_query("SELECT unit_quantity, current_unit_quantity, unit_crit_level, source_of_funds, item_cost FROM csm_inventory WHERE inventory_id={$inventory_id} LIMIT 1");
+            $q = call_mysql_query("SELECT unit_quantity, current_unit_quantity, source_of_funds, item_cost, allowed_employment_status FROM csm_inventory WHERE inventory_id={$inventory_id} LIMIT 1");
             $row = $q ? call_mysql_fetch_array($q) : null;
             if (!$row) {
                 http_response_code(404);
@@ -529,20 +888,13 @@ try {
                 exit();
             }
 
-            $old_unit_qty = (int)$row['unit_quantity'];
-            $old_cur_qty  = (int)$row['current_unit_quantity'];
+            $new_unit_qty = (int)$row['unit_quantity'] + $add_qty;
+            $new_cur_qty  = (int)$row['current_unit_quantity'] + $add_qty;
 
-            $new_unit_qty = $old_unit_qty + $add_qty;
-            $new_cur_qty  = $old_cur_qty + $add_qty;
-
-            // keep existing if blank
             $final_source = ($source_of_funds === '') ? (string)$row['source_of_funds'] : $source_of_funds;
+            $final_cost = (trim($item_cost_raw) !== '') ? (string)_float($item_cost_raw) : (string)$row['item_cost'];
 
-            $final_cost = (string)$row['item_cost'];
-            if (trim($item_cost_raw) !== '') {
-                $final_cost = (string)_float($item_cost_raw);
-            }
-
+            $status = _compute_status_from_state($new_cur_qty, $row['allowed_employment_status'] ?? null);
             $today = _today();
 
             $sql = "
@@ -552,6 +904,7 @@ try {
                     current_unit_quantity = {$new_cur_qty},
                     source_of_funds = '" . _esc($final_source) . "',
                     item_cost = " . (float)$final_cost . ",
+                    status = " . (int)$status . ",
                     last_updated = '" . _esc($today) . "'
                 WHERE inventory_id = {$inventory_id}
                 LIMIT 1
@@ -568,7 +921,7 @@ try {
             exit();
         }
 
-        // ============ UPDATE AVAILABLE ONLY (ENFORCE CRITICAL RULE) ============
+        // ============ UPDATE AVAILABLE ONLY ============
         case 'update_available_qty': {
             $inventory_id = _int(_post('inventory_id'));
             $current_unit_quantity = _int(_post('current_unit_quantity'));
@@ -584,8 +937,7 @@ try {
                 exit();
             }
 
-            // Enforce: cannot be less than critical level
-            $chk = call_mysql_query("SELECT unit_crit_level, unit_quantity FROM csm_inventory WHERE inventory_id={$inventory_id} LIMIT 1");
+            $chk = call_mysql_query("SELECT unit_quantity, allowed_employment_status FROM csm_inventory WHERE inventory_id={$inventory_id} LIMIT 1");
             $r = $chk ? call_mysql_fetch_array($chk) : null;
             if (!$r) {
                 http_response_code(404);
@@ -593,16 +945,8 @@ try {
                 exit();
             }
 
-            $crit = (int)$r['unit_crit_level'];
             $unitQty = (int)$r['unit_quantity'];
 
-            if ($current_unit_quantity < $crit) {
-                http_response_code(422);
-                echo "Restriction: Available quantity cannot be less than Critical Level ({$crit}).";
-                exit();
-            }
-
-            // Optional safety: cannot exceed total received
             if ($current_unit_quantity > $unitQty) {
                 http_response_code(422);
                 echo "Available quantity cannot exceed Actual Qty ({$unitQty}).";
@@ -610,11 +954,13 @@ try {
             }
 
             $today = _today();
+            $status = _compute_status_from_state($current_unit_quantity, $r['allowed_employment_status'] ?? null);
 
             $sql = "
                 UPDATE csm_inventory
                 SET
                     current_unit_quantity = " . (int)$current_unit_quantity . ",
+                    status = " . (int)$status . ",
                     last_updated = '" . _esc($today) . "'
                 WHERE inventory_id = {$inventory_id}
                 LIMIT 1
