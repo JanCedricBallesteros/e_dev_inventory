@@ -279,8 +279,8 @@ function renderList(filter = '', resetPage = false) {
         const serial      = item.serial_number || '';
         const cost        = (item.cost_value != null && item.cost_value !== '') ? String(item.cost_value) : '';
         const acqDate     = item.acquisition_date || '';
-        const facility    = item.facility || '';
-        const acctOfficer = item.accountable_officer || item.issued_to || '';
+        const issued      = item.issued_to_name || item.issued_to || '';
+        const acctOfficer = item.accountable_officer || '';
         const remarks     = item.remarks || item.notes || '';
         const qrUrl       = QR_GENERATOR_URL + '?v=' + encodeURIComponent(code);
         const shortDesc   = desc.length > 65 ? desc.slice(0, 63) + '\u2026' : desc;
@@ -289,7 +289,7 @@ function renderList(filter = '', resetPage = false) {
             serial      ? `S/N: ${escHtml(serial)}`     : '',
             acqDate     ? `Acq: ${escHtml(acqDate)}`    : '',
             cost        ? `Cost: ${escHtml(cost)}`       : '',
-            facility    ? `Loc: ${escHtml(facility)}`    : '',
+            issued      ? `Issued: ${escHtml(issued)}`  : '',
             acctOfficer ? `AO: ${escHtml(acctOfficer)}` : ''
         ].filter(Boolean);
 
@@ -522,14 +522,14 @@ const AST_TAG_CSS = `
     }
 `;
 
-function buildAstTag({ code, serial, category, desc, acqDate, cost, facility, acctOfficer, remarks, qrUrl }) {
+function buildAstTag({ code, serial, category, desc, acqDate, cost, issued, acctOfficer, remarks, qrUrl }) {
     const shortDesc = desc.length > 65 ? desc.slice(0, 63) + '\u2026' : desc;
     // Build optional meta lines — only include if value exists
     const metaLines = [
         serial     ? `S/N: ${escHtml(serial)}`       : '',
         acqDate    ? `Acq: ${escHtml(acqDate)}`      : '',
         cost       ? `Cost: ${escHtml(cost)}`         : '',
-        facility   ? `Loc: ${escHtml(facility)}`      : '',
+        issued     ? `Issued: ${escHtml(issued)}`     : '',
         acctOfficer? `AO: ${escHtml(acctOfficer)}`   : ''
     ].filter(Boolean);
 
@@ -567,8 +567,8 @@ function getTagData(code) {
         desc:        item.item_description || '',
         acqDate:     item.acquisition_date || '',
         cost:        (item.cost_value != null && item.cost_value !== '') ? String(item.cost_value) : '',
-        facility:    item.facility || '',
-        acctOfficer: item.accountable_officer || item.issued_to || '',
+        issued:      item.issued_to_name || item.issued_to || '',
+        acctOfficer: item.accountable_officer || '',
         remarks:     item.remarks || item.notes || '',
         qrUrl:       QR_GENERATOR_URL + '?v=' + encodeURIComponent(code)
     };

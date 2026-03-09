@@ -453,7 +453,16 @@ try {
                 $where = "WHERE (" . implode(' OR ', $parts) . ")";
             }
 
-            $sql = "SELECT i.*, c.item_category_name, c.category_photo
+                $sql = "SELECT 
+                    i.*, 
+                    c.item_category_name, 
+                    c.category_photo,
+                    (SELECT CONCAT(COALESCE(u.f_name,''), ' ', COALESCE(u.l_name,''))
+                     FROM facility_records_assignments a
+                     LEFT JOIN users u ON u.user_id = a.issued_to_user_id
+                     WHERE a.module_type = 'AST' AND a.item_code = i.property_code
+                     ORDER BY a.issued_at DESC, a.assignment_id DESC
+                     LIMIT 1) AS issued_to_name
                     FROM ast_inventory i
                     LEFT JOIN ast_inventory_category c ON c.category_id = i.category_id
                     {$where}
@@ -476,6 +485,7 @@ try {
                     $row['category_photo_thumb_url'] = $row['category_photo']
                         ? BASE_URL . 'admin/modules/tools/category_image_thumb.php?f=' . urlencode($row['category_photo']) . '&s=100'
                         : null;
+                    // issued_to_name already included from subquery
                     if (!empty($row['qr_image'])) {
                         $row['qr_image_url'] = BASE_URL . $UPLOAD_REL_DIR . $row['qr_image'];
                     } elseif (!empty($row['property_code'])) {
