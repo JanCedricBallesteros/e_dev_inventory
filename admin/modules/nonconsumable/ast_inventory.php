@@ -601,8 +601,13 @@ function initTable() {
             { title: "Description", field: "item_description", widthGrow: 4, minWidth: 260, headerFilter: "input", headerFilterPlaceholder: "Filter...", formatter: function(cell){
                 return threeLineText(cell.getValue());
             }},
-            { title: "Qty", field: "quantity", width: 60, hozAlign: "center", headerFilter: "number", headerFilterPlaceholder: "<= qty", headerFilterFunc: "<=" },
-            { title: "Allowed Status", field: "allowed_status_names", width: 175, headerFilter: "input", headerFilterPlaceholder: "Filter...", formatter: function(cell){
+            { title: "Qty / Unit", field: "quantity", width: 110, hozAlign: "center", headerFilter: "number", headerFilterPlaceholder: "<= qty", headerFilterFunc: "<=", formatter: function(cell){
+                const row = cell.getRow().getData();
+                const qty = row.quantity !== null && row.quantity !== undefined ? parseInt(row.quantity, 10) : '';
+                const unit = row.unit ? String(row.unit) : '';
+                return `<div class="text-center">${qty}${unit ? ' <span class="text-muted">' + escapeHtml(unit) + '</span>' : ''}</div>`;
+            }},
+            { title: "Allowed Status", field: "allowed_status_names", width: 180, headerFilter: "input", headerFilterPlaceholder: "Filter...", formatter: function(cell){
                 const v = cell.getValue();
                 if (!v || v === 'None') return '<span class="text-muted small">None</span>';
                 if (v === 'All') return '<span class="text-success small fw-semibold">All</span>';
@@ -618,18 +623,19 @@ function initTable() {
                 const full = v; // keep original for tooltip
                 return `<span class="three-line-cell text-muted small" title="${escapeHtml(full)}">${escapeHtml(display)}</span>`;
             }},
-            { title: "Unit", field: "unit", width: 70, headerFilter: "input", headerFilterPlaceholder: "Filter...", formatter: function(cell){
-                return twoLineText(cell.getValue());
+            { title: "Source / Cost", field: "source_of_fund", width: 150, headerFilter: "input", headerFilterPlaceholder: "Filter...", formatter: function(cell){
+                const row = cell.getRow().getData();
+                const src = row.source_of_fund ? escapeHtml(row.source_of_fund) : '';
+                const costRaw = row.cost_value;
+                const cost = (costRaw !== null && costRaw !== '' && !isNaN(costRaw)) ? parseFloat(costRaw).toFixed(2) : '';
+                const parts = [];
+                if (src) parts.push(src);
+                if (cost) parts.push(`₱${cost}`);
+                return parts.length ? `<span class="two-line-cell">${parts.join(' • ')}</span>` : '<span class="text-muted">-</span>';
             }},
-            { title: "Source", field: "source_of_fund", width: 90, headerFilter: "input", headerFilterPlaceholder: "Filter...", formatter: function(cell){
-                return twoLineText(cell.getValue());
-            }},
-            { title: "Cost", field: "cost_value", width: 85, headerFilter: "number", headerFilterPlaceholder: "<= cost", headerFilterFunc: "<=", formatter: function(cell){
+            { title: "Issued To", field: "issued_to_name", width: 160, headerFilter: "input", headerFilterPlaceholder: "Filter...", formatter: function(cell){
                 const v = cell.getValue();
-                return v !== null && v !== '' ? parseFloat(v).toFixed(2) : '-';
-            }},
-            { title: "Issued", field: "issued_total", width: 70, hozAlign: "center", formatter: function(){
-                return "-";
+                return v ? twoLineText(v) : '<span class="text-muted">-</span>';
             }},
             { title: "Issuance", field: "issued_details", width: 100, formatter: function(){
                 return '<button class="btn btn-sm btn-outline-secondary" disabled>View</button>';
@@ -777,11 +783,10 @@ $(document).ready(function() {
             "Property No.": r.property_number || '',
             "Serial No.": r.serial_number || '',
             "Description": r.item_description || '',
-            "Qty": r.quantity ?? '',
+            "Qty / Unit": `${r.quantity ?? ''}${r.unit ? ' ' + r.unit : ''}`,
             "Allowed Status": r.allowed_status_names || '',
-            "Unit": r.unit || '',
-            "Source": r.source_of_fund || '',
-            "Cost": r.cost_value ?? '',
+            "Source / Cost": `${r.source_of_fund || ''}${(r.cost_value !== null && r.cost_value !== undefined && r.cost_value !== '') ? ' • ₱' + parseFloat(r.cost_value).toFixed(2) : ''}`,
+            "Issued To": r.issued_to_name || '',
             "Date Modified": r.created_at || ''
         }));
 
@@ -791,11 +796,10 @@ $(document).ready(function() {
             { wch: 12 }, // Property No.
             { wch: 20 }, // Serial No.
             { wch: 40 }, // Description
-            { wch: 6 },  // Qty
+            { wch: 12 }, // Qty / Unit
             { wch: 28 }, // Allowed Status
-            { wch: 8 },  // Unit
-            { wch: 18 }, // Source
-            { wch: 10 }, // Cost
+            { wch: 22 }, // Source / Cost
+            { wch: 20 }, // Issued To
             { wch: 18 }  // Date Modified
         ];
         const wb = XLSX.utils.book_new();
