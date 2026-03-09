@@ -917,12 +917,10 @@ function initTable() {
         pagination: 'local',
         paginationSize: 10,
         paginationSizeSelector: [5, 10, 20, 50, true],
-        selectable: true,
         ajaxResponse: function(url, params, response) {
             return response.data || [];
         },
         columns: [
-            { formatter: "rowSelection", titleFormatter: "rowSelection", hozAlign: "center", headerSort: false, width: 40 },
             { title: 'Property Code', field: 'property_code', width: 200, headerFilter: 'input', headerFilterPlaceholder: 'Filter...', formatter: function(cell){
                 const val = cell.getValue();
                 return `<span class="badge bg-light text-dark border badge-code">${val}</span>`;

@@ -234,14 +234,14 @@ if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) {
                     </li>
                 <?php } ?>
 
-                <?php if (role_has("ADMIN") || ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && ($staffHasAST || $staffHasCSM))) { ?>
-                    <li class="nav-item <?php echo navigation_active("requisition,manage_issuance,manage_returns", "active submenu"); ?>">
+                <?php if (role_has("ADMIN") || ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && ($staffHasAST || $staffHasCSM || $staffHasPO))) { ?>
+                    <li class="nav-item <?php echo navigation_active("requisition,manage_issuance,manage_returns,facility_inventory_records", "active submenu"); ?>">
                         <a class="collapsed" aria-expanded="false" data-bs-toggle="collapse" href="#tx_nav">
                             <i class="fas fa-exchange-alt"></i>
                             <p>Transactions</p>
                             <span class="caret"></span>
                         </a>
-                        <div class="collapse <?php echo navigation_active("requisition,manage_issuance,manage_returns", "show"); ?>" id="tx_nav">
+                        <div class="collapse <?php echo navigation_active("requisition,manage_issuance,manage_returns,facility_inventory_records", "show"); ?>" id="tx_nav">
                             <ul class="nav nav-collapse">
                                 <li class="<?php echo navigation_active("requisition", "active", array("type" => array("AST", "CSM"))); ?>">
                                     <a href="<?php echo BASE_URL . "admin/modules/transactions/requisition.php?type=AST"; ?>">
@@ -260,6 +260,11 @@ if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) {
                                         </a>
                                     </li>
                                 <?php } ?>
+                                <li class="<?php echo navigation_active("facility_inventory_records"); ?>">
+                                    <a href="<?php echo BASE_URL . "admin/modules/transactions/facility_inventory_records.php"; ?>">
+                                        <span class="sub-item">Facility Inventory Records</span>
+                                    </a>
+                                </li>
                             </ul>
                         </div>
                     </li>

@@ -179,7 +179,8 @@
                 var mapTx = {
                     'requisition': 'Requisition Item',
                     'manage_issuance': 'Property Report',
-                    'manage_returns': 'Property Return'
+                    'manage_returns': 'Property Return',
+                    'facility_inventory_records': 'Facility Inventory Records'
                 };
                 crumbs.push({ label: mapTx[file] || titleize(file), url: '' });
                 if (file === 'requisition' && (type === 'AST' || type === 'CSM')) {
