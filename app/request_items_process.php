@@ -170,13 +170,13 @@ try {
             if (!in_array($type, ['AST', 'CSM'], true)) $type = 'AST';
 
             if ($type === 'AST') {
-                $where = "WHERE i.is_available = 1 AND i.available_qty > 0";
+                $where = "WHERE i.is_available = 1";
                 if ($search !== '') {
                     $searchEsc = _esc('%' . $search . '%');
                     $where .= " AND (i.property_code LIKE '{$searchEsc}' OR i.item_description LIKE '{$searchEsc}')";
                 }
 
-                $sql = "SELECT i.property_code, i.item_description, i.available_qty, i.unit, i.allowed_employment_status
+                $sql = "SELECT i.property_code, i.item_description, i.unit, i.allowed_employment_status
                         FROM ast_inventory i
                         {$where}
                         ORDER BY i.created_at DESC";
@@ -219,7 +219,6 @@ try {
                     $rows[] = [
                         'item_code' => $row['property_code'],
                         'item_description' => $row['item_description'],
-                        'available_qty' => (int)($row['available_qty'] ?? 0),
                         'unit' => $row['unit'] ?? '',
                         'allowed_status_names' => $row['allowed_status_names']
                     ];
@@ -271,17 +270,13 @@ try {
                     json_response(['success' => false, 'message' => 'AST requests must be exactly 1 per property code.'], 422);
                 }
                 $itemCodeEsc = _esc($itemCode);
-                $invRes = call_mysql_query("SELECT property_code, item_description, available_qty, is_available, allowed_employment_status 
+                $invRes = call_mysql_query("SELECT property_code, item_description, is_available, allowed_employment_status 
                                             FROM ast_inventory WHERE property_code = '{$itemCodeEsc}' LIMIT 1");
                 $invRow = $invRes ? call_mysql_fetch_array($invRes) : null;
                 if (!$invRow) json_response(['success' => false, 'message' => 'Item not found.'], 404);
 
-                $availableQty = (int)($invRow['available_qty'] ?? 0);
-                if ((int)$invRow['is_available'] !== 1 || $availableQty <= 0) {
+                if ((int)$invRow['is_available'] !== 1) {
                     json_response(['success' => false, 'message' => 'Item is not available for requisition.'], 422);
-                }
-                if ($qty > $availableQty) {
-                    json_response(['success' => false, 'message' => 'Requested quantity exceeds available.'], 422);
                 }
 
                 $norm = normalize_allowed_employment($invRow['allowed_employment_status'] ?? '');

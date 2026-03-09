@@ -622,10 +622,10 @@ function pickAssignableItemByCode(code){
                     module_type: mod,
                     search: q
                 }, function(diag){
-                    const msg = (diag && diag.message) ? diag.message : 'No matching available item found.';
+                    const msg = (diag && diag.message) ? diag.message : 'No matching item found for the selected module.';
                     $('#assignMsg').html('<div class="alert alert-warning mb-0">' + msg + '</div>');
                 }, 'json').fail(function(){
-                    $('#assignMsg').html('<div class="alert alert-warning mb-0">No matching available item found.</div>');
+                    $('#assignMsg').html('<div class="alert alert-warning mb-0">No matching item found for the selected module.</div>');
                 });
             }
             const exact = rows.find(function(it){

@@ -350,7 +350,7 @@ try {
                         ORDER BY c.inventory_system_item_code ASC";
             } else {
                 $module_type = 'AST';
-                $where = "WHERE a.is_available = 1 AND a.available_qty > 0";
+                $where = "WHERE a.is_available = 1";
                 if ($search !== '') {
                     $s = _esc('%' . $search . '%');
                     $where .= " AND (
@@ -364,7 +364,6 @@ try {
                             a.item_id AS source_item_id,
                             a.property_code AS item_code,
                             a.item_description,
-                            a.available_qty,
                             a.unit
                         FROM ast_inventory a
                         {$where}
@@ -393,7 +392,7 @@ try {
             $s = _esc('%' . $search . '%');
 
             if ($module_type === 'AST') {
-                $sqlAny = "SELECT property_code, item_description, available_qty, is_available
+                $sqlAny = "SELECT property_code, item_description, is_available
                            FROM ast_inventory
                            WHERE property_code LIKE '{$s}'
                               OR item_description LIKE '{$s}'
@@ -403,12 +402,11 @@ try {
                 $anyRes = call_mysql_query($sqlAny);
                 $any = $anyRes ? call_mysql_fetch_array($anyRes) : null;
                 if ($any) {
-                    $aq = (int)($any['available_qty'] ?? 0);
                     $ia = (int)($any['is_available'] ?? 0);
-                    if ($aq <= 0 || $ia !== 1) {
+                    if ($ia !== 1) {
                         json_response(array(
                             'success' => true,
-                            'message' => "Found AST item {$any['property_code']}, but it is not available for assignment (available qty: {$aq}, is_available: {$ia})."
+                            'message' => "Found AST item {$any['property_code']}, but it is not available for assignment (is_available: {$ia})."
                         ));
                     }
                     json_response(array(
@@ -528,17 +526,16 @@ try {
             $item_unit = '';
             if ($module_type === 'AST') {
                 $qty = 1;
-                $sql = "SELECT item_id, property_code, item_description, unit, available_qty FROM ast_inventory WHERE item_id = {$source_item_id} AND property_code = '" . _esc($item_code) . "' LIMIT 1";
+                $sql = "SELECT item_id, property_code, item_description, unit, is_available FROM ast_inventory WHERE item_id = {$source_item_id} AND property_code = '" . _esc($item_code) . "' LIMIT 1";
                 $res = call_mysql_query($sql);
                 $item = $res ? call_mysql_fetch_array($res) : null;
                 if (!$item) json_response(array('success' => false, 'message' => 'AST item not found.'), 404);
-                if ((int)$item['available_qty'] < 1) json_response(array('success' => false, 'message' => 'AST item is no longer available.'), 422);
+                if ((int)$item['is_available'] !== 1) json_response(array('success' => false, 'message' => 'AST item is no longer available.'), 422);
                 $item_description = $item['item_description'];
                 $item_unit = $item['unit'];
 
                 call_mysql_query("UPDATE ast_inventory
-                                  SET available_qty = CASE WHEN available_qty > 0 THEN available_qty - 1 ELSE 0 END,
-                                      is_available = CASE WHEN available_qty - 1 > 0 THEN 1 ELSE 0 END
+                                  SET is_available = 0
                                   WHERE item_id = {$source_item_id}
                                   LIMIT 1");
             } else {
@@ -610,7 +607,7 @@ try {
                 $qty = (float)$row['qty'];
                 if ($module_type === 'AST') {
                     call_mysql_query("UPDATE ast_inventory
-                                      SET available_qty = available_qty + 1, is_available = 1
+                                      SET is_available = 1
                                       WHERE item_id = {$source_item_id}
                                       LIMIT 1");
                 } elseif ($module_type === 'CSM') {

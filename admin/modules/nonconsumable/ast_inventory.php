@@ -189,7 +189,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title fw-semibold"><i class="bi bi-sliders"></i>&ensp;Set Available Item Rules</h5>
+                <h5 class="modal-title fw-semibold"><i class="bi bi-sliders"></i>&ensp;Set Item Access Rules</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
@@ -201,14 +201,6 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                         <label class="form-label fw-semibold">Property Code</label>
                         <input type="text" class="form-control" id="availPropertyCodeDisplay" readonly>
                         <div class="small text-muted" id="availBulkNote" style="display:none;"></div>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label fw-semibold">Available for Requisition (Qty)</label>
-                        <input type="number" min="0" class="form-control" name="available_qty" id="availQty">
-                        <div class="small text-muted">Must be between 0 and total quantity.</div>
-                        <div class="small text-muted">Bulk set: quantity is disabled (only status is updated).</div>
-                        <div class="small text-muted">Bulk set: leave blank to keep each item's current available qty.</div>
-                        <div class="small text-muted">Total Qty: <span id="availTotalQty">0</span></div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Allowed Employment Status</label>
@@ -318,36 +310,8 @@ function setSelectizeValues(selectize, values) {
 }
 
 function updateAvailQtyState() {
-    const $input = $('#availQty');
-    if (!$input.length) return;
-    if (isBulkAvailMode) {
-        $input.val('');
-        $input.prop('disabled', true);
-        $input.removeAttr('max');
-        return;
-    }
-
-    const teachRaw = availTeachingSelect ? availTeachingSelect.getValue() : [];
-    const nonRaw = availNonTeachingSelect ? availNonTeachingSelect.getValue() : [];
-    const teachArr = Array.isArray(teachRaw) ? teachRaw : (teachRaw ? String(teachRaw).split(',') : []);
-    const nonArr = Array.isArray(nonRaw) ? nonRaw : (nonRaw ? String(nonRaw).split(',') : []);
-    const teachHas = teachArr.filter(v => String(v) !== NONE_STATUS_VALUE).length > 0;
-    const nonHas = nonArr.filter(v => String(v) !== NONE_STATUS_VALUE).length > 0;
-    const allNone = !teachHas && !nonHas;
-
-    if (allNone) {
-        $input.val(0);
-        $input.prop('disabled', true);
-    } else {
-        $input.prop('disabled', false);
-    }
-
-    const totalQty = parseInt($('#availTotalQty').text(), 10);
-    if (!isNaN(totalQty) && totalQty >= 0) {
-        $input.attr('max', totalQty);
-    } else {
-        $input.removeAttr('max');
-    }
+    // Kept for compatibility with existing calls; AST no longer uses available_qty.
+    return;
 }
 
 function loadEmploymentStatuses() {
@@ -433,17 +397,12 @@ function openAvailabilityModal(code) {
     $('#availPropertyCodeDisplay').val(code);
     $('#availBulkCodes').val('');
     $('#availBulkNote').hide().text('');
-    $('#availQty').val('');
-    $('#availTotalQty').text('0');
     if (availTeachingSelect) availTeachingSelect.clear();
     if (availNonTeachingSelect) availNonTeachingSelect.clear();
     updateAvailQtyState();
 
     $.post(PROCESS_URL, { action: 'get_availability_settings', property_code: code }, function(res) {
         if (res && res.success) {
-            $('#availQty').val(res.data.available_qty);
-            $('#availTotalQty').text(res.data.quantity);
-
             const allowed = res.data.allowed_employment_status || {};
             const teach = allowed.teaching || [];
             const non = allowed.non_teaching || [];
@@ -497,8 +456,6 @@ function openAvailabilityModalBulk(codes) {
     $('#availPropertyCodeDisplay').val('Multiple items');
     $('#availBulkCodes').val(codes.join(','));
     $('#availBulkNote').show().text(codes.length + ' items selected');
-    $('#availQty').val('');
-    $('#availTotalQty').text('-');
 
     if (availTeachingSelect) availTeachingSelect.clear();
     if (availNonTeachingSelect) availNonTeachingSelect.clear();
@@ -645,10 +602,6 @@ function initTable() {
                 return threeLineText(cell.getValue());
             }},
             { title: "Qty", field: "quantity", width: 60, hozAlign: "center", headerFilter: "number", headerFilterPlaceholder: "<= qty", headerFilterFunc: "<=" },
-            { title: "Available", field: "available_qty", width: 85, hozAlign: "center", headerFilter: "number", headerFilterPlaceholder: "<= qty", headerFilterFunc: "<=", formatter: function(cell){
-                const v = cell.getValue();
-                return v !== null && v !== '' ? parseInt(v, 10) : '-';
-            }},
             { title: "Allowed Status", field: "allowed_status_names", width: 175, headerFilter: "input", headerFilterPlaceholder: "Filter...", formatter: function(cell){
                 const v = cell.getValue();
                 if (!v || v === 'None') return '<span class="text-muted small">None</span>';
@@ -760,27 +713,7 @@ $(document).ready(function() {
         const teachAllowed = teachArr.filter(v => String(v) !== NONE_STATUS_VALUE);
         const nonAllowed = nonArr.filter(v => String(v) !== NONE_STATUS_VALUE);
         const allNone = teachAllowed.length === 0 && nonAllowed.length === 0;
-
         const bulkCodes = ($('#availBulkCodes').val() || '').trim();
-        const qtyRaw = $('#availQty').val();
-        const qtyProvided = qtyRaw !== '' && qtyRaw !== null;
-        const qty = parseInt(qtyRaw, 10);
-        const totalQty = parseInt($('#availTotalQty').text(), 10);
-
-        if (!bulkCodes && !allNone) {
-            if (!qtyProvided) {
-                $('#availMsg').html('<div class="alert alert-danger">Available quantity is required.</div>');
-                return;
-            }
-            if (qtyProvided && (isNaN(qty) || qty < 0)) {
-                $('#availMsg').html('<div class="alert alert-danger">Available quantity must be 0 or more.</div>');
-                return;
-            }
-            if (qtyProvided && !isNaN(totalQty) && qty > totalQty) {
-                $('#availMsg').html('<div class="alert alert-danger">Available quantity cannot exceed total quantity.</div>');
-                return;
-            }
-        }
 
         const code = $('#availPropertyCode').val();
         const allowedPayload = allNone
@@ -796,9 +729,6 @@ $(document).ready(function() {
         } else {
             payload.action = 'update_availability_settings';
             payload.property_code = code;
-            if (!allNone) {
-                payload.available_qty = qty;
-            }
         }
 
         $.post(PROCESS_URL, payload, function(res) {
@@ -813,14 +743,6 @@ $(document).ready(function() {
         }, 'json').fail(function() {
             $('#availMsg').html('<div class="alert alert-danger">Server error while saving.</div>');
         });
-    });
-
-    $('#availQty').on('input change', function() {
-        const maxQty = parseInt($('#availTotalQty').text(), 10);
-        const val = parseInt($(this).val(), 10);
-        if (!isNaN(maxQty) && !isNaN(val) && val > maxQty) {
-            $(this).val(maxQty);
-        }
     });
 
     $('#exportCsv').on('click', function() {
@@ -856,7 +778,6 @@ $(document).ready(function() {
             "Serial No.": r.serial_number || '',
             "Description": r.item_description || '',
             "Qty": r.quantity ?? '',
-            "Available Qty": r.available_qty ?? '',
             "Allowed Status": r.allowed_status_names || '',
             "Unit": r.unit || '',
             "Source": r.source_of_fund || '',
@@ -871,7 +792,6 @@ $(document).ready(function() {
             { wch: 20 }, // Serial No.
             { wch: 40 }, // Description
             { wch: 6 },  // Qty
-            { wch: 14 }, // Available Qty
             { wch: 28 }, // Allowed Status
             { wch: 8 },  // Unit
             { wch: 18 }, // Source

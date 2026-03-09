@@ -192,20 +192,23 @@ try {
             $req = $res ? call_mysql_fetch_array($res) : null;
             if (!$req) json_response(['success' => false, 'message' => 'Requisition not found.'], 404);
             $prevStatus = $req['status'] ?? '';
-            $availableQty = null;
-            $newAvailable = null;
+            $prevIsAvailable = null;
+            $newIsAvailable = null;
 
             // Enforce AST availability rules
             if (strtoupper($req['module_type']) === 'AST') {
                 $itemCode = _esc($req['item_code']);
-                $inv = call_mysql_query("SELECT available_qty, allowed_employment_status FROM ast_inventory WHERE property_code = '{$itemCode}' LIMIT 1");
+                $inv = call_mysql_query("SELECT is_available, allowed_employment_status FROM ast_inventory WHERE property_code = '{$itemCode}' LIMIT 1");
                 $invRow = $inv ? call_mysql_fetch_array($inv) : null;
                 if (!$invRow) json_response(['success' => false, 'message' => 'AST item not found.'], 404);
-                $availableQty = (int)($invRow['available_qty'] ?? 0);
+                $prevIsAvailable = (int)($invRow['is_available'] ?? 0);
                 $reqQty = (int)($req['qty_requested'] ?? 0);
                 if ($reqQty <= 0) json_response(['success' => false, 'message' => 'Invalid requested quantity.'], 422);
-                if ($reqQty > $availableQty) {
-                    json_response(['success' => false, 'message' => 'Available quantity not enough for this request.'], 422);
+                if ($reqQty !== 1) {
+                    json_response(['success' => false, 'message' => 'AST requests must have quantity 1.'], 422);
+                }
+                if ($prevIsAvailable !== 1) {
+                    json_response(['success' => false, 'message' => 'AST item is no longer available.'], 422);
                 }
                 $norm = normalize_allowed_employment($invRow['allowed_employment_status'] ?? '');
                 if ($norm['mode'] === 'none') {
@@ -235,8 +238,8 @@ try {
                         }
                     }
                 }
-                $newAvailable = $availableQty - $reqQty;
-                call_mysql_query("UPDATE ast_inventory SET available_qty = {$newAvailable}, is_available = " . ($newAvailable > 0 ? 1 : 0) . " WHERE property_code = '{$itemCode}' LIMIT 1");
+                $newIsAvailable = 0;
+                call_mysql_query("UPDATE ast_inventory SET is_available = 0 WHERE property_code = '{$itemCode}' LIMIT 1");
             }
 
             $setCols = "status='approved', updated_at = NOW()";
@@ -257,8 +260,8 @@ try {
                 'requester_user_id' => (int)($req['requester_user_id'] ?? 0),
                 'old_status' => $prevStatus,
                 'new_status' => 'approved',
-                'available_qty_before' => $availableQty,
-                'available_qty_after' => $newAvailable
+                'ast_is_available_before' => $prevIsAvailable,
+                'ast_is_available_after' => $newIsAvailable
             ));
             json_response(['success' => true, 'message' => 'Requisition approved.']);
             break;

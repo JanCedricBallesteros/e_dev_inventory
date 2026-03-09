@@ -932,10 +932,6 @@ function initTable() {
                 return v && String(v).trim() !== '' ? v : '-';
             }},
             { title: 'Qty', field: 'quantity', width: 80, hozAlign: 'center' },
-            { title: 'Available Qty', field: 'available_qty', width: 110, hozAlign: 'center', formatter: function(cell){
-                const v = cell.getValue();
-                return v !== null && v !== '' ? parseInt(v, 10) : '-';
-            }},
             { title: 'Allowed Status', field: 'allowed_status_names', width: 180, headerFilter: 'input', headerFilterPlaceholder: 'Filter...', formatter: function(cell){
                 const v = cell.getValue();
                 if (!v) return '-';

@@ -75,13 +75,13 @@ if (!(role_has("USER") || role_has("USERS"))) {
                         <div id="reqItemDesc">-</div>
                     </div>
                     <div class="mb-2">
-                        <div class="small text-muted">Available</div>
+                        <div class="small text-muted" id="reqAvailLabel">Availability</div>
                         <div><span id="reqItemAvail">0</span> <span id="reqItemUnit"></span></div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label fw-semibold" id="reqQtyLabel">Quantity to request</label>
                         <input type="number" class="form-control" id="reqQtyInput" min="1" value="1">
-                        <div class="small text-muted mt-1" id="reqQtyHelp">Must be 1 to available quantity.</div>
+                        <div class="small text-muted mt-1" id="reqQtyHelp">Must be exactly 1 for AST requests.</div>
                     </div>
                     <div id="reqModalMsg" class="alert alert-danger d-none"></div>
                 </div>
@@ -115,13 +115,15 @@ function loadItems() {
 
 function syncRequestQtyUI() {
     if (currentType === 'AST') {
+        $('#reqAvailLabel').text('Availability');
         $('#reqQtyLabel').text('Quantity to request (fixed)');
         $('#reqQtyHelp').text('AST uses one property code per unit. Quantity is always 1.');
         $('#reqQtyInput').val(1).prop('readonly', true);
         return;
     }
+    $('#reqAvailLabel').text('Available Qty');
     $('#reqQtyLabel').text('Quantity to request');
-    $('#reqQtyHelp').text('Must be 1 to available quantity.');
+    $('#reqQtyHelp').text('Must not exceed available quantity.');
     $('#reqQtyInput').prop('readonly', false);
 }
 
@@ -147,7 +149,11 @@ function syncRequestQtyUI() {
         columns: [
             { title: 'Item Code', field: 'item_code', width: 160 },
             { title: 'Description', field: 'item_description', widthGrow: 2 },
-            { title: 'Available Qty', field: 'available_qty', width: 110, hozAlign: 'center' },
+            { title: 'Stock', field: 'available_qty', width: 110, hozAlign: 'center', formatter: function(cell){
+                if (currentType === 'AST') return 'Available';
+                const v = parseInt(cell.getValue(), 10);
+                return Number.isFinite(v) ? v : 0;
+            }},
             { title: 'Unit', field: 'unit', width: 90 },
             { title: 'Allowed Status', field: 'allowed_status_names', width: 180, formatter: function(cell){
                 const v = cell.getValue();
@@ -171,8 +177,13 @@ function syncRequestQtyUI() {
         reqSelected = data;
         $('#reqItemCode').text(data.item_code || '-');
         $('#reqItemDesc').text(data.item_description || '-');
-        $('#reqItemAvail').text(data.available_qty || 0);
-        $('#reqItemUnit').text(data.unit || '');
+        if (currentType === 'AST') {
+            $('#reqItemAvail').text('Available');
+            $('#reqItemUnit').text('');
+        } else {
+            $('#reqItemAvail').text(data.available_qty || 0);
+            $('#reqItemUnit').text(data.unit || '');
+        }
         $('#reqQtyInput').val(1);
         syncRequestQtyUI();
         $('#reqModalMsg').addClass('d-none').text('');
@@ -201,7 +212,7 @@ $(document).ready(function() {
             return;
         }
         const qtyVal = parseInt($('#reqQtyInput').val(), 10);
-        const maxQty = parseInt(reqSelected.available_qty, 10) || 0;
+        const maxQty = currentType === 'CSM' ? (parseInt(reqSelected.available_qty, 10) || 0) : 1;
         if (isNaN(qtyVal) || qtyVal <= 0) {
             $('#reqModalMsg').removeClass('d-none').text('Invalid quantity.');
             return;
@@ -210,7 +221,7 @@ $(document).ready(function() {
             $('#reqModalMsg').removeClass('d-none').text('AST requests must be exactly 1.');
             return;
         }
-        if (maxQty > 0 && qtyVal > maxQty) {
+        if (currentType === 'CSM' && maxQty > 0 && qtyVal > maxQty) {
             $('#reqModalMsg').removeClass('d-none').text('Quantity exceeds available.');
             return;
         }

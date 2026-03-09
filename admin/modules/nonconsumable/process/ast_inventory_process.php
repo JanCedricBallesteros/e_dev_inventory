@@ -470,9 +470,6 @@ try {
                     if (!isset($row['serial_number'])) {
                         $row['serial_number'] = '';
                     }
-                    if ($row['available_qty'] === null || $row['available_qty'] === '') {
-                        $row['available_qty'] = 0;
-                    }
                     $row['category_photo_url'] = $row['category_photo']
                         ? BASE_URL . 'upload/category/' . $row['category_photo']
                         : null;
@@ -512,16 +509,13 @@ try {
             if ($property_code === '') {
                 json_response(['success' => false, 'message' => 'Property code is required.'], 422);
             }
-            $sql = "SELECT property_code, quantity, available_qty, allowed_employment_status
+            $sql = "SELECT property_code, quantity, allowed_employment_status
                     FROM ast_inventory
                     WHERE property_code = '" . _esc($property_code) . "' LIMIT 1";
             $res = call_mysql_query($sql);
             $row = $res ? call_mysql_fetch_array($res) : null;
             if (!$row) {
                 json_response(['success' => false, 'message' => 'Item not found.'], 404);
-            }
-            if ($row['available_qty'] === null || $row['available_qty'] === '') {
-                $row['available_qty'] = 0;
             }
             $norm = normalize_allowed_employment($row['allowed_employment_status'] ?? '');
             $row['allowed_employment_status'] = [
@@ -534,39 +528,22 @@ try {
 
         case 'update_availability_settings':
             $property_code = _post('property_code');
-            $available_raw = _post('available_qty', '');
-            $available_qty = ($available_raw === '' || $available_raw === null) ? null : _int($available_raw, 0);
             $allowed_status = _post('allowed_status', '');
             $allowed_norm = normalize_allowed_payload($allowed_status);
             if ($property_code === '') {
                 json_response(['success' => false, 'message' => 'Property code is required.'], 422);
             }
-            $sql = "SELECT item_id, property_code, quantity, available_qty, allowed_employment_status, is_available FROM ast_inventory WHERE property_code = '" . _esc($property_code) . "' LIMIT 1";
+            $sql = "SELECT item_id, property_code, allowed_employment_status, is_available FROM ast_inventory WHERE property_code = '" . _esc($property_code) . "' LIMIT 1";
             $res = call_mysql_query($sql);
             $row = $res ? call_mysql_fetch_array($res) : null;
             if (!$row) {
                 json_response(['success' => false, 'message' => 'Item not found.'], 404);
             }
-            $qty = (int)$row['quantity'];
-            $prev_available = (int)($row['available_qty'] ?? 0);
             $prev_allowed = $row['allowed_employment_status'] ?? null;
             $prev_is_available = (int)($row['is_available'] ?? 0);
-            if ($available_qty === null && $allowed_norm['mode'] !== 'none') {
-                json_response(['success' => false, 'message' => 'Available quantity is required.'], 422);
-            }
-            if ($available_qty === null && $allowed_norm['mode'] === 'none') {
-                $available_qty = 0;
-            }
-            if ($available_qty < 0) {
-                json_response(['success' => false, 'message' => 'Available quantity cannot be negative.'], 422);
-            }
-            if ($available_qty > $qty) {
-                json_response(['success' => false, 'message' => 'Available quantity cannot exceed total quantity.'], 422);
-            }
             $allowed_json = $allowed_norm['json'];
-            $is_available = ($available_qty > 0 && $allowed_norm['mode'] !== 'none') ? 1 : 0;
+            $is_available = ($allowed_norm['mode'] !== 'none') ? 1 : 0;
             $updateSql = "UPDATE ast_inventory SET 
-                            available_qty = " . (int)$available_qty . ",
                             allowed_employment_status = " . ($allowed_json ? "'" . _esc($allowed_json) . "'" : "NULL") . ",
                             is_available = {$is_available},
                             updated_at = NOW()
@@ -577,8 +554,6 @@ try {
             }
             activity_log_new("AST SET AVAILABLE RULES", "SUCCESS", array(
                 'property_code' => $property_code,
-                'old_available_qty' => $prev_available,
-                'new_available_qty' => (int)$available_qty,
                 'old_allowed_status' => $prev_allowed,
                 'new_allowed_status' => $allowed_json,
                 'old_is_available' => $prev_is_available,
@@ -589,8 +564,6 @@ try {
 
         case 'update_availability_settings_bulk':
             $bulk_codes = _post('bulk_codes');
-            $available_raw = _post('available_qty', '');
-            $available_qty = ($available_raw === '' || $available_raw === null) ? null : _int($available_raw, 0);
             $allowed_status = _post('allowed_status', '');
             $allowed_norm = normalize_allowed_payload($allowed_status);
             if ($bulk_codes === '') {
@@ -600,46 +573,12 @@ try {
             if (empty($codes)) {
                 json_response(['success' => false, 'message' => 'No items selected.'], 422);
             }
-            if ($available_qty !== null && $available_qty < 0) {
-                json_response(['success' => false, 'message' => 'Available quantity cannot be negative.'], 422);
-            }
             $codesEsc = array_map(function($c){ return "'" . _esc($c) . "'"; }, $codes);
-            $sql = "SELECT property_code, quantity FROM ast_inventory WHERE property_code IN (" . implode(',', $codesEsc) . ")";
-            $res = call_mysql_query($sql);
-            $qtyMap = [];
-            if ($res) {
-                while ($row = call_mysql_fetch_array($res)) {
-                    $qtyMap[$row['property_code']] = (int)$row['quantity'];
-                }
-            }
-            $violations = [];
-            if ($available_qty !== null) {
-                foreach ($codes as $c) {
-                    $q = $qtyMap[$c] ?? null;
-                    if ($q === null) {
-                        $violations[] = $c . ' (not found)';
-                    } elseif ($available_qty > $q) {
-                        $violations[] = $c . " (qty {$q})";
-                    }
-                }
-                if (!empty($violations)) {
-                    json_response(['success' => false, 'message' => 'Available qty exceeds total for: ' . implode(', ', $violations)], 422);
-                }
-            }
             $allowed_json = $allowed_norm['json'];
-            $is_available = ($available_qty !== null && $available_qty > 0 && $allowed_norm['mode'] !== 'none') ? 1 : 0;
+            $is_available = ($allowed_norm['mode'] !== 'none') ? 1 : 0;
             $set = [];
-            if ($available_qty !== null) {
-                $set[] = "available_qty = " . (int)$available_qty;
-            }
             $set[] = "allowed_employment_status = " . ($allowed_json ? "'" . _esc($allowed_json) . "'" : "NULL");
-            if ($allowed_norm['mode'] === 'none') {
-                $set[] = "is_available = 0";
-            } elseif ($available_qty !== null) {
-                $set[] = "is_available = " . ($available_qty > 0 ? 1 : 0);
-            } else {
-                $set[] = "is_available = CASE WHEN available_qty > 0 THEN 1 ELSE 0 END";
-            }
+            $set[] = "is_available = {$is_available}";
             $set[] = "updated_at = NOW()";
             $updateSql = "UPDATE ast_inventory SET " . implode(', ', $set) . "
                           WHERE property_code IN (" . implode(',', $codesEsc) . ")";
@@ -650,7 +589,6 @@ try {
             activity_log_new("AST BULK SET AVAILABLE RULES", "SUCCESS", array(
                 'count' => count($codes),
                 'property_codes' => $codes,
-                'available_qty' => $available_qty,
                 'allowed_status' => $allowed_json
             ));
             json_response(['success' => true, 'message' => 'Availability settings updated for selected items.']);
@@ -751,7 +689,6 @@ try {
 
             $allowed_json = $allowed_norm['json'];
             $is_available = ($allowed_norm['mode'] !== 'none') ? 1 : 0;
-            $available_qty = $is_available ? 1 : 0;
             $created_codes = [];
             $created_qr_files = [];
 
@@ -803,7 +740,6 @@ try {
                 }
                 $insertCols = array_merge($insertCols, [
                     'quantity',
-                    'available_qty',
                     'allowed_employment_status',
                     'unit',
                     'source_of_fund',
@@ -813,7 +749,6 @@ try {
                 ]);
                 $insertVals = array_merge($insertVals, [
                     1,
-                    (int)$available_qty,
                     ($allowed_json ? "'" . _esc($allowed_json) . "'" : "NULL"),
                     "'" . _esc($unit) . "'",
                     ($source_of_fund !== '' ? "'" . _esc($source_of_fund) . "'" : "NULL"),
@@ -854,7 +789,6 @@ try {
                 'item_description' => $item_description,
                 'serial_numbers_provided' => count($non_empty_serials),
                 'quantity_per_unit' => 1,
-                'available_qty' => $available_qty,
                 'unit' => $unit,
                 'source_of_fund' => $source_of_fund,
                 'cost_value' => $cost_value,
@@ -974,7 +908,6 @@ try {
                 if ($unit === '') $unit = '';
 
                 $is_available = _int($getCol($row, 'is_available'), 1) ? 1 : 0;
-                $available_qty = $is_available ? 1 : 0;
 
                 if ($property_code_csv !== '') {
                     $property_code = $property_code_csv;
@@ -1025,7 +958,6 @@ try {
                                     item_description = '" . _esc($item_description) . "',
                                     " . ($hasSerial ? "serial_number = " . ($serial_number !== '' ? "'" . _esc($serial_number) . "'" : "NULL") . "," : "") . "
                                     quantity = 1,
-                                    available_qty = {$available_qty},
                                     unit = '" . _esc($unit) . "',
                                     source_of_fund = " . ($source_of_fund !== '' ? "'" . _esc($source_of_fund) . "'" : "NULL") . ",
                                     cost_value = " . ($cost_value !== null ? "'" . _esc($cost_value) . "'" : "NULL") . ",
@@ -1043,7 +975,7 @@ try {
                         continue;
                     }
                     $insertSql = "INSERT INTO ast_inventory
-                                    (property_number, property_series, property_code, category_id, item_description, " . ($hasSerial ? "serial_number, " : "") . "quantity, available_qty, unit, source_of_fund, cost_value, qr_image, is_available)
+                                    (property_number, property_series, property_code, category_id, item_description, " . ($hasSerial ? "serial_number, " : "") . "quantity, unit, source_of_fund, cost_value, qr_image, is_available)
                                   VALUES (
                                     '" . _esc($property_number) . "',
                                     {$property_series_csv},
@@ -1052,7 +984,6 @@ try {
                                     '" . _esc($item_description) . "',
                                     " . ($hasSerial ? ($serial_number !== '' ? "'" . _esc($serial_number) . "'" : "NULL") . "," : "") . "
                                     1,
-                                    {$available_qty},
                                     '" . _esc($unit) . "',
                                     " . ($source_of_fund !== '' ? "'" . _esc($source_of_fund) . "'" : "NULL") . ",
                                     " . ($cost_value !== null ? "'" . _esc($cost_value) . "'" : "NULL") . ",

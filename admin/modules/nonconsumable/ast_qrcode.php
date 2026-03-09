@@ -282,7 +282,7 @@ function renderList(filter = '', resetPage = false) {
         const facility    = item.facility || '';
         const acctOfficer = item.accountable_officer || item.issued_to || '';
         const remarks     = item.remarks || item.notes || '';
-        const qrUrl       = item.qr_image_url || (QR_GENERATOR_URL + '?v=' + encodeURIComponent(code));
+        const qrUrl       = QR_GENERATOR_URL + '?v=' + encodeURIComponent(code);
         const shortDesc   = desc.length > 65 ? desc.slice(0, 63) + '\u2026' : desc;
 
         const metaLines = [
