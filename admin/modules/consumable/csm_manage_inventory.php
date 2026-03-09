@@ -20,81 +20,6 @@ if (!(
 }
 
 // -------------------- FUNCTIONS --------------------
-function getAllConsumables() {
-    // IMPORTANT:
-    // - csm_inventory.item_category_img is stored as image_id (numeric) when assigned.
-    // - display_image MUST ALWAYS be a usable URL/path for <img src>.
-    // - If item_category_img is numeric => resolve to csm_inventory_category_images.file_url.
-    // - If item_category_img is empty => fallback to category primary image (file_url).
-    // - Still supports legacy rows where item_category_img might be a path or filename.
-    $sql = "
-        SELECT
-            i.*,
-            c.category_id AS category_id_ref,
-            c.item_category_name,
-
-            /* Resolved per-inventory assigned image (if item_category_img is numeric) */
-            (
-                CASE
-                    WHEN i.item_category_img IS NULL OR TRIM(i.item_category_img) = '' THEN NULL
-
-                    /* Numeric => image_id reference */
-                    WHEN TRIM(i.item_category_img) REGEXP '^[0-9]+$' THEN (
-                        SELECT ci2.file_url
-                        FROM csm_inventory_category_images ci2
-                        WHERE ci2.image_id = CAST(TRIM(i.item_category_img) AS UNSIGNED)
-                        LIMIT 1
-                    )
-
-                    /* Legacy: already stored as a path */
-                    WHEN TRIM(i.item_category_img) LIKE 'upload/%' THEN TRIM(i.item_category_img)
-                    WHEN TRIM(i.item_category_img) LIKE '%/%' THEN TRIM(i.item_category_img)
-
-                    /* Legacy: filename-only */
-                    ELSE CONCAT('upload/category/', TRIM(i.item_category_img))
-                END
-            ) AS assigned_image_url,
-
-            /* Final image for UI: assigned first, else category primary */
-            COALESCE(
-                (
-                    CASE
-                        WHEN i.item_category_img IS NULL OR TRIM(i.item_category_img) = '' THEN NULL
-                        WHEN TRIM(i.item_category_img) REGEXP '^[0-9]+$' THEN (
-                            SELECT ci2.file_url
-                            FROM csm_inventory_category_images ci2
-                            WHERE ci2.image_id = CAST(TRIM(i.item_category_img) AS UNSIGNED)
-                            LIMIT 1
-                        )
-                        WHEN TRIM(i.item_category_img) LIKE 'upload/%' THEN TRIM(i.item_category_img)
-                        WHEN TRIM(i.item_category_img) LIKE '%/%' THEN TRIM(i.item_category_img)
-                        ELSE CONCAT('upload/category/', TRIM(i.item_category_img))
-                    END
-                ),
-                (
-                    SELECT ci.file_url
-                    FROM csm_inventory_category_images ci
-                    WHERE ci.category_id = c.category_id
-                    ORDER BY (CASE WHEN IFNULL(ci.is_primary,0)=1 THEN 0 ELSE 1 END), ci.image_id ASC
-                    LIMIT 1
-                )
-            ) AS display_image
-
-        FROM csm_inventory i
-        LEFT JOIN csm_inventory_category c
-            ON c.item_category_code = i.item_category_code
-        ORDER BY i.created_at DESC
-    ";
-    $result = call_mysql_query($sql);
-    $items = [];
-    if ($result) {
-        while ($row = call_mysql_fetch_array($result)) {
-            $items[] = $row;
-        }
-    }
-    return $items;
-}
-
 function getAllCategories() {
     $sql = "SELECT item_category_code, item_category_name FROM csm_inventory_category ORDER BY item_category_name ASC";
     $result = call_mysql_query($sql);
@@ -109,7 +34,6 @@ function getAllCategories() {
 
 // -------------------- DATA --------------------
 $categories = getAllCategories();
-$consumables = getAllConsumables();
 ?>
 <!DOCTYPE html>
 <html lang="en" class="h-100">
@@ -118,6 +42,7 @@ $consumables = getAllConsumables();
     include_once META_PATH;
     include_once DOMAIN_PATH . '/global/include_top.php';
     ?>
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
 </head>
 
 <style>
@@ -130,11 +55,11 @@ $consumables = getAllConsumables();
     -webkit-overflow-scrolling: touch;
 }
 #consumeable-table .tabulator{
-    min-width: 900px;
+    min-width: 1220px;
 }
 @media (max-width: 576px){
     #consumeable-table .tabulator{
-        min-width: 720px;
+        min-width: 940px;
     }
     #consumeable-table .tabulator .tabulator-cell,
     #consumeable-table .tabulator .tabulator-col{
@@ -175,7 +100,7 @@ $consumables = getAllConsumables();
     aspect-ratio: 4 / 3;
 }
 
-/* ===== Inventory image thumb + modal ===== */
+/* Inventory image */
 .inv-thumb-wrap{
     width:56px;height:56px;
     border:1px solid #dee2e6;border-radius:10px;background:#fff;
@@ -198,6 +123,96 @@ $consumables = getAllConsumables();
     height:auto;
     display:block;
 }
+
+/* ---------- AST-STYLE RULES MODAL ---------- */
+.ast-rules-modal .modal-header{
+    border-bottom: 1px solid #e9ecef;
+}
+.ast-rules-modal .modal-title{
+    font-weight: 700;
+    font-size: 1.05rem;
+}
+.ast-rules-modal .modal-body{
+    padding: 1.1rem 1.1rem .9rem;
+}
+.ast-rule-group{
+    margin-bottom: 1.2rem;
+}
+.ast-rule-label{
+    font-weight: 700;
+    color: #495057;
+    margin-bottom: .45rem;
+    display:block;
+}
+.ast-readonly{
+    background:#f3f4f6 !important;
+    color:#6c757d !important;
+    border-color:#e5e7eb !important;
+}
+.ast-rule-help{
+    margin-top:.45rem;
+    color:#6c757d;
+    font-size:.875rem;
+    line-height:1.5;
+}
+.ast-rule-section-title{
+    font-weight:700;
+    color:#495057;
+    margin-bottom:.2rem;
+}
+.ast-rule-section-subtitle{
+    color:#6c757d;
+    font-size:.9rem;
+    margin-bottom:.7rem;
+}
+.ast-rule-inline-note{
+    color:#6c757d;
+    font-size:.875rem;
+}
+.ast-rule-status-wrap{
+    margin-top:.5rem;
+}
+.ast-rule-status-wrap .badge{
+    font-size:.85rem;
+}
+.ast-select-wrap{
+    position:relative;
+}
+.select2-container{
+    width:100% !important;
+}
+.select2-container--default .select2-selection--multiple{
+    min-height:43px;
+    border:1px solid #ced4da;
+    border-radius:.375rem;
+    padding:4px 32px 4px 6px;
+    background:#fff;
+}
+.select2-container--default.select2-container--focus .select2-selection--multiple{
+    border-color:#86b7fe;
+    box-shadow:0 0 0 .2rem rgba(13,110,253,.15);
+}
+.select2-selection__choice{
+    margin-top:4px !important;
+}
+.select2-dropdown{
+    border:1px solid #ced4da;
+}
+.select2-container--default .select2-selection--multiple .select2-search--inline .select2-search__field{
+    margin-top:5px;
+}
+.ast-select-wrap:after{
+    content:"";
+    position:absolute;
+    right:12px;
+    top:50%;
+    margin-top:-3px;
+    border-left:5px solid transparent;
+    border-right:5px solid transparent;
+    border-top:6px solid #495057;
+    pointer-events:none;
+    z-index:2;
+}
 </style>
 
 <body class="d-flex flex-column h-100">
@@ -210,7 +225,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 <main id="main" class="main">
   <div class="pagetitle">
     <h1 class="h4 fw-semibold mb-1">Manage Consumable Inventory</h1>
-    <p class="text-muted small mb-0">Add records, review inventory, scan QR, update available quantities and etc.</p>
+    <p class="text-muted small mb-0">Add records, review inventory, scan QR, update available quantities and configure request rules.</p>
   </div>
   <section class="section">
     <div class="card">
@@ -221,7 +236,6 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
         </div>
 
         <div class="header-actions">
-          <!-- Add Record button triggers WARNING modal first -->
           <button class="btn btn-light btn-sm" id="btnAddRecordWarn">
             <i class="bi bi-plus-circle"></i>&ensp;Add Record
           </button>
@@ -300,6 +314,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
           <li><b>Unit Quantity</b> and <b>Critical Level</b>: verify correctness.</li>
           <li><b>Available to Issue</b>: set initial available quantity carefully.</li>
           <li><b>Acquisition Date</b> is auto-set to today when you add the record.</li>
+          <li><b>Allowed Employment Status</b> can be configured later using the <b>Rules</b> button.</li>
         </ul>
       </div>
       <div class="modal-footer">
@@ -400,7 +415,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
   </div>
 </div>
 
-<!-- EDIT MODAL (NO AVAILABLE FIELD HERE) -->
+<!-- EDIT MODAL -->
 <div class="modal fade" id="editRecordModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content">
@@ -483,7 +498,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
   </div>
 </div>
 
-<!-- UPDATE AVAILABLE MODAL (SEPARATE) -->
+<!-- UPDATE AVAILABLE MODAL -->
 <div class="modal fade" id="availableModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
@@ -518,6 +533,76 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
   </div>
 </div>
 
+<!-- AST-STYLE RULES MODAL -->
+<div class="modal fade ast-rules-modal" id="availabilityRulesModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title fw-semibold">
+          <i class="bi bi-sliders"></i>&ensp;Set Available Item Rules
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body">
+        <form id="availabilityRulesForm">
+          <input type="hidden" name="inventory_id" id="rules_inventory_id">
+
+          <div class="ast-rule-group">
+            <label class="ast-rule-label">Item Code</label>
+            <input type="text" class="form-control ast-readonly" id="rules_item_code" readonly placeholder="Multiple items">
+            <div class="small text-muted mt-1" id="rules_item_count">1 item selected</div>
+          </div>
+
+          <div class="ast-rule-group">
+            <label class="ast-rule-label">Available for Requisition (Qty)</label>
+            <input type="number" class="form-control" name="current_unit_quantity" id="rules_current_unit_quantity" min="0">
+            <div class="ast-rule-help">
+              <div>Must be between 0 and total quantity.</div>
+              <div>Single set: quantity will update this item's current available qty.</div>
+              <div>Single set: status is auto-computed from quantity and rules.</div>
+              <div>Total Qty: <span id="rules_total_qty_text">-</span></div>
+            </div>
+          </div>
+
+          <div class="ast-rule-group">
+            <div class="ast-rule-section-title">Allowed Employment Status</div>
+            <div class="ast-rule-section-subtitle">
+              Choose allowed status per position. "None" means no one can request.
+            </div>
+
+            <div class="mb-3">
+              <label class="ast-rule-label">Teaching Personnel</label>
+              <div class="ast-select-wrap">
+                <select id="rules_teaching_status" class="form-select" multiple></select>
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <label class="ast-rule-label">Non-Teaching Personnel</label>
+              <div class="ast-select-wrap">
+                <select id="rules_non_teaching_status" class="form-select" multiple></select>
+              </div>
+            </div>
+
+            <div class="ast-rule-status-wrap">
+              <div class="ast-rule-inline-note">Current Status: <span id="rules_status_text">—</span></div>
+              <div class="ast-rule-inline-note mt-1">Critical Level: <span id="rules_crit_level_text">0</span></div>
+            </div>
+          </div>
+
+          <div id="rulesMsg" class="mt-2"></div>
+
+          <div class="mt-3 d-flex gap-2">
+            <button type="submit" class="btn btn-primary px-4" id="btnSaveRules">Save Rules</button>
+            <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal">Close</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- QR PREVIEW MODAL -->
 <div class="modal fade" id="qrPreviewModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
@@ -539,7 +624,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
   </div>
 </div>
 
-<!-- INVENTORY LOG (WIP) -->
+<!-- INVENTORY LOG -->
 <div class="modal fade" id="logmodal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -552,6 +637,21 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
           <i class="bi bi-info-circle"></i>
           WORK IN PROGRESS HERE
         </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PRINT MODAL -->
+<div class="modal fade" id="printModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title fw-semibold"><i class="bi bi-printer"></i>&ensp;Print</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-info mb-0">Print module placeholder.</div>
       </div>
     </div>
   </div>
@@ -735,10 +835,16 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
         <div class="mt-3">
           <details>
             <summary class="small text-muted">Show expected CSV columns</summary>
-            <pre class="small mb-0 mt-2">inventory_system_item_code,item_description,item_category_code,unit_quantity,current_unit_quantity,unit_crit_level,item_cost,source_of_funds</pre>
+            <pre class="small mb-0 mt-2">inventory_system_item_code,item_description,item_category_code,unit_quantity,current_unit_quantity,unit_crit_level,item_cost,source_of_funds,status,allowed_employment_status</pre>
           </details>
           <div class="small text-muted mt-2">
             <b>inventory_system_item_code</b>: numbers only (or blank). Example: <code>1</code> becomes <code>CSM-0002-0001</code> (depending on category).
+          </div>
+          <div class="small text-muted mt-1">
+            <b>allowed_employment_status</b>: optional. Examples: <code>ALL</code>, <code>NONE</code>, <code>{"teaching":[1],"non_teaching":[2]}</code>.
+          </div>
+          <div class="small text-muted mt-1">
+            <b>status</b>: numeric. Use <code>1</code> for Available and <code>0</code> for Unavailable.
           </div>
         </div>
       </div>
@@ -748,13 +854,18 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 
 <?php include_once FOOTER_PATH; ?>
 
-<!-- Tabulator JS (v4.7) -->
 <script src="https://unpkg.com/tabulator-tables@4.7.2/dist/js/tabulator.min.js"></script>
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
 <script>
-var consumableData = <?php echo json_encode($consumables); ?>;
+var consumableData = [];
 const BASE_URL = <?php echo json_encode(BASE_URL); ?>;
+const PROCESS_URL = 'process/csm_inventory_process.php';
+const BULK_PROCESS_URL = 'process/csm_inventory_bulk_process.php';
+
+let employmentStatusCache = [];
+let currentRulesRow = null;
 
 function escHtml(s){
   return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -765,20 +876,14 @@ function absUrl(path){
   path = String(path || '').replace(/^\/+/, '');
   return base + sep + path;
 }
-
-// Normalize category code for DISPLAY to avoid: "CSM-CSM0002"
 function normalizeCategoryDisplay(code){
   const raw = String(code ?? '').trim();
   if(!raw) return '';
-  // If "CSM0002" or "CSM-0002" -> show as "CSM-0002"
   const m1 = raw.match(/^CSM-?(\d+)$/i);
   if(m1) return `CSM-${m1[1]}`;
-  // If already begins with "CSM-" keep it
   if(/^CSM-/i.test(raw)) return raw;
-  // Otherwise prefix once for display
   return `CSM-${raw}`;
 }
-
 function groupLabel(code, name){
   const c = String(code ?? '').trim();
   const n = String(name ?? '').trim();
@@ -787,12 +892,46 @@ function groupLabel(code, name){
   if(cDisp && n) return `${cDisp} — ${n}`;
   return cDisp || n;
 }
+function badgeStatusHtml(status){
+  const v = parseInt(status, 10) || 0;
+  if(v === 1) return '<span class="badge bg-success">Available</span>';
+  return '<span class="badge bg-secondary">Unavailable</span>';
+}
+function applyItemCodeSmartFilter(input){
+  const raw = String(input ?? '').trim();
+  if(!raw){
+    table.clearFilter(true);
+    return;
+  }
 
-/* ===== Inventory Image View Modal ===== */
+  const compact = raw.replace(/\s+/g, '');
+
+  const full = compact.match(/^CSM-([A-Za-z0-9\-_]+)-(\d{4})$/i);
+  if(full){
+    const canon = `CSM-${full[1]}-${full[2]}`;
+    table.setFilter("inventory_system_item_code", "=", canon);
+    return;
+  }
+
+  const m = compact.match(/(\d{1,4})$/);
+  if(m){
+    const padded = m[1].padStart(4, '0');
+    table.setFilter(function(data){
+      const code = String(data.inventory_system_item_code ?? '');
+      const mm = code.match(/-(\d{4})$/);
+      return mm ? mm[1] === padded : false;
+    });
+    return;
+  }
+
+  const normIn = compact.toLowerCase().replace(/[^a-z0-9]/g, '');
+  table.setFilter(function(data){
+    const codeNorm = String(data.inventory_system_item_code ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    return codeNorm === normIn;
+  });
+}
 function openInvImageModal(row){
   if(!row) return;
-
-  // IMPORTANT: item_category_img can be numeric ID, so DO NOT use it as a path.
   const rel = row.display_image || '';
   if(!rel) return;
 
@@ -812,52 +951,173 @@ function openInvImageModal(row){
   $('#viewInvImageModal').modal('show');
 }
 
-/**
- * Smart filter to accept:
- * - "0001"
- * - "CSM0001"
- * - "CSM-0001"
- * - " csm 0001 "
- * - full code "CSM-0002-0001"
- */
-function applyItemCodeSmartFilter(input){
-  const raw = String(input ?? '').trim();
-  if(!raw){
-    table.clearFilter(true);
-    return;
-  }
-
-  const compact = raw.replace(/\s+/g, '');
-
-  // FULL CODE: CSM-XXXX-0001 => exact match
-  const full = compact.match(/^CSM-([A-Za-z0-9\-_]+)-(\d{4})$/i);
-  if(full){
-    const canon = `CSM-${full[1]}-${full[2]}`;
-    table.setFilter("inventory_system_item_code", "=", canon);
-    return;
-  }
-
-  // LOOSE CODE: extract last 1-4 digits, match by suffix "-NNNN"
-  const m = compact.match(/(\d{1,4})$/);
-  if(m){
-    const padded = m[1].padStart(4, '0');
-    table.setFilter(function(data){
-      const code = String(data.inventory_system_item_code ?? '');
-      const mm = code.match(/-(\d{4})$/);
-      return mm ? mm[1] === padded : false;
+/* ---------- RULES SELECT HELPERS ---------- */
+function makeSelect2Data() {
+  const data = [{ id: 'NONE', text: 'None' }];
+  employmentStatusCache.forEach(s => {
+    data.push({
+      id: String(s.employment_status_id),
+      text: s.status_name || s.status_code || ('Status #' + s.employment_status_id)
     });
-    return;
+  });
+  return data;
+}
+function normalizeNoneSelection($el) {
+  let vals = ($el.val() || []).map(String);
+  if (vals.includes('NONE') && vals.length > 1) {
+    vals = vals.filter(v => v !== 'NONE');
+    $el.val(vals).trigger('change.select2');
+  }
+}
+function initSingleRulesSelect2(selector, placeholderText) {
+  const $el = $(selector);
+
+  if ($el.hasClass('select2-hidden-accessible')) {
+    $el.select2('destroy');
   }
 
-  // fallback normalize
-  const normIn = compact.toLowerCase().replace(/[^a-z0-9]/g, '');
-  table.setFilter(function(data){
-    const codeNorm = String(data.inventory_system_item_code ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    return codeNorm === normIn;
+  $el.empty();
+
+  const data = makeSelect2Data();
+  data.forEach(function(item) {
+    const opt = new Option(item.text, item.id, false, false);
+    $el.append(opt);
+  });
+
+  $el.select2({
+    placeholder: placeholderText,
+    width: '100%',
+    closeOnSelect: false,
+    dropdownParent: $('#availabilityRulesModal'),
+    allowClear: false
+  });
+
+  $el.off('change.ast').on('change.ast', function() {
+    normalizeNoneSelection($(this));
+  });
+}
+function initRulesSelect2() {
+  initSingleRulesSelect2('#rules_teaching_status', 'Select teaching status');
+  initSingleRulesSelect2('#rules_non_teaching_status', 'Select non-teaching status');
+}
+function getSelectValues($el) {
+  return ($el.val() || []).map(String);
+}
+function setRulesSelectValues(mode, teachingIds, nonTeachingIds){
+  if (mode === 'none') {
+    $('#rules_teaching_status').val(['NONE']).trigger('change');
+    $('#rules_non_teaching_status').val(['NONE']).trigger('change');
+    return;
+  }
+  if (mode === 'all') {
+    $('#rules_teaching_status').val([]).trigger('change');
+    $('#rules_non_teaching_status').val([]).trigger('change');
+    return;
+  }
+  $('#rules_teaching_status').val((teachingIds || []).map(String)).trigger('change');
+  $('#rules_non_teaching_status').val((nonTeachingIds || []).map(String)).trigger('change');
+}
+function getAllowedStatusPayloadFromModal(){
+  const teachingVals = getSelectValues($('#rules_teaching_status'));
+  const nonTeachingVals = getSelectValues($('#rules_non_teaching_status'));
+
+  const teachingNone = teachingVals.includes('NONE');
+  const nonTeachingNone = nonTeachingVals.includes('NONE');
+
+  const teachingIds = teachingVals.filter(v => v !== 'NONE').map(v => parseInt(v, 10)).filter(v => v > 0);
+  const nonTeachingIds = nonTeachingVals.filter(v => v !== 'NONE').map(v => parseInt(v, 10)).filter(v => v > 0);
+
+  if (teachingVals.length === 0 && nonTeachingVals.length === 0) {
+    return 'ALL';
+  }
+
+  if (teachingNone && nonTeachingNone) {
+    return 'NONE';
+  }
+
+  return JSON.stringify({
+    teaching: teachingNone ? [] : teachingIds,
+    non_teaching: nonTeachingNone ? [] : nonTeachingIds
+  });
+}
+function resetRulesModalState(){
+  currentRulesRow = null;
+  $('#rulesMsg').html('');
+  $('#rules_inventory_id').val('');
+  $('#rules_item_code').val('');
+  $('#rules_item_count').text('1 item selected');
+  $('#rules_current_unit_quantity').val('');
+  $('#rules_total_qty_text').text('-');
+  $('#rules_crit_level_text').text('0');
+  $('#rules_status_text').html('—');
+  if ($('#rules_teaching_status').hasClass('select2-hidden-accessible')) {
+    $('#rules_teaching_status').val([]).trigger('change');
+  }
+  if ($('#rules_non_teaching_status').hasClass('select2-hidden-accessible')) {
+    $('#rules_non_teaching_status').val([]).trigger('change');
+  }
+}
+function openAvailabilityRulesModal(id){
+  resetRulesModalState();
+  $('#rules_inventory_id').val(id);
+  $('#rules_item_code').val('Loading...');
+
+  $.ajax({
+    url: PROCESS_URL,
+    type: 'POST',
+    dataType: 'json',
+    data: { action: 'get_availability_settings', inventory_id: id },
+    success: function(res){
+      if(!res || !res.success){
+        $('#rulesMsg').html('<div class="alert alert-danger">'+ escHtml((res && res.message) ? res.message : 'Record not found.') +'</div>');
+        return;
+      }
+
+      const d = res.data || {};
+      currentRulesRow = d;
+
+      $('#rules_inventory_id').val(d.inventory_id || id);
+      $('#rules_item_code').val(d.inventory_system_item_code || '');
+      $('#rules_item_count').text('1 item selected');
+      $('#rules_current_unit_quantity').val(d.current_unit_quantity ?? 0);
+      $('#rules_total_qty_text').text(d.unit_quantity ?? '-');
+      $('#rules_crit_level_text').text(d.unit_crit_level ?? 0);
+      $('#rules_status_text').html(badgeStatusHtml(d.status));
+
+      const mode = d.allowed_employment_status?.mode || 'all';
+      const teaching = Array.isArray(d.allowed_employment_status?.teaching) ? d.allowed_employment_status.teaching : [];
+      const nonTeaching = Array.isArray(d.allowed_employment_status?.non_teaching) ? d.allowed_employment_status.non_teaching : [];
+
+      $('#availabilityRulesModal')
+        .off('shown.bs.modal.setvals')
+        .on('shown.bs.modal.setvals', function () {
+          initRulesSelect2();
+          setRulesSelectValues(mode, teaching, nonTeaching);
+          $('#availabilityRulesModal').off('shown.bs.modal.setvals');
+        });
+
+      $('#availabilityRulesModal').modal('show');
+    },
+    error: function(xhr){
+      $('#rulesMsg').html('<div class="alert alert-danger">Error loading availability settings.</div>');
+      console.error(xhr.responseText);
+    }
+  });
+}
+function loadEmploymentStatuses(){
+  return $.ajax({
+    url: PROCESS_URL,
+    type: 'POST',
+    dataType: 'json',
+    data: { action: 'list_employment_status' }
+  }).done(function(res){
+    employmentStatusCache = (res && res.success && Array.isArray(res.data)) ? res.data : [];
+  }).fail(function(){
+    employmentStatusCache = [];
   });
 }
 
-/* ===== Tabulator columns ===== */
+/* ---------- TABULATOR ---------- */
 var columns = [
   {
     title:"Image",
@@ -867,8 +1127,6 @@ var columns = [
     headerSort:false,
     formatter:function(cell){
       const d = cell.getRow().getData();
-
-      // IMPORTANT: display_image is the resolved path; item_category_img might be numeric.
       const rel = d.display_image || '';
       const url = rel ? absUrl(rel) : '';
 
@@ -900,18 +1158,37 @@ var columns = [
     minWidth:240,
     formatter:function(cell){
       const d = cell.getRow().getData();
-      const code = d.item_category_code || '';
-      const name = d.item_category_name || '';
-      return escHtml(groupLabel(code, name));
+      return escHtml(groupLabel(d.item_category_code || '', d.item_category_name || ''));
     }
   },
 
   {title:"Actual Qty", field:"unit_quantity", align:"right", minWidth:90},
   {title:"Available to Issue", field:"current_unit_quantity", align:"right", minWidth:150},
+
+  {
+    title:"Status",
+    field:"status",
+    minWidth:120,
+    hozAlign:"center",
+    formatter:function(cell){
+      return badgeStatusHtml(cell.getValue());
+    }
+  },
+
   {title:"Critical Level", field:"unit_crit_level", align:"right", minWidth:130},
+
+  {
+    title:"Allowed Status",
+    field:"allowed_status_names",
+    minWidth:220,
+    formatter:function(cell){
+      const v = String(cell.getValue() || '');
+      return escHtml(v || 'All').replace(/\s\|\s/g, '<br>');
+    }
+  },
+
   {title:"Cost", field:"item_cost", align:"right", formatter:"money", formatterParams:{precision:2}, minWidth:110},
   {title:"Source of Funds", field:"source_of_funds", minWidth:160},
-
   {title:"Acquisition Date", field:"acquisition_date", minWidth:130},
   {title:"Created At", field:"created_at", minWidth:160},
   {title:"Last Updated", field:"last_updated", minWidth:130},
@@ -940,46 +1217,42 @@ var columns = [
     field: "inventory_id",
     headerSort: false,
     hozAlign: "center",
-    minWidth: 270,
+    minWidth: 380,
     formatter: function(cell){
       const id = cell.getValue();
       return `
         <button type="button" class="btn btn-sm btn-primary me-1 btn-edit" data-id="${id}">
           <i class="bi bi-pencil-square"></i> Edit
         </button>
-        <button type="button" class="btn btn-sm btn-outline-primary btn-available" data-id="${id}">
+        <button type="button" class="btn btn-sm btn-outline-primary me-1 btn-available" data-id="${id}">
           <i class="bi bi-box-arrow-in-down"></i> Available
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-secondary btn-rules" data-id="${id}">
+          <i class="bi bi-sliders"></i> Rules
         </button>
       `;
     }
   }
 ];
 
-// GROUPED TABULATOR
 var table = new Tabulator("#consumeable-table", {
   data: consumableData,
   layout: "fitColumns",
   columns: columns,
   pagination: "local",
   paginationSize: 20,
-  paginationSizeSelector: [20,100,500,1000, true],
+  paginationSizeSelector: [20,100,500,1000,true],
   movableColumns: true,
   height: "500px",
-
   groupBy: function(data){
     return groupLabel(data.item_category_code, data.item_category_name);
   },
-
   groupHeader: function(value, count, data){
     const qty = data.reduce((sum, r) => sum + (parseInt(r.unit_quantity, 10) || 0), 0);
     return `${escHtml(value)} <span class="text-muted small">(${count} items, Qty ${qty})</span>`;
   },
-
   groupStartOpen: true
 });
-
-const PROCESS_URL = 'process/csm_inventory_process.php';
-const BULK_PROCESS_URL = 'process/csm_inventory_bulk_process.php';
 
 window.table = table;
 
@@ -991,7 +1264,7 @@ function refreshTableData(){
     data: { action: 'list_inventory' },
     success: function(res){
       if(res && res.success){
-        table.setData(res.data);
+        table.setData(res.data || []);
       }
     },
     error: function(xhr){
@@ -1027,11 +1300,9 @@ $('#btnExportCurrentView').off('click').on('click', function(){
 
 $('#btnExportServer').off('click').on('click', function(){
   const cat = ($('#exportCategory').val() || '').trim();
-
   const url = new URL(BULK_PROCESS_URL, window.location.href);
   url.searchParams.set('action', 'export_csv');
   if(cat) url.searchParams.set('item_category_code', cat);
-
   window.location.href = url.toString();
   $('#exportMsg').html('<div class="alert alert-success">Downloading server CSV...</div>');
 });
@@ -1066,39 +1337,7 @@ $('#addInventoryForm').off('submit').on('submit', function(e){
   });
 });
 
-/* ---------- EDIT BUTTON ---------- */
-$('#consumeable-table')
-  .off('click', '.btn-edit')
-  .on('click', '.btn-edit', function(e){
-    e.preventDefault(); e.stopPropagation();
-    const id = $(this).data('id');
-    openEditModal(id);
-  });
-
-/* ---------- AVAILABLE BUTTON ---------- */
-$('#consumeable-table')
-  .off('click', '.btn-available')
-  .on('click', '.btn-available', function(e){
-    e.preventDefault(); e.stopPropagation();
-    const id = $(this).data('id');
-    openAvailableModal(id);
-  });
-
-/* ---------- QR PREVIEW ---------- */
-$('#consumeable-table')
-  .off('click', '.qr-thumb')
-  .on('click', '.qr-thumb', function(e){
-    e.preventDefault(); e.stopPropagation();
-    const code = $(this).data('code');
-    if(!code) return;
-
-    const imgUrl = "../tools/qr_image.php?v=" + encodeURIComponent(code);
-    $('#qrPreviewCode').text(code);
-    $('#qrPreviewImg').attr('src', imgUrl);
-    $('#qrPreviewModal').modal('show');
-  });
-
-/* ---------- OPEN EDIT MODAL (fetch one) ---------- */
+/* ---------- EDIT ---------- */
 function openEditModal(id){
   $('#editRecordMsg').html('');
 
@@ -1113,11 +1352,9 @@ function openEditModal(id){
         return;
       }
 
-      const d = res.data;
-
+      const d = res.data || {};
       $('#edit_inventory_id').val(d.inventory_id);
 
-      // Extract "0001" from "CSM-0002-0001"
       let numericPart = '';
       try{
         const s = String(d.inventory_system_item_code || '');
@@ -1126,13 +1363,12 @@ function openEditModal(id){
       }catch(e){ numericPart = ''; }
 
       $('#edit_inventory_system_item_code').val(numericPart);
-
-      $('#edit_item_description').val(d.item_description);
-      $('#edit_item_category_code').val(d.item_category_code);
-      $('#edit_unit_quantity').val(d.unit_quantity);
-      $('#edit_unit_crit_level').val(d.unit_crit_level);
-      $('#edit_item_cost').val(d.item_cost);
-      $('#edit_source_of_funds').val(d.source_of_funds);
+      $('#edit_item_description').val(d.item_description || '');
+      $('#edit_item_category_code').val(d.item_category_code || '');
+      $('#edit_unit_quantity').val(d.unit_quantity ?? 0);
+      $('#edit_unit_crit_level').val(d.unit_crit_level ?? 0);
+      $('#edit_item_cost').val(d.item_cost ?? 0);
+      $('#edit_source_of_funds').val(d.source_of_funds || '');
 
       $('#editRecordModal').modal('show');
     },
@@ -1143,7 +1379,6 @@ function openEditModal(id){
   });
 }
 
-/* ---------- UPDATE ---------- */
 $('#editInventoryForm').off('submit').on('submit', function(e){
   e.preventDefault();
   $('#editRecordMsg').html('');
@@ -1167,27 +1402,36 @@ $('#editInventoryForm').off('submit').on('submit', function(e){
   });
 });
 
-/* ---------- AVAILABLE MODAL ---------- */
+/* ---------- AVAILABLE ---------- */
 function openAvailableModal(id){
   $('#availableMsg').html('');
   $('#avail_inventory_id').val(id);
+  $('#avail_item_label').text('Loading...');
+  $('#avail_current_unit_quantity').val('');
 
-  try{
-    const row = table.getRow(id);
-    const d = row ? row.getData() : null;
-    if(d){
-      $('#avail_item_label').text(`${d.inventory_system_item_code} — ${String(d.item_description || '').slice(0, 60)}`);
-      $('#avail_current_unit_quantity').val(d.current_unit_quantity ?? 0);
-    }else{
+  $.ajax({
+    url: PROCESS_URL,
+    type: 'POST',
+    dataType: 'json',
+    data: { action: 'get_inventory', inventory_id: id },
+    success: function(res){
+      if(res && res.success){
+        const d = res.data || {};
+        $('#avail_item_label').text(`${d.inventory_system_item_code || ''} — ${String(d.item_description || '').slice(0, 60)}`);
+        $('#avail_current_unit_quantity').val(d.current_unit_quantity ?? 0);
+      }else{
+        $('#avail_item_label').text(`ID #${id}`);
+        $('#avail_current_unit_quantity').val(0);
+      }
+      $('#availableModal').modal('show');
+    },
+    error: function(xhr){
       $('#avail_item_label').text(`ID #${id}`);
       $('#avail_current_unit_quantity').val(0);
+      $('#availableModal').modal('show');
+      console.error(xhr.responseText);
     }
-  }catch(e){
-    $('#avail_item_label').text(`ID #${id}`);
-    $('#avail_current_unit_quantity').val(0);
-  }
-
-  $('#availableModal').modal('show');
+  });
 }
 
 $('#availableForm').off('submit').on('submit', function(e){
@@ -1212,6 +1456,94 @@ $('#availableForm').off('submit').on('submit', function(e){
     }
   });
 });
+
+/* ---------- RULES SAVE ---------- */
+$('#availabilityRulesForm').off('submit').on('submit', function(e){
+  e.preventDefault();
+  $('#rulesMsg').html('');
+
+  const btn = $('#btnSaveRules');
+  const oldHtml = btn.html();
+  btn.prop('disabled', true).text('Saving...');
+
+  $.ajax({
+    url: PROCESS_URL,
+    type: 'POST',
+    dataType: 'json',
+    data: {
+      action: 'update_availability_settings',
+      inventory_id: $('#rules_inventory_id').val(),
+      current_unit_quantity: $('#rules_current_unit_quantity').val(),
+      allowed_status: getAllowedStatusPayloadFromModal()
+    },
+    success: function(res){
+      if(res && res.success){
+        $('#rulesMsg').html('<div class="alert alert-success mb-0">'+ escHtml(res.message || 'Rules updated.') +'</div>');
+        refreshTableData();
+        setTimeout(function(){
+          $('#availabilityRulesModal').modal('hide');
+        }, 450);
+      } else {
+        $('#rulesMsg').html('<div class="alert alert-danger">'+ escHtml((res && res.message) ? res.message : 'Update failed.') +'</div>');
+      }
+    },
+    error: function(xhr){
+      let msg = 'Error updating rules.';
+      try {
+        const r = JSON.parse(xhr.responseText);
+        if(r && r.message) msg = r.message;
+      } catch(e){}
+      $('#rulesMsg').html('<div class="alert alert-danger">'+ escHtml(msg) +'</div>');
+    },
+    complete: function(){
+      btn.prop('disabled', false).html(oldHtml);
+    }
+  });
+});
+
+$('#availabilityRulesModal').on('hidden.bs.modal', function(){
+  resetRulesModalState();
+});
+
+/* ---------- TABLE BUTTONS ---------- */
+$('#consumeable-table')
+  .off('click', '.btn-edit')
+  .on('click', '.btn-edit', function(e){
+    e.preventDefault();
+    e.stopPropagation();
+    openEditModal($(this).data('id'));
+  });
+
+$('#consumeable-table')
+  .off('click', '.btn-available')
+  .on('click', '.btn-available', function(e){
+    e.preventDefault();
+    e.stopPropagation();
+    openAvailableModal($(this).data('id'));
+  });
+
+$('#consumeable-table')
+  .off('click', '.btn-rules')
+  .on('click', '.btn-rules', function(e){
+    e.preventDefault();
+    e.stopPropagation();
+    openAvailabilityRulesModal($(this).data('id'));
+  });
+
+/* ---------- QR PREVIEW ---------- */
+$('#consumeable-table')
+  .off('click', '.qr-thumb')
+  .on('click', '.qr-thumb', function(e){
+    e.preventDefault();
+    e.stopPropagation();
+    const code = $(this).data('code');
+    if(!code) return;
+
+    const imgUrl = "../tools/qr_image.php?v=" + encodeURIComponent(code);
+    $('#qrPreviewCode').text(code);
+    $('#qrPreviewImg').attr('src', imgUrl);
+    $('#qrPreviewModal').modal('show');
+  });
 
 /* ---------- BULK UPLOAD ---------- */
 $('#bulkUploadForm').off('submit').on('submit', function(e){
@@ -1280,6 +1612,12 @@ $('#bulkUploadForm').off('submit').on('submit', function(e){
 $('#bulkModal').on('shown.bs.modal', function(){
   $('#bulkUploadMsg').html('');
   $('#bulkUploadForm')[0].reset();
+});
+
+/* ---------- INITIAL LOAD ---------- */
+$(function(){
+  loadEmploymentStatuses();
+  refreshTableData();
 });
 </script>
 
@@ -1398,7 +1736,7 @@ async function startScanner() {
         document.getElementById('lastScanned').textContent = decodedText;
         if (window.table) applyItemCodeSmartFilter(decodedText);
       },
-      (errorMessage) => {}
+      () => {}
     );
     document.getElementById('scannerLoading').style.display = 'none';
   } catch (e) {

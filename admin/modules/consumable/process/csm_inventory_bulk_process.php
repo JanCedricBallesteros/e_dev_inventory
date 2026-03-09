@@ -48,13 +48,11 @@ function _parse_item_code_input($raw) {
         return ['ok'=>true, 'type'=>'digits', 'digits'=>$s, 'cat_from_code'=>'', 'error'=>''];
     }
 
-    // full code: CSM-{CAT}-0001 (CAT can be "0002" or "CSM0002")
-    if (preg_match('/^CSM-([A-Za-z0-9\-_]+)-(\d{4})$/', $s, $m)) {
+    if (preg_match('/^CSM-([A-Za-z0-9\-_]+)-(\d{4})$/i', $s, $m)) {
         $cat = (string)$m[1];
-        // normalize "CSM0002" / "CSM-0002" -> "0002"
         if (preg_match('/^CSM-?(\d+)$/i', $cat, $mm)) $cat = (string)$mm[1];
 
-        $digits = (string)intval($m[2], 10); // "0001" -> "1"
+        $digits = (string)intval($m[2], 10);
         if ($digits === '0') $digits = '';
         if ($digits === '') {
             return ['ok'=>false, 'type'=>'full', 'digits'=>'', 'cat_from_code'=>$cat, 'error'=>"Invalid numeric suffix in item code: {$s}"];
@@ -160,6 +158,150 @@ function _read_csv_rows($tmpPath) {
     return [$header, $rows];
 }
 
+/* -------------------- EMPLOYMENT STATUS / STATUS HELPERS -------------------- */
+
+function normalize_allowed_payload_csm_bulk($raw) {
+    if ($raw === null || $raw === '') {
+        return [
+            'mode' => 'all',
+            'json' => null,
+            'teaching' => [],
+            'non_teaching' => []
+        ];
+    }
+
+    $s = trim((string)$raw);
+
+    if ($s === '' || strcasecmp($s, 'ALL') === 0) {
+        return ['mode' => 'all', 'json' => null, 'teaching' => [], 'non_teaching' => []];
+    }
+
+    if (strcasecmp($s, 'NONE') === 0) {
+        return [
+            'mode' => 'none',
+            'json' => json_encode(['none' => true]),
+            'teaching' => [],
+            'non_teaching' => []
+        ];
+    }
+
+    $decoded = json_decode($s, true);
+    if (is_array($decoded) && (array_key_exists('teaching', $decoded) || array_key_exists('non_teaching', $decoded) || array_key_exists('none', $decoded))) {
+        if (!empty($decoded['none'])) {
+            return [
+                'mode' => 'none',
+                'json' => json_encode(['none' => true]),
+                'teaching' => [],
+                'non_teaching' => []
+            ];
+        }
+
+        $teaching = array_values(array_filter(array_map('intval', (array)($decoded['teaching'] ?? []))));
+        $non = array_values(array_filter(array_map('intval', (array)($decoded['non_teaching'] ?? []))));
+
+        if (empty($teaching) && empty($non)) {
+            return ['mode' => 'all', 'json' => null, 'teaching' => [], 'non_teaching' => []];
+        }
+
+        return [
+            'mode' => 'structured',
+            'json' => json_encode(['teaching' => $teaching, 'non_teaching' => $non]),
+            'teaching' => $teaching,
+            'non_teaching' => $non
+        ];
+    }
+
+    $parts = preg_split('/\s*,\s*/', $s);
+    $ids = array_values(array_filter(array_map('intval', $parts)));
+    if (empty($ids)) {
+        return ['mode' => 'all', 'json' => null, 'teaching' => [], 'non_teaching' => []];
+    }
+
+    return [
+        'mode' => 'legacy',
+        'json' => json_encode(['teaching' => $ids, 'non_teaching' => $ids]),
+        'teaching' => $ids,
+        'non_teaching' => $ids
+    ];
+}
+
+function normalize_allowed_employment_csm_bulk($raw) {
+    if ($raw === null || $raw === '') {
+        return [
+            'mode' => 'all',
+            'teaching' => [],
+            'non_teaching' => [],
+            'selected_ids' => []
+        ];
+    }
+
+    $decoded = is_array($raw) ? $raw : json_decode((string)$raw, true);
+
+    if (!is_array($decoded)) {
+        $s = trim((string)$raw);
+
+        if ($s === '' || strcasecmp($s, 'ALL') === 0) {
+            return ['mode' => 'all', 'teaching' => [], 'non_teaching' => [], 'selected_ids' => []];
+        }
+
+        if (strcasecmp($s, 'NONE') === 0) {
+            return ['mode' => 'none', 'teaching' => [], 'non_teaching' => [], 'selected_ids' => []];
+        }
+
+        $parts = preg_split('/\s*,\s*/', $s);
+        $ids = array_values(array_filter(array_map('intval', $parts)));
+        if (!empty($ids)) {
+            return [
+                'mode' => 'legacy',
+                'teaching' => $ids,
+                'non_teaching' => $ids,
+                'selected_ids' => $ids
+            ];
+        }
+
+        return ['mode' => 'all', 'teaching' => [], 'non_teaching' => [], 'selected_ids' => []];
+    }
+
+    if (!empty($decoded['none'])) {
+        return ['mode' => 'none', 'teaching' => [], 'non_teaching' => [], 'selected_ids' => []];
+    }
+
+    if (array_key_exists('teaching', $decoded) || array_key_exists('non_teaching', $decoded)) {
+        $teaching = array_values(array_filter(array_map('intval', (array)($decoded['teaching'] ?? []))));
+        $non = array_values(array_filter(array_map('intval', (array)($decoded['non_teaching'] ?? []))));
+        $selected = array_values(array_unique(array_merge($teaching, $non)));
+
+        if (empty($teaching) && empty($non)) {
+            return ['mode' => 'all', 'teaching' => [], 'non_teaching' => [], 'selected_ids' => []];
+        }
+
+        return [
+            'mode' => 'structured',
+            'teaching' => $teaching,
+            'non_teaching' => $non,
+            'selected_ids' => $selected
+        ];
+    }
+
+    $list = array_values($decoded);
+    $ids = array_values(array_filter(array_map('intval', $list)));
+    if (empty($ids)) {
+        return ['mode' => 'all', 'teaching' => [], 'non_teaching' => [], 'selected_ids' => []];
+    }
+
+    return [
+        'mode' => 'legacy',
+        'teaching' => $ids,
+        'non_teaching' => $ids,
+        'selected_ids' => $ids
+    ];
+}
+
+function _compute_status_from_state_bulk($currentQty, $allowedRaw) {
+    $norm = normalize_allowed_employment_csm_bulk($allowedRaw);
+    return ((int)$currentQty > 0 && ($norm['mode'] ?? 'all') !== 'none') ? 1 : 0;
+}
+
 // -------------------- ROUTING --------------------
 $action = isset($_REQUEST['action']) ? trim((string)$_REQUEST['action']) : '';
 
@@ -182,7 +324,9 @@ if ($action === 'download_template') {
         'current_unit_quantity',
         'unit_crit_level',
         'item_cost',
-        'source_of_funds'
+        'source_of_funds',
+        'status',
+        'allowed_employment_status'
     ]);
 
     fputcsv($out, [
@@ -193,7 +337,9 @@ if ($action === 'download_template') {
         '80',
         '10',
         '25.50',
-        'General Fund'
+        'General Fund',
+        '1',
+        'ALL'
     ]);
 
     fclose($out);
@@ -202,8 +348,6 @@ if ($action === 'download_template') {
 
 /**
  * EXPORT CSV (SERVER)
- * Optional filter: item_category_code
- * Note: acquisition_date is the add/import date, not included here (you can add it if you want)
  */
 if ($action === 'export_csv') {
     $cat = isset($_GET['item_category_code']) ? trim((string)$_GET['item_category_code']) : '';
@@ -222,7 +366,9 @@ if ($action === 'export_csv') {
             i.current_unit_quantity,
             i.unit_crit_level,
             i.item_cost,
-            i.source_of_funds
+            i.source_of_funds,
+            i.status,
+            i.allowed_employment_status
         FROM csm_inventory i
         {$whereSql}
         ORDER BY i.created_at DESC
@@ -241,11 +387,16 @@ if ($action === 'export_csv') {
         'current_unit_quantity',
         'unit_crit_level',
         'item_cost',
-        'source_of_funds'
+        'source_of_funds',
+        'status',
+        'allowed_employment_status'
     ]);
 
     if ($res) {
         while ($row = call_mysql_fetch_array($res)) {
+            $allowed = $row['allowed_employment_status'];
+            if ($allowed === null || $allowed === '') $allowed = 'ALL';
+
             fputcsv($out, [
                 (string)($row['inventory_system_item_code'] ?? ''),
                 (string)($row['item_description'] ?? ''),
@@ -255,6 +406,8 @@ if ($action === 'export_csv') {
                 (string)($row['unit_crit_level'] ?? '0'),
                 (string)($row['item_cost'] ?? '0'),
                 (string)($row['source_of_funds'] ?? ''),
+                (string)($row['status'] ?? '0'),
+                (string)$allowed,
             ]);
         }
     }
@@ -291,7 +444,6 @@ if (!$header || !$rows) {
     exit();
 }
 
-// required columns (aligned to DB + your UI; acquisition_date is auto)
 $required = [
     'inventory_system_item_code',
     'item_description',
@@ -332,6 +484,9 @@ foreach ($rows as $r) {
     $item_cost = (float)($r['item_cost'] ?? 0);
     $source_of_funds = trim((string)($r['source_of_funds'] ?? ''));
 
+    $statusCsvRaw = trim((string)($r['status'] ?? ''));
+    $allowedRaw = trim((string)($r['allowed_employment_status'] ?? ''));
+
     if ($item_description === '' || $cat === '') {
         if (count($errors) < $errorsLimit) $errors[] = "Row {$rowNum}: Required fields missing (item_description / item_category_code).";
         $skipped++;
@@ -344,6 +499,18 @@ foreach ($rows as $r) {
         continue;
     }
 
+    if ($unit_quantity < 0 || $current_unit_quantity < 0 || $unit_crit_level < 0) {
+        if (count($errors) < $errorsLimit) $errors[] = "Row {$rowNum}: Quantities and critical level cannot be negative.";
+        $skipped++;
+        continue;
+    }
+
+    if ($current_unit_quantity > $unit_quantity) {
+        if (count($errors) < $errorsLimit) $errors[] = "Row {$rowNum}: current_unit_quantity cannot exceed unit_quantity.";
+        $skipped++;
+        continue;
+    }
+
     $parsed = _parse_item_code_input($rawCode);
     if (!$parsed['ok']) {
         if (count($errors) < $errorsLimit) $errors[] = "Row {$rowNum}: {$parsed['error']}";
@@ -351,7 +518,6 @@ foreach ($rows as $r) {
         continue;
     }
 
-    // If user provided FULL code, enforce category match (after normalization)
     if ($parsed['type'] === 'full') {
         $catFromCode = $parsed['cat_from_code'];
         $catNorm = _normalize_category_code_for_itemcode($cat);
@@ -364,7 +530,6 @@ foreach ($rows as $r) {
         }
     }
 
-    // Build FULL code EXACTLY
     if ($parsed['type'] === 'blank') {
         $fullCode = _generate_item_code_auto($cat);
     } else {
@@ -377,6 +542,19 @@ foreach ($rows as $r) {
         }
     }
 
+    $allowedNorm = normalize_allowed_payload_csm_bulk($allowedRaw);
+    $allowed_json = $allowedNorm['json'];
+
+    // Status column is accepted, but final status is auto-computed from qty + rules.
+    // We still validate the CSV value if present so bad imports are caught.
+    if ($statusCsvRaw !== '' && !in_array($statusCsvRaw, ['0', '1'], true)) {
+        if (count($errors) < $errorsLimit) $errors[] = "Row {$rowNum}: status must be 0 or 1 when provided.";
+        $skipped++;
+        continue;
+    }
+
+    $finalStatus = _compute_status_from_state_bulk($current_unit_quantity, $allowed_json);
+
     $codeEsc = _esc($fullCode);
     $existsRes = call_mysql_query("SELECT inventory_id FROM csm_inventory WHERE inventory_system_item_code='{$codeEsc}' LIMIT 1");
     $existing = ($existsRes && ($er = call_mysql_fetch_array($existsRes))) ? $er : null;
@@ -386,7 +564,6 @@ foreach ($rows as $r) {
 
         $inventory_id = (int)$existing['inventory_id'];
 
-        // Update does NOT change acquisition_date; status stays as-is
         $sql = "
             UPDATE csm_inventory
             SET
@@ -397,6 +574,8 @@ foreach ($rows as $r) {
                 unit_crit_level=" . (int)$unit_crit_level . ",
                 item_cost=" . (float)$item_cost . ",
                 source_of_funds='" . _esc($source_of_funds) . "',
+                status=" . (int)$finalStatus . ",
+                allowed_employment_status=" . ($allowed_json ? "'" . _esc($allowed_json) . "'" : "NULL") . ",
                 last_updated='" . _esc($today) . "'
             WHERE inventory_id={$inventory_id}
             LIMIT 1
@@ -411,7 +590,6 @@ foreach ($rows as $r) {
         continue;
     }
 
-    // insert (acquisition_date = today, status = available)
     $sql = "
         INSERT INTO csm_inventory
         (
@@ -425,6 +603,7 @@ foreach ($rows as $r) {
             unit_quantity,
             current_unit_quantity,
             unit_crit_level,
+            allowed_employment_status,
             last_updated
         )
         VALUES
@@ -435,10 +614,11 @@ foreach ($rows as $r) {
             " . (float)$item_cost . ",
             '" . _esc($source_of_funds) . "',
             '" . _esc($cat) . "',
-            'available',
+            " . (int)$finalStatus . ",
             " . (int)$unit_quantity . ",
             " . (int)$current_unit_quantity . ",
             " . (int)$unit_crit_level . ",
+            " . ($allowed_json ? "'" . _esc($allowed_json) . "'" : "NULL") . ",
             '" . _esc($today) . "'
         )
     ";
