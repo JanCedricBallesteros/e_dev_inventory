@@ -46,7 +46,6 @@ $categories = getAllCategories();
 </head>
 
 <style>
-/* --- TABULATOR MOBILE FIX (NO RESPONSIVE COLLAPSE) --- */
 #consumeable-table{
     width: 100%;
     max-width: 100%;
@@ -67,7 +66,6 @@ $categories = getAllCategories();
     }
 }
 
-/* --- HEADER BUTTONS MOBILE FIX (SCROLLABLE ACTIONS ROW) --- */
 .header-actions{
     display: flex;
     align-items: center;
@@ -88,7 +86,6 @@ $categories = getAllCategories();
     }
 }
 
-/* QR preview */
 #preview-wrapper {
     width: 100%;
     max-width: 420px;
@@ -100,7 +97,6 @@ $categories = getAllCategories();
     aspect-ratio: 4 / 3;
 }
 
-/* Inventory image */
 .inv-thumb-wrap{
     width:56px;height:56px;
     border:1px solid #dee2e6;border-radius:10px;background:#fff;
@@ -124,7 +120,6 @@ $categories = getAllCategories();
     display:block;
 }
 
-/* ---------- AST-STYLE RULES MODAL ---------- */
 .ast-rules-modal .modal-header{
     border-bottom: 1px solid #e9ecef;
 }
@@ -265,8 +260,6 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
     </div>
   </section>
 </main>
-
-<!-- ===================== MODALS ===================== -->
 
 <!-- VIEW INVENTORY IMAGE MODAL -->
 <div class="modal fade" id="viewInvImageModal" tabindex="-1" aria-hidden="true">
@@ -844,7 +837,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
             <b>allowed_employment_status</b>: optional. Examples: <code>ALL</code>, <code>NONE</code>, <code>{"teaching":[1],"non_teaching":[2]}</code>.
           </div>
           <div class="small text-muted mt-1">
-            <b>status</b>: numeric. Use <code>1</code> for Available and <code>0</code> for Unavailable.
+            <b>status</b>: numeric. Use <code>1</code> for Available and <code>0</code> for Unavailable. Final status is still auto-computed by qty, critical level, and rules.
           </div>
         </div>
       </div>
@@ -895,6 +888,8 @@ function groupLabel(code, name){
 function badgeStatusHtml(status){
   const v = parseInt(status, 10) || 0;
   if(v === 1) return '<span class="badge bg-success">Available</span>';
+  if(v === 2) return '<span class="badge bg-warning text-dark">Stock Critical</span>';
+  if(v === 3) return '<span class="badge bg-danger">Out of Stock</span>';
   return '<span class="badge bg-secondary">Unavailable</span>';
 }
 function applyItemCodeSmartFilter(input){
@@ -951,7 +946,6 @@ function openInvImageModal(row){
   $('#viewInvImageModal').modal('show');
 }
 
-/* ---------- RULES SELECT HELPERS ---------- */
 function makeSelect2Data() {
   const data = [{ id: 'NONE', text: 'None' }];
   employmentStatusCache.forEach(s => {
@@ -962,17 +956,31 @@ function makeSelect2Data() {
   });
   return data;
 }
-function normalizeNoneSelection($el) {
+
+function normalizeNoneSelection($el, changedId) {
   let vals = ($el.val() || []).map(String);
-  if (vals.includes('NONE') && vals.length > 1) {
-    vals = vals.filter(v => v !== 'NONE');
-    $el.val(vals).trigger('change.select2');
+
+  if (!vals.length) return;
+
+  const hasNone = vals.includes('NONE');
+
+  if (!hasNone) return;
+
+  if (changedId === 'NONE') {
+    $el.val(['NONE']).trigger('change.select2');
+    return;
   }
+
+  vals = vals.filter(v => v !== 'NONE');
+  $el.val(vals).trigger('change.select2');
 }
+
 function initSingleRulesSelect2(selector, placeholderText) {
   const $el = $(selector);
 
   if ($el.hasClass('select2-hidden-accessible')) {
+    $el.off('select2:select.ast');
+    $el.off('change.ast');
     $el.select2('destroy');
   }
 
@@ -992,14 +1000,24 @@ function initSingleRulesSelect2(selector, placeholderText) {
     allowClear: false
   });
 
-  $el.off('change.ast').on('change.ast', function() {
-    normalizeNoneSelection($(this));
+  $el.on('select2:select.ast', function(e) {
+    const changedId = String(e.params.data.id || '');
+    normalizeNoneSelection($(this), changedId);
+  });
+
+  $el.on('change.ast', function() {
+    const vals = ($(this).val() || []).map(String);
+    if (vals.includes('NONE') && vals.length > 1) {
+      $(this).val(['NONE']).trigger('change.select2');
+    }
   });
 }
+
 function initRulesSelect2() {
   initSingleRulesSelect2('#rules_teaching_status', 'Select teaching status');
   initSingleRulesSelect2('#rules_non_teaching_status', 'Select non-teaching status');
 }
+
 function getSelectValues($el) {
   return ($el.val() || []).map(String);
 }
@@ -1117,7 +1135,6 @@ function loadEmploymentStatuses(){
   });
 }
 
-/* ---------- TABULATOR ---------- */
 var columns = [
   {
     title:"Image",
@@ -1168,7 +1185,7 @@ var columns = [
   {
     title:"Status",
     field:"status",
-    minWidth:120,
+    minWidth:140,
     hozAlign:"center",
     formatter:function(cell){
       return badgeStatusHtml(cell.getValue());
@@ -1241,7 +1258,7 @@ var table = new Tabulator("#consumeable-table", {
   columns: columns,
   pagination: "local",
   paginationSize: 20,
-  paginationSizeSelector: [20,100,500,1000,true],
+  paginationSizeSelector: [20, 100, 500, 1000],
   movableColumns: true,
   height: "500px",
   groupBy: function(data){
@@ -1251,10 +1268,29 @@ var table = new Tabulator("#consumeable-table", {
     const qty = data.reduce((sum, r) => sum + (parseInt(r.unit_quantity, 10) || 0), 0);
     return `${escHtml(value)} <span class="text-muted small">(${count} items, Qty ${qty})</span>`;
   },
-  groupStartOpen: true
+  groupStartOpen: true,
+  dataLoaded: function(data){
+    updatePaginationAllOption(data);
+  },
+  dataFiltered: function(filters, rows){
+    updatePaginationAllOption(rows.map(r => r.getData ? r.getData() : r));
+  }
 });
 
 window.table = table;
+
+function updatePaginationAllOption(dataRows){
+  const totalRows = Array.isArray(dataRows) ? dataRows.length : 0;
+
+  $('#pageSizeAllOption').remove();
+
+  const $select = $('#consumeable-table').find('select.tabulator-page-size');
+  if (!$select.length) return;
+
+  if (totalRows > 0) {
+    $select.append(`<option id="pageSizeAllOption" value="${totalRows}">All</option>`);
+  }
+}
 
 function refreshTableData(){
   $.ajax({
@@ -1264,7 +1300,10 @@ function refreshTableData(){
     data: { action: 'list_inventory' },
     success: function(res){
       if(res && res.success){
-        table.setData(res.data || []);
+        const rows = res.data || [];
+        table.setData(rows).then(function(){
+          updatePaginationAllOption(rows);
+        });
       }
     },
     error: function(xhr){
@@ -1273,7 +1312,6 @@ function refreshTableData(){
   });
 }
 
-/* ---------- ADD WARNING FLOW ---------- */
 $('#btnAddRecordWarn').off('click').on('click', function(){
   $('#addWarningModal').modal('show');
 });
@@ -1283,7 +1321,6 @@ $('#btnProceedAdd').off('click').on('click', function(){
   $('#addRecordModal').modal('show');
 });
 
-/* ---------- EXPORT CSV ---------- */
 $('#btnExportCurrentView').off('click').on('click', function(){
   try{
     if(!window.table){
@@ -1311,7 +1348,6 @@ $('#exportModal').on('shown.bs.modal', function(){
   $('#exportMsg').html('');
 });
 
-/* ---------- ADD ---------- */
 $('#addInventoryForm').off('submit').on('submit', function(e){
   e.preventDefault();
   $('#addRecordMsg').html('');
@@ -1337,7 +1373,6 @@ $('#addInventoryForm').off('submit').on('submit', function(e){
   });
 });
 
-/* ---------- EDIT ---------- */
 function openEditModal(id){
   $('#editRecordMsg').html('');
 
@@ -1402,7 +1437,6 @@ $('#editInventoryForm').off('submit').on('submit', function(e){
   });
 });
 
-/* ---------- AVAILABLE ---------- */
 function openAvailableModal(id){
   $('#availableMsg').html('');
   $('#avail_inventory_id').val(id);
@@ -1457,7 +1491,6 @@ $('#availableForm').off('submit').on('submit', function(e){
   });
 });
 
-/* ---------- RULES SAVE ---------- */
 $('#availabilityRulesForm').off('submit').on('submit', function(e){
   e.preventDefault();
   $('#rulesMsg').html('');
@@ -1505,7 +1538,6 @@ $('#availabilityRulesModal').on('hidden.bs.modal', function(){
   resetRulesModalState();
 });
 
-/* ---------- TABLE BUTTONS ---------- */
 $('#consumeable-table')
   .off('click', '.btn-edit')
   .on('click', '.btn-edit', function(e){
@@ -1530,7 +1562,6 @@ $('#consumeable-table')
     openAvailabilityRulesModal($(this).data('id'));
   });
 
-/* ---------- QR PREVIEW ---------- */
 $('#consumeable-table')
   .off('click', '.qr-thumb')
   .on('click', '.qr-thumb', function(e){
@@ -1545,7 +1576,6 @@ $('#consumeable-table')
     $('#qrPreviewModal').modal('show');
   });
 
-/* ---------- BULK UPLOAD ---------- */
 $('#bulkUploadForm').off('submit').on('submit', function(e){
   e.preventDefault();
   $('#bulkUploadMsg').html('');
@@ -1614,7 +1644,6 @@ $('#bulkModal').on('shown.bs.modal', function(){
   $('#bulkUploadForm')[0].reset();
 });
 
-/* ---------- INITIAL LOAD ---------- */
 $(function(){
   loadEmploymentStatuses();
   refreshTableData();
@@ -1625,7 +1654,6 @@ $(function(){
 
 <?php include_once DOMAIN_PATH . '/global/include_bottom.php'; ?>
 
-<!-- html5-qrcode -->
 <script src="https://unpkg.com/html5-qrcode"></script>
 <script>
 function playBeep() {
