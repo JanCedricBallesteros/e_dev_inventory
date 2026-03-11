@@ -58,6 +58,7 @@ if (($type === 'AST' && !$canAST) || ($type === 'CSM' && !$canCSM)) {
         .section-card { border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
         .tab-pill { border-radius: 999px; }
         .muted { color: #6c757d; }
+        .status-badge { padding: 0.2rem 0.55rem; border-radius: 999px; font-size: 0.8rem; }
     </style>
 </head>
 
@@ -99,6 +100,7 @@ if (($type === 'AST' && !$canAST) || ($type === 'CSM' && !$canCSM)) {
                             <option value="approved">Approved</option>
                             <option value="for_claiming">For Claiming</option>
                             <option value="claimed">Claimed</option>
+                            <option value="not_claimed">Not Claimed</option>
                             <option value="disapproved">Disapproved</option>
                         </select>
                         <button class="btn btn-outline-secondary" id="reqRefresh">Refresh</button>
@@ -110,6 +112,45 @@ if (($type === 'AST' && !$canAST) || ($type === 'CSM' && !$canCSM)) {
     </main>
 
 <?php include_once FOOTER_PATH; ?>
+<div class="modal fade" id="approveModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Approve Requisition</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="approveReqId">
+                <p class="mb-0">Approve this requisition?</p>
+                <div id="approveMsg" class="alert alert-danger d-none mt-2"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                <button class="btn btn-success btn-sm" id="btnConfirmApprove">Confirm Approve</button>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="modal fade" id="disapproveModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Disapprove Requisition</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="disapproveReqId">
+                <label class="form-label fw-semibold">Reason</label>
+                <textarea id="disapproveReason" class="form-control" rows="3" placeholder="Provide reason..."></textarea>
+                <div id="disapproveMsg" class="alert alert-danger d-none mt-2"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                <button class="btn btn-danger btn-sm" id="btnConfirmDisapprove">Confirm Disapprove</button>
+            </div>
+        </div>
+    </div>
+</div>
 <div class="modal fade" id="claimModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content">
@@ -132,15 +173,13 @@ if (($type === 'AST' && !$canAST) || ($type === 'CSM' && !$canCSM)) {
                 <div class="row g-2 mt-2">
                     <div class="col-md-4">
                         <label class="form-label fw-semibold">Issued To</label>
-                        <select id="claimIssuedToUserId" class="form-select"></select>
+                        <input type="text" id="claimIssuedToName" class="form-control" readonly>
+                        <input type="hidden" id="claimIssuedToUserId">
                     </div>
                     <div class="col-md-4">
-                        <label class="form-label fw-semibold">Accountable</label>
-                        <select id="claimAccountableUserId" class="form-select"></select>
-                    </div>
-                    <div class="col-md-4">
-                        <label class="form-label fw-semibold">Managed By</label>
-                        <select id="claimManagedByUserId" class="form-select"></select>
+                        <label class="form-label fw-semibold">Facility Unit Manager</label>
+                        <input type="text" id="claimManagedByName" class="form-control" readonly>
+                        <input type="hidden" id="claimManagedByUserId">
                     </div>
                 </div>
                 <div class="mt-2">
@@ -166,7 +205,30 @@ const PROCESS_URL = BASE_URL + 'admin/modules/transactions/requisition_process.p
 let reqTable = null;
 let claimFacilities = [];
 let claimUnits = [];
-let claimUsers = [];
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function statusBadge(raw) {
+    const s = String(raw || '').toLowerCase();
+    const map = {
+        'pending': 'bg-warning text-dark',
+        'reviewed': 'bg-info text-dark',
+        'approved': 'bg-primary text-white',
+        'for_claiming': 'bg-primary text-white',
+        'claimed': 'bg-success text-white',
+        'not_claimed': 'bg-secondary text-white',
+        'disapproved': 'bg-danger text-white'
+    };
+    const cls = map[s] || 'bg-light text-dark border';
+    return `<span class="status-badge ${cls}">${escapeHtml(s.replace('_', ' '))}</span>`;
+}
 
 function showReqMessage(msg) {
     const el = $('#reqMsg');
@@ -174,17 +236,22 @@ function showReqMessage(msg) {
     el.removeClass('d-none').text(msg);
 }
 
-function renderUserSelect(selector, selected, blankLabel) {
-    const $sel = $(selector);
-    $sel.empty();
-    $sel.append(`<option value="">${blankLabel || 'Optional'}</option>`);
-    const roleMap = { '1': 'SUPER ADMIN', '2': 'ADMIN', '3': 'ADMIN STAFF', '4': 'USER' };
-    claimUsers.forEach(function(u){
-        const role = roleMap[String(u.role_id)] ? ` [${roleMap[String(u.role_id)]}]` : '';
-        const label = `${u.full_name || ''}${u.email ? ' - ' + u.email : ''}${role}`;
-        $sel.append(`<option value="${u.user_id}">${label}</option>`);
-    });
-    if (selected) $sel.val(String(selected));
+function notifyMsg(type, msg) {
+    const el = $('#reqMsg');
+    if (!msg) {
+        el.addClass('d-none').text('');
+        return;
+    }
+    el.removeClass('d-none alert-danger alert-success alert-warning alert-info');
+    const cls = type ? ('alert-' + type) : 'alert-info';
+    el.addClass(cls).text(msg);
+}
+
+if (typeof window.success_notif !== 'function') {
+    window.success_notif = function(msg) { notifyMsg('success', msg); };
+}
+if (typeof window.error_notif !== 'function') {
+    window.error_notif = function(msg) { notifyMsg('danger', msg); };
 }
 
 function loadClaimLookups() {
@@ -198,17 +265,9 @@ function loadClaimLookups() {
             });
         }
     }, 'json');
-    $.post(PROCESS_URL, { action: 'list_users' }, function(res){
-        if (res && res.success) {
-            claimUsers = res.data || [];
-            renderUserSelect('#claimIssuedToUserId', '', 'Optional');
-            renderUserSelect('#claimAccountableUserId', '', 'Optional');
-            renderUserSelect('#claimManagedByUserId', '', 'Optional');
-        }
-    }, 'json');
 }
 
-function loadClaimUnits(facilityId, selectedUnitId, fallbackAccountableId) {
+function loadClaimUnits(facilityId, selectedUnitId) {
     const $u = $('#claimUnitId');
     claimUnits = [];
     $u.empty().append('<option value="">Select unit</option>');
@@ -224,9 +283,11 @@ function loadClaimUnits(facilityId, selectedUnitId, fallbackAccountableId) {
         }
         const picked = claimUnits.find(function(u){ return String(u.unit_id) === String($u.val() || ''); });
         if (picked && picked.facility_unit_manager_user_id) {
-            $('#claimAccountableUserId').val(String(picked.facility_unit_manager_user_id));
-        } else if (fallbackAccountableId) {
-            $('#claimAccountableUserId').val(String(fallbackAccountableId));
+            $('#claimManagedByUserId').val(String(picked.facility_unit_manager_user_id));
+            $('#claimManagedByName').val(picked.unit_manager_name || '');
+        } else {
+            $('#claimManagedByUserId').val('');
+            $('#claimManagedByName').val('');
         }
     }, 'json');
 }
@@ -264,8 +325,13 @@ function initReqTable() {
             { title: 'Item Code', field: 'item_code', width: 140 },
             { title: 'Description', field: 'item_description', widthGrow: 2 },
             { title: 'Qty', field: 'qty_requested', width: 70, hozAlign: 'center' },
-            { title: 'Status', field: 'workflow_status', width: 130 },
-            { title: 'Date Modified', field: 'created_at', width: 140 },
+            { title: 'Workflow', field: 'workflow_status', width: 130, formatter: function(cell){
+                return statusBadge(cell.getValue());
+            }},
+            { title: 'Updated', field: 'updated_at', width: 140 },
+            { title: 'Remarks', field: 'remarks', width: 180, formatter: function(cell){
+                return escapeHtml(cell.getValue() || '') || '-';
+            }},
             { title: 'Actions', field: 'requisition_id', width: 260, hozAlign: 'center', formatter: function(cell){
                 const id = cell.getValue();
                 const data = cell.getRow().getData();
@@ -273,11 +339,18 @@ function initReqTable() {
                 if (wf === 'claimed') {
                     return `<span class="badge bg-success">Claimed</span>`;
                 }
+                if (wf === 'disapproved') {
+                    return `<span class="badge bg-danger">Disapproved</span>`;
+                }
+                if (wf === 'not_claimed') {
+                    return `<span class="badge bg-secondary">Not Claimed</span>`;
+                }
+                const canApprove = wf === 'pending' || wf === 'reviewed';
                 const canClaim = wf === 'for_claiming' || wf === 'approved';
                 return `
-                    <button class="btn btn-sm btn-success me-1 btn-approve" data-id="${id}">Approve</button>
-                    <button class="btn btn-sm btn-danger btn-disapprove" data-id="${id}">Disapprove</button>
-                    ${canClaim ? `<button class="btn btn-sm btn-primary mt-1 btn-claim" data-id="${id}">Claim</button>` : ''}
+                    <button class="btn btn-sm btn-success me-1 btn-approve" data-id="${id}" ${canApprove ? '' : 'disabled'}>Approve</button>
+                    <button class="btn btn-sm btn-danger btn-disapprove" data-id="${id}" ${canApprove ? '' : 'disabled'}>Disapprove</button>
+                    ${canClaim ? `<button class="btn btn-sm btn-primary mt-1 btn-claim" data-id="${id}">Claimed</button>` : ''}
                 `;
             }}
         ]
@@ -285,32 +358,53 @@ function initReqTable() {
 
     $('#reqTable').on('click', '.btn-approve', function() {
         const id = $(this).data('id');
-        if (!confirm('Approve this requisition?')) return;
+        $('#approveReqId').val(id || '');
+        $('#approveMsg').addClass('d-none').text('');
+        $('#approveModal').modal('show');
+    });
+
+    $('#btnConfirmApprove').on('click', function() {
+        const id = $('#approveReqId').val();
         $.post(PROCESS_URL, { action: 'approve_requisition', requisition_id: id }, function(res) {
             if (res && res.success) {
+                $('#approveModal').modal('hide');
                 loadReqData();
                 success_notif(res.message || 'Requisition approved.');
             } else {
-                error_notif(res.message || 'Approval failed.');
+                $('#approveMsg').removeClass('d-none').text(res.message || 'Approval failed.');
             }
-        }, 'json').fail(function() {
-            error_notif('Server error while approving.');
+        }, 'json').fail(function(xhr) {
+            const msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Server error while approving.';
+            $('#approveMsg').removeClass('d-none').text(msg);
         });
     });
 
     $('#reqTable').on('click', '.btn-disapprove', function() {
         const id = $(this).data('id');
-        const reason = prompt('Reason for disapproval:');
-        if (reason === null) return;
+        $('#disapproveReqId').val(id || '');
+        $('#disapproveReason').val('');
+        $('#disapproveMsg').addClass('d-none').text('');
+        $('#disapproveModal').modal('show');
+    });
+
+    $('#btnConfirmDisapprove').on('click', function() {
+        const id = $('#disapproveReqId').val();
+        const reason = ($('#disapproveReason').val() || '').trim();
+        if (!reason) {
+            $('#disapproveMsg').removeClass('d-none').text('Reason is required.');
+            return;
+        }
         $.post(PROCESS_URL, { action: 'disapprove_requisition', requisition_id: id, reason: reason }, function(res) {
             if (res && res.success) {
+                $('#disapproveModal').modal('hide');
                 loadReqData();
                 success_notif(res.message || 'Requisition disapproved.');
             } else {
-                error_notif(res.message || 'Disapproval failed.');
+                $('#disapproveMsg').removeClass('d-none').text(res.message || 'Disapproval failed.');
             }
-        }, 'json').fail(function() {
-            error_notif('Server error while disapproving.');
+        }, 'json').fail(function(xhr) {
+            const msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Server error while disapproving.';
+            $('#disapproveMsg').removeClass('d-none').text(msg);
         });
     });
 
@@ -323,12 +417,21 @@ function initReqTable() {
             return;
         }
         $('#claimReqId').val(data.requisition_id || '');
-        $('#claimFacilityId').val('');
+        const reqFacilityId = data.claim_facility_id || '';
+        const reqUnitId = data.claim_unit_id || '';
+        const hasPresetUnit = String(reqFacilityId) !== '' && String(reqUnitId) !== '';
+        $('#claimFacilityId').val(reqFacilityId);
         $('#claimUnitId').empty().append('<option value="">Select unit</option>');
+        $('#claimFacilityId').prop('disabled', hasPresetUnit);
+        $('#claimUnitId').prop('disabled', hasPresetUnit);
+        if (reqFacilityId) {
+            loadClaimUnits(reqFacilityId, reqUnitId);
+        }
         $('#claimRemarks').val('');
-        renderUserSelect('#claimIssuedToUserId', data.requester_user_id || '', 'Optional');
-        renderUserSelect('#claimAccountableUserId', '', 'Optional');
-        renderUserSelect('#claimManagedByUserId', '', 'Optional');
+        $('#claimIssuedToUserId').val(String(data.requester_user_id || ''));
+        $('#claimIssuedToName').val(data.requester_name || '');
+        $('#claimManagedByUserId').val('');
+        $('#claimManagedByName').val('');
         $('#claimMsg').html('');
         $('#claimModal').modal('show');
     });
@@ -342,7 +445,11 @@ function initReqTable() {
         const unitId = $(this).val();
         const picked = claimUnits.find(function(u){ return String(u.unit_id) === String(unitId || ''); });
         if (picked && picked.facility_unit_manager_user_id) {
-            $('#claimAccountableUserId').val(String(picked.facility_unit_manager_user_id));
+            $('#claimManagedByUserId').val(String(picked.facility_unit_manager_user_id));
+            $('#claimManagedByName').val(picked.unit_manager_name || '');
+        } else {
+            $('#claimManagedByUserId').val('');
+            $('#claimManagedByName').val('');
         }
     });
 
@@ -353,7 +460,6 @@ function initReqTable() {
             facility_id: $('#claimFacilityId').val(),
             unit_id: $('#claimUnitId').val(),
             issued_to_user_id: $('#claimIssuedToUserId').val(),
-            accountable_user_id: $('#claimAccountableUserId').val(),
             managed_by_user_id: $('#claimManagedByUserId').val(),
             remarks: ($('#claimRemarks').val() || '').trim()
         };

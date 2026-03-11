@@ -126,16 +126,43 @@ try {
             }
 
             $where = "WHERE r.module_type = '" . _esc($type) . "'";
+            $hasClaimAssignment = table_column_exists('requisition_items', 'claim_assignment_id');
+            $hasClaimedAt = table_column_exists('requisition_items', 'claimed_at');
+            $hasRemarks = table_column_exists('requisition_items', 'remarks');
+            $hasReqIdInAssignments = table_column_exists('facility_records_assignments', 'requisition_id');
+            $assignJoin = '';
+            if ($hasClaimAssignment) {
+                $assignJoin = "LEFT JOIN facility_records_assignments a ON a.assignment_id = r.claim_assignment_id";
+            } elseif ($hasReqIdInAssignments) {
+                $assignJoin = "LEFT JOIN facility_records_assignments a ON a.requisition_id = r.requisition_id";
+            }
             if ($status !== '') {
-                $where .= " AND r.status = '" . _esc($status) . "'";
+                if ($status === 'for_claiming') {
+                    $where .= " AND r.status = 'approved'";
+                    if ($hasClaimAssignment) {
+                        $where .= " AND r.claim_assignment_id IS NULL";
+                    } elseif ($hasClaimedAt) {
+                        $where .= " AND r.claimed_at IS NULL";
+                    }
+                } elseif ($status === 'claimed') {
+                    if ($hasClaimAssignment) {
+                        $where .= " AND r.claim_assignment_id IS NOT NULL";
+                    } elseif ($hasClaimedAt) {
+                        $where .= " AND r.claimed_at IS NOT NULL";
+                    } else {
+                        $where .= " AND r.status = 'claimed'";
+                    }
+                } else {
+                    $where .= " AND r.status = '" . _esc($status) . "'";
+                }
             }
             if ($search !== '') {
                 $searchEsc = _esc('%' . $search . '%');
                 $where .= " AND (r.item_code LIKE '{$searchEsc}' OR r.item_description LIKE '{$searchEsc}' OR u.f_name LIKE '{$searchEsc}' OR u.l_name LIKE '{$searchEsc}')";
             }
 
-            $hasClaimAssignment = table_column_exists('requisition_items', 'claim_assignment_id');
-            $hasClaimedAt = table_column_exists('requisition_items', 'claimed_at');
+            $hasUpdatedAt = table_column_exists('requisition_items', 'updated_at');
+            $hasApprovedAt = table_column_exists('requisition_items', 'approved_at');
             $sql = "SELECT 
                         r.requisition_id,
                         r.module_type,
@@ -143,9 +170,15 @@ try {
                         r.item_description,
                         r.qty_requested,
                         r.status,
+                        " . ($assignJoin !== '' ? "a.remarks AS assignment_remarks," : "NULL AS assignment_remarks,") . "
+                        " . ($assignJoin !== '' && $hasRemarks ? "COALESCE(a.remarks, r.remarks) AS remarks," : ($assignJoin !== '' ? "a.remarks AS remarks," : ($hasRemarks ? "r.remarks," : "NULL AS remarks,"))) . "
                         " . ($hasClaimAssignment ? "r.claim_assignment_id," : "NULL AS claim_assignment_id,") . "
                         " . ($hasClaimedAt ? "r.claimed_at," : "NULL AS claimed_at,") . "
+                        " . (table_column_exists('requisition_items', 'claim_facility_id') ? "r.claim_facility_id," : "NULL AS claim_facility_id,") . "
+                        " . (table_column_exists('requisition_items', 'claim_unit_id') ? "r.claim_unit_id," : "NULL AS claim_unit_id,") . "
                         r.created_at,
+                        " . ($hasUpdatedAt ? "r.updated_at," : "r.created_at AS updated_at,") . "
+                        " . ($hasApprovedAt ? "r.approved_at," : "NULL AS approved_at,") . "
                         r.requester_user_id,
                         u.user_id,
                         u.f_name,
@@ -155,6 +188,7 @@ try {
                         u.employment_status_id,
                         es.status_name AS employment_status
                     FROM requisition_items r
+                    {$assignJoin}
                     LEFT JOIN users u ON u.user_id = r.requester_user_id
                     LEFT JOIN employment_status es ON es.employment_status_id = u.employment_status_id
                     {$where}
@@ -166,12 +200,34 @@ try {
             }
             $rows = [];
             while ($row = call_mysql_fetch_array($res)) {
+                // Auto-expire AST approved requisitions that were not claimed within 7 days.
+                if ($type === 'AST' && $hasApprovedAt) {
+                    $rawStatus = strtolower((string)($row['status'] ?? 'pending'));
+                    $isClaimed = !empty($row['claim_assignment_id']) || !empty($row['claimed_at']);
+                    $approvedAt = $row['approved_at'] ?? null;
+                    if ($rawStatus === 'approved' && !$isClaimed && $approvedAt) {
+                        $approvedTs = strtotime($approvedAt);
+                        if ($approvedTs && (time() - $approvedTs) > (7 * 24 * 60 * 60)) {
+                            $itemCodeEsc = _esc($row['item_code'] ?? '');
+                            call_mysql_query("UPDATE requisition_items SET status = 'not_claimed', updated_at = NOW() WHERE requisition_id = " . (int)$row['requisition_id'] . " LIMIT 1");
+                            call_mysql_query("UPDATE ast_inventory SET is_available = 1 WHERE property_code = '{$itemCodeEsc}' LIMIT 1");
+                            activity_log_new("REQUISITION NOT CLAIMED", "SUCCESS", array(
+                                'requisition_id' => (int)$row['requisition_id'],
+                                'item_code' => $row['item_code'] ?? '',
+                                'module_type' => $row['module_type'] ?? ''
+                            ));
+                            $row['status'] = 'not_claimed';
+                        }
+                    }
+                }
                 $row['requester_name'] = get_full_name($row['f_name'], $row['m_name'], $row['l_name'], $row['suffix']);
                 $rawStatus = strtolower((string)($row['status'] ?? 'pending'));
                 if (!empty($row['claim_assignment_id']) || !empty($row['claimed_at'])) {
                     $row['workflow_status'] = 'claimed';
                 } elseif ($rawStatus === 'approved') {
                     $row['workflow_status'] = 'for_claiming';
+                } elseif ($rawStatus === 'not_claimed') {
+                    $row['workflow_status'] = 'not_claimed';
                 } else {
                     $row['workflow_status'] = $rawStatus;
                 }
@@ -192,6 +248,14 @@ try {
             $req = $res ? call_mysql_fetch_array($res) : null;
             if (!$req) json_response(['success' => false, 'message' => 'Requisition not found.'], 404);
             $prevStatus = $req['status'] ?? '';
+            $hasClaimAssignment = table_column_exists('requisition_items', 'claim_assignment_id');
+            $hasClaimedAt = table_column_exists('requisition_items', 'claimed_at');
+            if (!empty($req['claim_assignment_id']) || !empty($req['claimed_at'])) {
+                json_response(['success' => false, 'message' => 'Requisition is already claimed.'], 409);
+            }
+            if (in_array(strtolower((string)$prevStatus), ['approved', 'disapproved'], true)) {
+                json_response(['success' => false, 'message' => 'Requisition is already ' . strtolower((string)$prevStatus) . '.'], 409);
+            }
             $prevIsAvailable = null;
             $newIsAvailable = null;
 
@@ -297,8 +361,10 @@ try {
                                         u.unit_code,
                                         u.unit_name,
                                         u.unit_type,
-                                        " . ($unitManagerCol !== '' ? "u.{$unitManagerCol}" : "NULL") . " AS facility_unit_manager_user_id
+                                        " . ($unitManagerCol !== '' ? "u.{$unitManagerCol}" : "NULL") . " AS facility_unit_manager_user_id,
+                                        CONCAT(COALESCE(ua.f_name,''), ' ', COALESCE(ua.l_name,'')) AS unit_manager_name
                                      FROM facility_records_units u
+                                     LEFT JOIN users ua ON ua.user_id = " . ($unitManagerCol !== '' ? "u.{$unitManagerCol}" : "0") . "
                                      WHERE u.facility_id = {$facilityId} AND u.status = 1
                                      ORDER BY u.unit_name ASC");
             $rows = [];
@@ -342,9 +408,6 @@ try {
             $id = _int(_post('requisition_id'));
             $facilityId = _int(_post('facility_id'));
             $unitId = _int(_post('unit_id'));
-            $issuedToUserId = _int(_post('issued_to_user_id'));
-            $accountableUserId = _int(_post('accountable_user_id'));
-            $managedByUserId = _int(_post('managed_by_user_id'));
             $remarks = _post('remarks');
 
             if ($id <= 0 || $facilityId <= 0 || $unitId <= 0) {
@@ -357,6 +420,11 @@ try {
             $reqRes = call_mysql_query("SELECT * FROM requisition_items WHERE requisition_id = {$id} LIMIT 1");
             $req = $reqRes ? call_mysql_fetch_array($reqRes) : null;
             if (!$req) json_response(['success' => false, 'message' => 'Requisition not found.'], 404);
+            $issuedToUserId = (int)($req['requester_user_id'] ?? 0);
+            $accountableUserId = $issuedToUserId > 0 ? $issuedToUserId : 0;
+            if ($issuedToUserId <= 0) {
+                json_response(['success' => false, 'message' => 'Requester is missing for this requisition.'], 422);
+            }
 
             $isAlreadyClaimed = false;
             if (table_column_exists('requisition_items', 'claim_assignment_id')) {
@@ -379,6 +447,24 @@ try {
             $itemDescription = (string)($req['item_description'] ?? '');
             $sourceItemId = 0;
             $itemUnit = '';
+
+            $unitRes = call_mysql_query("SELECT unit_id FROM facility_records_units WHERE unit_id = {$unitId} AND facility_id = {$facilityId} LIMIT 1");
+            if (!$unitRes || !call_mysql_fetch_array($unitRes)) {
+                json_response(['success' => false, 'message' => 'Selected unit does not belong to the facility.'], 422);
+            }
+
+            $hasUnitManager = table_column_exists('facility_records_units', 'facility_unit_manager_user_id');
+            $hasUnitManagerLegacy = table_column_exists('facility_records_units', 'accountable_user_id');
+            $unitManagerCol = $hasUnitManager ? 'facility_unit_manager_user_id' : ($hasUnitManagerLegacy ? 'accountable_user_id' : '');
+            $managedByUserId = 0;
+            if ($unitManagerCol !== '') {
+                $mgrRes = call_mysql_query("SELECT {$unitManagerCol} AS unit_manager_user_id
+                                            FROM facility_records_units
+                                            WHERE unit_id = {$unitId}
+                                            LIMIT 1");
+                $mgrRow = $mgrRes ? call_mysql_fetch_array($mgrRes) : null;
+                $managedByUserId = (int)($mgrRow['unit_manager_user_id'] ?? 0);
+            }
 
             if ($moduleType === 'AST') {
                 $invRes = call_mysql_query("SELECT item_id, property_code, item_description, unit FROM ast_inventory WHERE property_code = '{$itemCode}' LIMIT 1");

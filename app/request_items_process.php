@@ -29,6 +29,14 @@ function _esc($v) {
     }
     return addslashes($v);
 }
+function table_exists($table) {
+    $res = call_mysql_query("SHOW TABLES LIKE '" . _esc($table) . "'");
+    return $res && mysqli_num_rows($res) > 0;
+}
+function table_column_exists($table, $column) {
+    $res = call_mysql_query("SHOW COLUMNS FROM `" . _esc($table) . "` LIKE '" . _esc($column) . "'");
+    return $res && mysqli_num_rows($res) > 0;
+}
 function _json_array($v) {
     if ($v === null || $v === '') return [];
     if (is_array($v)) return $v;
@@ -254,16 +262,64 @@ try {
             }
             break;
 
+        case 'list_facilities':
+            if (!table_exists('facility_records_facilities')) {
+                json_response(['success' => false, 'message' => 'Facility tables are missing.'], 500);
+            }
+            $res = call_mysql_query("SELECT facility_id, facility_code, facility_name
+                                     FROM facility_records_facilities
+                                     WHERE status = 1
+                                     ORDER BY facility_name ASC");
+            $rows = [];
+            if ($res) {
+                while ($row = call_mysql_fetch_array($res)) {
+                    $rows[] = $row;
+                }
+            }
+            json_response(['success' => true, 'data' => $rows]);
+            break;
+
+        case 'list_units':
+            $facilityId = _int(_post('facility_id'));
+            if ($facilityId <= 0) json_response(['success' => false, 'message' => 'Facility is required.'], 422);
+            if (!table_exists('facility_records_units')) {
+                json_response(['success' => false, 'message' => 'Facility unit table is missing.'], 500);
+            }
+            $res = call_mysql_query("SELECT unit_id, unit_code, unit_name
+                                     FROM facility_records_units
+                                     WHERE facility_id = {$facilityId} AND status = 1
+                                     ORDER BY unit_name ASC");
+            $rows = [];
+            if ($res) {
+                while ($row = call_mysql_fetch_array($res)) {
+                    $rows[] = $row;
+                }
+            }
+            json_response(['success' => true, 'data' => $rows]);
+            break;
+
         case 'create_request':
             $type = strtoupper(_post('type', 'AST'));
             $itemCode = _post('item_code');
             $qty = _int(_post('qty_requested'), 0);
+            $facilityId = _int(_post('facility_id'), 0);
+            $unitId = _int(_post('unit_id'), 0);
             if (!in_array($type, ['AST', 'CSM'], true)) $type = 'AST';
             if ($itemCode === '') json_response(['success' => false, 'message' => 'Item code is required.'], 422);
             if ($qty <= 0) json_response(['success' => false, 'message' => 'Invalid quantity.'], 422);
+            if ($facilityId <= 0 || $unitId <= 0) {
+                json_response(['success' => false, 'message' => 'Facility and unit are required.'], 422);
+            }
 
             $userId = (int)$s_user_id;
             if ($userId <= 0) json_response(['success' => false, 'message' => 'Invalid user.'], 403);
+            if (!table_exists('facility_records_units')) {
+                json_response(['success' => false, 'message' => 'Facility tables are missing.'], 500);
+            }
+            $unitRes = call_mysql_query("SELECT unit_id FROM facility_records_units WHERE unit_id = {$unitId} AND facility_id = {$facilityId} LIMIT 1");
+            if (!$unitRes || !call_mysql_fetch_array($unitRes)) {
+                json_response(['success' => false, 'message' => 'Selected unit does not belong to the facility.'], 422);
+            }
 
             if ($type === 'AST') {
                 if ($qty !== 1) {
@@ -309,10 +365,17 @@ try {
                 }
 
                 $descEsc = _esc($invRow['item_description'] ?? '');
-                $sql = "INSERT INTO requisition_items 
-                        (module_type, item_code, item_description, qty_requested, requester_user_id, status, created_at, updated_at)
-                        VALUES 
-                        ('AST', '{$itemCodeEsc}', '{$descEsc}', {$qty}, {$userId}, 'pending', NOW(), NOW())";
+                $cols = "module_type, item_code, item_description, qty_requested, requester_user_id, status, created_at, updated_at";
+                $vals = "'AST', '{$itemCodeEsc}', '{$descEsc}', {$qty}, {$userId}, 'pending', NOW(), NOW()";
+                if (table_column_exists('requisition_items', 'claim_facility_id')) {
+                    $cols .= ", claim_facility_id";
+                    $vals .= ", {$facilityId}";
+                }
+                if (table_column_exists('requisition_items', 'claim_unit_id')) {
+                    $cols .= ", claim_unit_id";
+                    $vals .= ", {$unitId}";
+                }
+                $sql = "INSERT INTO requisition_items ({$cols}) VALUES ({$vals})";
                 $ok = call_mysql_query($sql);
                 if (!$ok) {
                     json_response(['success' => false, 'message' => 'Failed to submit request. Ensure requisition table exists.'], 500);
@@ -320,7 +383,9 @@ try {
                 activity_log_new("USER REQUISITION SUBMIT", "SUCCESS", array(
                     "module_type" => "AST",
                     "item_code" => $itemCode,
-                    "qty_requested" => $qty
+                    "qty_requested" => $qty,
+                    "claim_facility_id" => $facilityId,
+                    "claim_unit_id" => $unitId
                 ));
                 json_response(['success' => true, 'message' => 'Request submitted.']);
             } else {
@@ -339,10 +404,17 @@ try {
 
                 $desc = $invRow['item_description'] ?: $invRow['item_name'];
                 $descEsc = _esc($desc);
-                $sql = "INSERT INTO requisition_items 
-                        (module_type, item_code, item_description, qty_requested, requester_user_id, status, created_at, updated_at)
-                        VALUES 
-                        ('CSM', '{$itemCodeEsc}', '{$descEsc}', {$qty}, {$userId}, 'pending', NOW(), NOW())";
+                $cols = "module_type, item_code, item_description, qty_requested, requester_user_id, status, created_at, updated_at";
+                $vals = "'CSM', '{$itemCodeEsc}', '{$descEsc}', {$qty}, {$userId}, 'pending', NOW(), NOW()";
+                if (table_column_exists('requisition_items', 'claim_facility_id')) {
+                    $cols .= ", claim_facility_id";
+                    $vals .= ", {$facilityId}";
+                }
+                if (table_column_exists('requisition_items', 'claim_unit_id')) {
+                    $cols .= ", claim_unit_id";
+                    $vals .= ", {$unitId}";
+                }
+                $sql = "INSERT INTO requisition_items ({$cols}) VALUES ({$vals})";
                 $ok = call_mysql_query($sql);
                 if (!$ok) {
                     json_response(['success' => false, 'message' => 'Failed to submit request. Ensure requisition table exists.'], 500);
@@ -350,10 +422,122 @@ try {
                 activity_log_new("USER REQUISITION SUBMIT", "SUCCESS", array(
                     "module_type" => "CSM",
                     "item_code" => $itemCode,
-                    "qty_requested" => $qty
+                    "qty_requested" => $qty,
+                    "claim_facility_id" => $facilityId,
+                    "claim_unit_id" => $unitId
                 ));
                 json_response(['success' => true, 'message' => 'Request submitted.']);
             }
+            break;
+
+        case 'list_my_requisitions':
+            $userId = (int)$s_user_id;
+            if ($userId <= 0) json_response(['success' => false, 'message' => 'Invalid user.'], 403);
+            if (!table_exists('requisition_items')) {
+                json_response(['success' => false, 'message' => 'Requisition table not found.'], 500);
+            }
+            $status = strtolower(_post('status'));
+            $search = _post('search');
+            $hasClaimAssignment = table_column_exists('requisition_items', 'claim_assignment_id');
+            $hasClaimedAt = table_column_exists('requisition_items', 'claimed_at');
+            $hasApprovedAt = table_column_exists('requisition_items', 'approved_at');
+            $hasUpdatedAt = table_column_exists('requisition_items', 'updated_at');
+            $hasReason = table_column_exists('requisition_items', 'reason');
+            $hasRemarks = table_column_exists('requisition_items', 'remarks');
+            $hasReqIdInAssignments = table_column_exists('facility_records_assignments', 'requisition_id');
+            $assignJoin = '';
+            if ($hasClaimAssignment) {
+                $assignJoin = "LEFT JOIN facility_records_assignments a ON a.assignment_id = r.claim_assignment_id";
+            } elseif ($hasReqIdInAssignments) {
+                $assignJoin = "LEFT JOIN facility_records_assignments a ON a.requisition_id = r.requisition_id";
+            }
+            $where = "WHERE r.requester_user_id = {$userId}";
+            if ($status !== '') {
+                if ($status === 'for_claiming') {
+                    $where .= " AND r.status = 'approved'";
+                    if ($hasClaimAssignment) {
+                        $where .= " AND r.claim_assignment_id IS NULL";
+                    } elseif ($hasClaimedAt) {
+                        $where .= " AND r.claimed_at IS NULL";
+                    }
+                } elseif ($status === 'claimed') {
+                    if ($hasClaimAssignment) {
+                        $where .= " AND r.claim_assignment_id IS NOT NULL";
+                    } elseif ($hasClaimedAt) {
+                        $where .= " AND r.claimed_at IS NOT NULL";
+                    } else {
+                        $where .= " AND r.status = 'claimed'";
+                    }
+                } else {
+                    $where .= " AND r.status = '" . _esc($status) . "'";
+                }
+            }
+            if ($search !== '') {
+                $searchEsc = _esc('%' . $search . '%');
+                $where .= " AND (r.item_code LIKE '{$searchEsc}' OR r.item_description LIKE '{$searchEsc}')";
+            }
+            $sql = "SELECT
+                        r.requisition_id,
+                        r.module_type,
+                        r.item_code,
+                        r.item_description,
+                        r.qty_requested,
+                        r.status,
+                        " . ($assignJoin !== '' && $hasRemarks ? "COALESCE(a.remarks, r.remarks) AS remarks," : ($assignJoin !== '' ? "a.remarks AS remarks," : ($hasRemarks ? "r.remarks," : "NULL AS remarks,"))) . "
+                        " . ($hasReason ? "r.reason," : "NULL AS reason,") . "
+                        " . ($hasClaimAssignment ? "r.claim_assignment_id," : "NULL AS claim_assignment_id,") . "
+                        " . ($hasClaimedAt ? "r.claimed_at," : "NULL AS claimed_at,") . "
+                        " . ($hasApprovedAt ? "r.approved_at," : "NULL AS approved_at,") . "
+                        r.created_at,
+                        " . ($hasUpdatedAt ? "r.updated_at," : "r.created_at AS updated_at,") . "
+                        f.facility_code,
+                        f.facility_name,
+                        u.unit_code,
+                        u.unit_name
+                    FROM requisition_items r
+                    {$assignJoin}
+                    LEFT JOIN facility_records_facilities f ON f.facility_id = a.facility_id
+                    LEFT JOIN facility_records_units u ON u.unit_id = a.unit_id
+                    {$where}
+                    ORDER BY r.created_at DESC";
+            $res = call_mysql_query($sql);
+            $rows = [];
+            if ($res) {
+                while ($row = call_mysql_fetch_array($res)) {
+                    // Auto-expire AST approved requisitions not claimed within 7 days.
+                    if (strtoupper((string)$row['module_type']) === 'AST' && $hasApprovedAt) {
+                        $rawStatus = strtolower((string)($row['status'] ?? 'pending'));
+                        $isClaimed = !empty($row['claim_assignment_id']) || !empty($row['claimed_at']);
+                        $approvedAt = $row['approved_at'] ?? null;
+                        if ($rawStatus === 'approved' && !$isClaimed && $approvedAt) {
+                            $approvedTs = strtotime($approvedAt);
+                            if ($approvedTs && (time() - $approvedTs) > (7 * 24 * 60 * 60)) {
+                                $itemCodeEsc = _esc($row['item_code'] ?? '');
+                                call_mysql_query("UPDATE requisition_items SET status = 'not_claimed', updated_at = NOW() WHERE requisition_id = " . (int)$row['requisition_id'] . " LIMIT 1");
+                                call_mysql_query("UPDATE ast_inventory SET is_available = 1 WHERE property_code = '{$itemCodeEsc}' LIMIT 1");
+                                activity_log_new("REQUISITION NOT CLAIMED", "SUCCESS", array(
+                                    'requisition_id' => (int)$row['requisition_id'],
+                                    'item_code' => $row['item_code'] ?? '',
+                                    'module_type' => $row['module_type'] ?? ''
+                                ));
+                                $row['status'] = 'not_claimed';
+                            }
+                        }
+                    }
+                    $rawStatus = strtolower((string)($row['status'] ?? 'pending'));
+                    if (!empty($row['claim_assignment_id']) || !empty($row['claimed_at'])) {
+                        $row['workflow_status'] = 'claimed';
+                    } elseif ($rawStatus === 'approved') {
+                        $row['workflow_status'] = 'for_claiming';
+                    } elseif ($rawStatus === 'not_claimed') {
+                        $row['workflow_status'] = 'not_claimed';
+                    } else {
+                        $row['workflow_status'] = $rawStatus;
+                    }
+                    $rows[] = $row;
+                }
+            }
+            json_response(['success' => true, 'data' => $rows]);
             break;
 
         default:
