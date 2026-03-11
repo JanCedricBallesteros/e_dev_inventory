@@ -65,6 +65,41 @@ function fr_column_exists($table, $column)
     return $res && mysqli_num_rows($res) > 0;
 }
 
+function fr_resolve_row_images(&$row) {
+    $row['category_photo_url'] = null;
+    $row['category_photo_thumb_url'] = null;
+    $row['item_category_name'] = null;
+
+    if ($row['module_type'] === 'AST') {
+        $row['item_category_name'] = $row['ast_category_name'] ?? null;
+        if (!empty($row['ast_category_photo'])) {
+            $row['category_photo_url'] = BASE_URL . 'upload/category/' . $row['ast_category_photo'];
+            $row['category_photo_thumb_url'] = BASE_URL . 'admin/modules/tools/category_image_thumb.php?f=' . urlencode($row['ast_category_photo']) . '&s=100';
+        }
+    } elseif ($row['module_type'] === 'CSM') {
+        $row['item_category_name'] = $row['csm_category_name'] ?? null;
+        $img = $row['csm_category_img'] ?? '';
+        if (!empty($img)) {
+            if (strpos($img, 'upload/') === 0 || strpos($img, '/') !== false) {
+                $row['category_photo_url'] = BASE_URL . $img;
+                $fname = basename($img);
+                $row['category_photo_thumb_url'] = BASE_URL . 'admin/modules/tools/category_image_thumb.php?f=' . urlencode($fname) . '&s=100';
+            } elseif (ctype_digit($img)) {
+                $imgRes = call_mysql_query("SELECT file_name, file_url FROM csm_inventory_category_images WHERE image_id = " . (int)$img . " LIMIT 1");
+                if ($imgRes && $imgRow = call_mysql_fetch_array($imgRes)) {
+                    $furl = !empty($imgRow['file_url']) ? $imgRow['file_url'] : 'upload/category/' . $imgRow['file_name'];
+                    $row['category_photo_url'] = BASE_URL . $furl;
+                    $row['category_photo_thumb_url'] = BASE_URL . 'admin/modules/tools/category_image_thumb.php?f=' . urlencode($imgRow['file_name']) . '&s=100';
+                }
+            } else {
+                $row['category_photo_url'] = BASE_URL . 'upload/category/' . $img;
+                $row['category_photo_thumb_url'] = BASE_URL . 'admin/modules/tools/category_image_thumb.php?f=' . urlencode($img) . '&s=100';
+            }
+        }
+    }
+    unset($row['ast_category_photo'], $row['ast_category_name'], $row['csm_category_img'], $row['csm_category_name']);
+}
+
 function fr_active_user_where_clause()
 {
     if (!fr_column_exists('users', 'status')) {
@@ -455,6 +490,52 @@ try {
             }
             break;
 
+        case 'list_facility_inventory':
+            $facility_id = _int(_post('facility_id'), 0);
+            if ($facility_id <= 0) json_response(array('success' => false, 'message' => 'Facility is required.'), 422);
+            $hasManagedBy = fr_column_exists('facility_records_assignments', 'managed_by_user_id');
+            $sql = "SELECT
+                        a.assignment_id,
+                        a.module_type,
+                        a.item_code,
+                        a.item_description,
+                        a.qty,
+                        a.unit,
+                        a.status,
+                        a.issued_at,
+                        a.returned_at,
+                        a.remarks,
+                        CONCAT(COALESCE(u1.f_name,''), ' ', COALESCE(u1.l_name,'')) AS issued_to_name,
+                        CONCAT(COALESCE(u2.f_name,''), ' ', COALESCE(u2.l_name,'')) AS accountable_name,
+                        " . ($hasManagedBy ? "CONCAT(COALESCE(u3.f_name,''), ' ', COALESCE(u3.l_name,''))" : "''") . " AS managed_by_name,
+                        fu.unit_name,
+                        fu.unit_code,
+                        ast_cat.category_photo AS ast_category_photo,
+                        ast_cat.item_category_name AS ast_category_name,
+                        csm_inv.item_category_img AS csm_category_img,
+                        csm_cat.item_category_name AS csm_category_name
+                    FROM facility_records_assignments a
+                    LEFT JOIN users u1 ON u1.user_id = a.issued_to_user_id
+                    LEFT JOIN users u2 ON u2.user_id = a.accountable_user_id
+                    " . ($hasManagedBy ? "LEFT JOIN users u3 ON u3.user_id = a.managed_by_user_id" : "") . "
+                    LEFT JOIN facility_records_units fu ON fu.unit_id = a.unit_id
+                    LEFT JOIN ast_inventory ast_inv ON a.module_type = 'AST' AND a.item_code = ast_inv.property_code
+                    LEFT JOIN ast_inventory_category ast_cat ON ast_inv.category_id = ast_cat.category_id
+                    LEFT JOIN csm_inventory csm_inv ON a.module_type = 'CSM' AND a.item_code = csm_inv.inventory_system_item_code
+                    LEFT JOIN csm_inventory_category csm_cat ON csm_inv.item_category_code = csm_cat.item_category_code
+                    WHERE a.facility_id = {$facility_id}
+                    ORDER BY a.created_at DESC";
+            $res = call_mysql_query($sql);
+            $rows = array();
+            if ($res) {
+                while ($row = call_mysql_fetch_array($res)) {
+                    fr_resolve_row_images($row);
+                    $rows[] = $row;
+                }
+            }
+            json_response(array('success' => true, 'data' => $rows));
+            break;
+
         case 'list_unit_inventory':
             $unit_id = _int(_post('unit_id'), 0);
             if ($unit_id <= 0) json_response(array('success' => false, 'message' => 'Unit is required.'), 422);
@@ -472,17 +553,26 @@ try {
                         a.remarks,
                         CONCAT(COALESCE(u1.f_name,''), ' ', COALESCE(u1.l_name,'')) AS issued_to_name,
                         CONCAT(COALESCE(u2.f_name,''), ' ', COALESCE(u2.l_name,'')) AS accountable_name,
-                        " . ($hasManagedBy ? "CONCAT(COALESCE(u3.f_name,''), ' ', COALESCE(u3.l_name,''))" : "''") . " AS managed_by_name
+                        " . ($hasManagedBy ? "CONCAT(COALESCE(u3.f_name,''), ' ', COALESCE(u3.l_name,''))" : "''") . " AS managed_by_name,
+                        ast_cat.category_photo AS ast_category_photo,
+                        ast_cat.item_category_name AS ast_category_name,
+                        csm_inv.item_category_img AS csm_category_img,
+                        csm_cat.item_category_name AS csm_category_name
                     FROM facility_records_assignments a
                     LEFT JOIN users u1 ON u1.user_id = a.issued_to_user_id
                     LEFT JOIN users u2 ON u2.user_id = a.accountable_user_id
                     " . ($hasManagedBy ? "LEFT JOIN users u3 ON u3.user_id = a.managed_by_user_id" : "") . "
+                    LEFT JOIN ast_inventory ast_inv ON a.module_type = 'AST' AND a.item_code = ast_inv.property_code
+                    LEFT JOIN ast_inventory_category ast_cat ON ast_inv.category_id = ast_cat.category_id
+                    LEFT JOIN csm_inventory csm_inv ON a.module_type = 'CSM' AND a.item_code = csm_inv.inventory_system_item_code
+                    LEFT JOIN csm_inventory_category csm_cat ON csm_inv.item_category_code = csm_cat.item_category_code
                     WHERE a.unit_id = {$unit_id}
                     ORDER BY a.created_at DESC";
             $res = call_mysql_query($sql);
             $rows = array();
             if ($res) {
                 while ($row = call_mysql_fetch_array($res)) {
+                    fr_resolve_row_images($row);
                     $rows[] = $row;
                 }
             }
@@ -509,6 +599,12 @@ try {
             }
             if ($qty <= 0) $qty = 1;
 
+            // Ensure unit belongs to the selected facility.
+            $unitRes = call_mysql_query("SELECT unit_id FROM facility_records_units WHERE unit_id = {$unit_id} AND facility_id = {$facility_id} LIMIT 1");
+            if (!$unitRes || !call_mysql_fetch_array($unitRes)) {
+                json_response(array('success' => false, 'message' => 'Selected unit does not belong to the facility.'), 422);
+            }
+
             // Force managed-by from facility unit manager.
             $hasUnitManager = fr_column_exists('facility_records_units', 'facility_unit_manager_user_id');
             $hasUnitManagerLegacy = fr_column_exists('facility_records_units', 'accountable_user_id');
@@ -524,20 +620,31 @@ try {
 
             $item_description = '';
             $item_unit = '';
+            call_mysql_query("START TRANSACTION");
             if ($module_type === 'AST') {
                 $qty = 1;
                 $sql = "SELECT item_id, property_code, item_description, unit, is_available FROM ast_inventory WHERE item_id = {$source_item_id} AND property_code = '" . _esc($item_code) . "' LIMIT 1";
                 $res = call_mysql_query($sql);
                 $item = $res ? call_mysql_fetch_array($res) : null;
-                if (!$item) json_response(array('success' => false, 'message' => 'AST item not found.'), 404);
-                if ((int)$item['is_available'] !== 1) json_response(array('success' => false, 'message' => 'AST item is no longer available.'), 422);
+                if (!$item) {
+                    call_mysql_query("ROLLBACK");
+                    json_response(array('success' => false, 'message' => 'AST item not found.'), 404);
+                }
+                if ((int)$item['is_available'] !== 1) {
+                    call_mysql_query("ROLLBACK");
+                    json_response(array('success' => false, 'message' => 'AST item is no longer available.'), 422);
+                }
                 $item_description = $item['item_description'];
                 $item_unit = $item['unit'];
 
-                call_mysql_query("UPDATE ast_inventory
-                                  SET is_available = 0
-                                  WHERE item_id = {$source_item_id}
-                                  LIMIT 1");
+                $lockOk = call_mysql_query("UPDATE ast_inventory
+                                            SET is_available = 0
+                                            WHERE item_id = {$source_item_id} AND is_available = 1
+                                            LIMIT 1");
+                if (!$lockOk || mysqli_affected_rows($db_connect) < 1) {
+                    call_mysql_query("ROLLBACK");
+                    json_response(array('success' => false, 'message' => 'AST item is no longer available.'), 422);
+                }
             } else {
                 $sql = "SELECT inventory_id, inventory_system_item_code, item_description, current_unit_quantity
                         FROM csm_inventory
@@ -545,16 +652,26 @@ try {
                         LIMIT 1";
                 $res = call_mysql_query($sql);
                 $item = $res ? call_mysql_fetch_array($res) : null;
-                if (!$item) json_response(array('success' => false, 'message' => 'CSM item not found.'), 404);
+                if (!$item) {
+                    call_mysql_query("ROLLBACK");
+                    json_response(array('success' => false, 'message' => 'CSM item not found.'), 404);
+                }
                 $available = (int)$item['current_unit_quantity'];
-                if ($available < $qty) json_response(array('success' => false, 'message' => 'CSM quantity is not enough.'), 422);
+                if ($available < $qty) {
+                    call_mysql_query("ROLLBACK");
+                    json_response(array('success' => false, 'message' => 'CSM quantity is not enough.'), 422);
+                }
                 $item_description = $item['item_description'];
                 $item_unit = '';
 
-                call_mysql_query("UPDATE csm_inventory
-                                  SET current_unit_quantity = current_unit_quantity - " . (float)$qty . "
-                                  WHERE inventory_id = {$source_item_id}
-                                  LIMIT 1");
+                $lockOk = call_mysql_query("UPDATE csm_inventory
+                                            SET current_unit_quantity = current_unit_quantity - " . (float)$qty . "
+                                            WHERE inventory_id = {$source_item_id} AND current_unit_quantity >= " . (float)$qty . "
+                                            LIMIT 1");
+                if (!$lockOk || mysqli_affected_rows($db_connect) < 1) {
+                    call_mysql_query("ROLLBACK");
+                    json_response(array('success' => false, 'message' => 'CSM quantity is not enough.'), 422);
+                }
             }
 
             $insertCols = "facility_id, unit_id, module_type, source_item_id, item_code, item_description, qty, unit, issued_to_user_id, accountable_user_id";
@@ -567,11 +684,17 @@ try {
             $insertVals .= ", 'ACTIVE', NOW(), " . ($remarks !== '' ? "'" . _esc($remarks) . "'" : "NULL") . ", " . (int)$s_user_id . ", " . (int)$s_user_id;
             $ok = call_mysql_query("INSERT INTO facility_records_assignments ({$insertCols}) VALUES ({$insertVals})");
             if (!$ok) {
+                call_mysql_query("ROLLBACK");
                 json_response(array('success' => false, 'message' => 'Failed to create assignment.'), 500);
             }
             $assignment_id = mysqli_insert_id($db_connect);
-            call_mysql_query("INSERT INTO facility_records_history (assignment_id, action, old_status, new_status, remarks, actor_user_id)
-                              VALUES ({$assignment_id}, 'ASSIGNED', NULL, 'ACTIVE', " . ($remarks !== '' ? "'" . _esc($remarks) . "'" : "NULL") . ", " . (int)$s_user_id . ")");
+            $histOk = call_mysql_query("INSERT INTO facility_records_history (assignment_id, action, old_status, new_status, remarks, actor_user_id)
+                                        VALUES ({$assignment_id}, 'ASSIGNED', NULL, 'ACTIVE', " . ($remarks !== '' ? "'" . _esc($remarks) . "'" : "NULL") . ", " . (int)$s_user_id . ")");
+            if (!$histOk) {
+                call_mysql_query("ROLLBACK");
+                json_response(array('success' => false, 'message' => 'Failed to record assignment history.'), 500);
+            }
+            call_mysql_query("COMMIT");
 
             activity_log_new("FACILITY ITEM ASSIGN", "SUCCESS", array(
                 'assignment_id' => $assignment_id,
@@ -601,23 +724,7 @@ try {
             if (!$row) json_response(array('success' => false, 'message' => 'Assignment not found.'), 404);
             $old_status = strtoupper((string)$row['status']);
 
-            if ($new_status === 'RETURNED' && $old_status !== 'RETURNED') {
-                $module_type = strtoupper((string)$row['module_type']);
-                $source_item_id = (int)$row['source_item_id'];
-                $qty = (float)$row['qty'];
-                if ($module_type === 'AST') {
-                    call_mysql_query("UPDATE ast_inventory
-                                      SET is_available = 1
-                                      WHERE item_id = {$source_item_id}
-                                      LIMIT 1");
-                } elseif ($module_type === 'CSM') {
-                    call_mysql_query("UPDATE csm_inventory
-                                      SET current_unit_quantity = current_unit_quantity + " . (float)$qty . "
-                                      WHERE inventory_id = {$source_item_id}
-                                      LIMIT 1");
-                }
-            }
-
+            call_mysql_query("START TRANSACTION");
             $ok = call_mysql_query("UPDATE facility_records_assignments
                                     SET status = '" . _esc($new_status) . "',
                                         returned_at = " . ($new_status === 'RETURNED' ? "NOW()" : "returned_at") . ",
@@ -625,10 +732,43 @@ try {
                                         updated_by = " . (int)$s_user_id . "
                                     WHERE assignment_id = {$assignment_id}
                                     LIMIT 1");
-            if (!$ok) json_response(array('success' => false, 'message' => 'Failed to update assignment status.'), 500);
+            if (!$ok) {
+                call_mysql_query("ROLLBACK");
+                json_response(array('success' => false, 'message' => 'Failed to update assignment status.'), 500);
+            }
 
-            call_mysql_query("INSERT INTO facility_records_history (assignment_id, action, old_status, new_status, remarks, actor_user_id)
-                              VALUES ({$assignment_id}, 'STATUS_UPDATE', '" . _esc($old_status) . "', '" . _esc($new_status) . "', " . ($remarks !== '' ? "'" . _esc($remarks) . "'" : "NULL") . ", " . (int)$s_user_id . ")");
+            if ($new_status === 'RETURNED' && $old_status !== 'RETURNED') {
+                $module_type = strtoupper((string)$row['module_type']);
+                $source_item_id = (int)$row['source_item_id'];
+                $qty = (float)$row['qty'];
+                if ($module_type === 'AST') {
+                    $invOk = call_mysql_query("UPDATE ast_inventory
+                                               SET is_available = 1
+                                               WHERE item_id = {$source_item_id}
+                                               LIMIT 1");
+                    if (!$invOk) {
+                        call_mysql_query("ROLLBACK");
+                        json_response(array('success' => false, 'message' => 'Failed to update AST inventory.'), 500);
+                    }
+                } elseif ($module_type === 'CSM') {
+                    $invOk = call_mysql_query("UPDATE csm_inventory
+                                               SET current_unit_quantity = current_unit_quantity + " . (float)$qty . "
+                                               WHERE inventory_id = {$source_item_id}
+                                               LIMIT 1");
+                    if (!$invOk) {
+                        call_mysql_query("ROLLBACK");
+                        json_response(array('success' => false, 'message' => 'Failed to update CSM inventory.'), 500);
+                    }
+                }
+            }
+
+            $histOk = call_mysql_query("INSERT INTO facility_records_history (assignment_id, action, old_status, new_status, remarks, actor_user_id)
+                                        VALUES ({$assignment_id}, 'STATUS_UPDATE', '" . _esc($old_status) . "', '" . _esc($new_status) . "', " . ($remarks !== '' ? "'" . _esc($remarks) . "'" : "NULL") . ", " . (int)$s_user_id . ")");
+            if (!$histOk) {
+                call_mysql_query("ROLLBACK");
+                json_response(array('success' => false, 'message' => 'Failed to record status history.'), 500);
+            }
+            call_mysql_query("COMMIT");
             activity_log_new("FACILITY ASSIGNMENT STATUS", "SUCCESS", array('assignment_id' => $assignment_id, 'old_status' => $old_status, 'new_status' => $new_status));
             json_response(array('success' => true, 'message' => 'Assignment status updated.'));
             break;

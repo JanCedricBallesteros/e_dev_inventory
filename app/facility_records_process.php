@@ -199,6 +199,7 @@ try {
             if ($uid <= 0) json_response(array('success' => false, 'message' => 'Invalid user.'), 403);
             $col = fr_unit_manager_column();
             if ($col === '') json_response(array('success' => true, 'data' => array()));
+            $mgrSelect = "CONCAT(COALESCE(mgr.f_name,''), ' ', COALESCE(mgr.l_name,'')) AS unit_manager_name,";
             $sql = "SELECT
                         u.unit_id,
                         u.facility_id,
@@ -208,9 +209,11 @@ try {
                         u.status,
                         f.facility_code,
                         f.facility_name,
+                        {$mgrSelect}
                         (SELECT COUNT(*) FROM facility_records_assignments a WHERE a.unit_id = u.unit_id AND a.status IN ('ACTIVE','REPORTED','RETURN_REQUESTED')) AS active_item_count
                     FROM facility_records_units u
                     INNER JOIN facility_records_facilities f ON f.facility_id = u.facility_id
+                    LEFT JOIN users mgr ON mgr.user_id = u.{$col}
                     WHERE u.{$col} = {$uid}
                     ORDER BY f.facility_name ASC, u.unit_name ASC";
             $res = call_mysql_query($sql);

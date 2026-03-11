@@ -19,19 +19,37 @@ if (!(role_has("ADMIN") || $staffAccess)) {
     include_once META_PATH;
     include_once DOMAIN_PATH . '/global/include_top.php';
     ?>
+    <link href="<?= BASE_URL ?>assets/css/tabulator_bootstrap.min.css" rel="stylesheet">
     <link href="<?= BASE_URL ?>assets/css/select2.min.css" rel="stylesheet">
     <style>
         .section-card { border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
-        .facility-card { border: 1px solid #dbe2ea; border-radius: 10px; padding: 12px; background: #fff; cursor: pointer; }
-        .facility-card.active { border-color: #0d6efd; background: #eef5ff; }
+        .facility-group { margin-bottom: 1rem; }
+        .facility-header { background: #0d6efd; color: white; padding: 10px 14px; border-radius: 8px; font-weight: 600; font-size: 0.95rem; cursor: pointer; transition: background 0.2s ease; display: flex; gap: 10px; align-items: flex-start; }
+        .facility-header:hover { background: #0b5ed7; }
+        .facility-header.active { background: #0a58ca; box-shadow: 0 2px 6px rgba(13,110,253,0.3); }
+        .facility-header i { margin-right: 6px; }
+        .facility-header .facility-meta { flex: 1 1 auto; min-width: 0; }
+        .facility-header .facility-meta .title-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .facility-header .facility-actions { display: flex; gap: 6px; flex-shrink: 0; }
         .facility-code { font-family: monospace; font-weight: 700; }
         .small-muted { color: #6c757d; font-size: 0.85rem; }
-        .unit-pill { border: 1px solid #dee2e6; border-radius: 999px; padding: 4px 10px; background: #fff; cursor: pointer; font-size: 0.85rem; }
-        .unit-pill.active { border-color: #0d6efd; color: #0d6efd; background: #eef5ff; }
+        .unit-card { border: 1px solid #dbe2ea; border-radius: 8px; padding: 10px 12px; background: #fff; cursor: pointer; transition: all 0.2s ease; margin-bottom: 8px; }
+        .unit-card:hover { border-color: #a5b4fc; background: #f8faff; transform: translateX(4px); }
+        .unit-card.active { border-color: #0d6efd; background: #eef5ff; box-shadow: 0 2px 6px rgba(13,110,253,0.2); }
         .select2-container { width: 100% !important; }
         .assign-search-wrap { display: flex; align-items: stretch; gap: .5rem; }
         .assign-search-wrap .search-select-holder { flex: 1 1 auto; min-width: 0; }
         .assign-search-wrap .btn { flex: 0 0 auto; }
+        .facility-items { border: 1px dashed #d0d7de; border-radius: 8px; padding: 10px 12px; background: #f8fafc; }
+        .facility-item-row { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; padding: 6px 0; border-bottom: 1px solid #e5e7eb; }
+        .facility-item-row:last-child { border-bottom: none; }
+        .facility-item-main { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+        .facility-item-desc { grid-column: 1 / -1; color: #6c757d; font-size: 0.9rem; }
+        .facility-item-meta { display: flex; flex-wrap: wrap; gap: 6px; color: #6c757d; font-size: 0.85rem; }
+        .item-thumb { width: 46px; height: 46px; border-radius: 6px; object-fit: cover; border: 1px solid #e5e7eb; background: #f8f9fa; cursor: zoom-in; }
+        .item-badge { width: 46px; height: 46px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; background: #1E3A8A; color: #fff; font-weight: 600; font-size: 0.9rem; text-transform: uppercase; border: 1px solid rgba(0,0,0,0.06); cursor: default; }
+        .thumb-wrap { display: flex; align-items: center; justify-content: center; }
+        .img-preview { max-width: 100%; max-height: 70vh; border-radius: 8px; }
     </style>
 </head>
 
@@ -53,28 +71,19 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
             <div class="col-12 col-lg-4">
                 <div class="card section-card h-100">
                     <div class="card-header bg-eclearance text-white fw-semibold d-flex justify-content-between align-items-center">
-                        <span><i class="bi bi-building"></i>&ensp;Facilities</span>
-                        <button class="btn btn-light btn-sm" id="btnAddFacility"><i class="bi bi-plus-lg"></i> Add</button>
+                        <span><i class="bi bi-building"></i>&ensp;Facilities & Units</span>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-light btn-sm" id="btnAddFacility"><i class="bi bi-plus-lg"></i> Add Facility</button>
+                        </div>
                     </div>
                     <div class="card-body mt-3 bg-white">
-                        <div id="facilityList" class="d-flex flex-column gap-2"></div>
+                        <div id="facilityList"></div>
                     </div>
                 </div>
             </div>
 
             <div class="col-12 col-lg-8">
                 <div class="card section-card">
-                    <div class="card-header bg-eclearance text-white fw-semibold d-flex justify-content-between align-items-center">
-                        <span><i class="bi bi-door-open"></i>&ensp;Facility Units</span>
-                        <button class="btn btn-light btn-sm" id="btnAddUnit" disabled><i class="bi bi-plus-lg"></i> Add Unit</button>
-                    </div>
-                    <div class="card-body mt-3 bg-white">
-                        <div id="selectedFacilityInfo" class="small-muted mb-2">Select a facility first.</div>
-                        <div id="unitList" class="d-flex flex-wrap gap-2"></div>
-                    </div>
-                </div>
-
-                <div class="card section-card mt-3">
                     <div class="card-header bg-eclearance text-white fw-semibold d-flex justify-content-between align-items-center">
                         <span><i class="bi bi-box-seam"></i>&ensp;Unit Inventory Assignments</span>
                         <button class="btn btn-light btn-sm" id="btnAssignItem" disabled><i class="bi bi-plus-lg"></i> Assign Item</button>
@@ -84,25 +93,11 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                             <input type="text" class="form-control" id="invSearch" placeholder="Search code/description/status...">
                             <button class="btn btn-outline-secondary" id="btnRefreshAssignments">Refresh</button>
                         </div>
-                        <div class="table-responsive">
-                            <table class="table table-sm table-bordered align-middle" id="assignmentTable">
-                                <thead>
-                                <tr>
-                                    <th>Module</th>
-                                    <th>Item Code</th>
-                                    <th>Description</th>
-                                    <th>Qty</th>
-                                    <th>Issued To</th>
-                                    <th>Accountable</th>
-                                    <th>Managed By</th>
-                                    <th>Status</th>
-                                    <th>Issued At</th>
-                                    <th style="width:170px;">Actions</th>
-                                </tr>
-                                </thead>
-                                <tbody></tbody>
-                            </table>
+                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                            <div id="selectedUnitInfo" class="small text-muted">Select a facility or unit to view items.</div>
+                            <div id="selectedManagedBy" class="small text-muted"></div>
                         </div>
+                        <div id="assignmentTable"></div>
                     </div>
                 </div>
             </div>
@@ -248,6 +243,21 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
     </div>
 </div>
 
+<!-- IMAGE PREVIEW MODAL -->
+<div class="modal fade" id="imagePreviewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-semibold"><i class="bi bi-image"></i>&ensp;Item Image</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center">
+                <img id="imagePreviewImg" class="img-preview" src="" alt="Item image preview">
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- SEARCH QR MODAL -->
 <div class="modal fade" id="assignSearchQrModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -284,14 +294,17 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 <?php include_once DOMAIN_PATH . '/global/include_bottom.php'; ?>
 <script src="https://unpkg.com/html5-qrcode"></script>
 <script src="<?= BASE_URL ?>assets/js/qr_search.js"></script>
+<script src="<?= BASE_URL ?>assets/js/tabulator.min.js"></script>
 <script src="<?= BASE_URL ?>assets/js/select2.min.js"></script>
 <script>
 const PROCESS_URL = <?php echo json_encode(BASE_URL . 'admin/modules/transactions/facility_inventory_records_process.php'); ?>;
 let facilityList = [];
 let unitList = [];
 let assignmentList = [];
+let facilityItems = [];
 let selectedFacility = null;
 let selectedUnit = null;
+let assignmentTable = null;
 let assignItemsCache = [];
 let assignItemSearchMap = {};
 
@@ -311,6 +324,15 @@ function notifyError(msg){
     if (typeof error_notif === 'function') return error_notif(msg);
     if ($.notify) return $.notify({ message: msg }, { type: 'danger', delay: 3000, placement: { from: 'top', align: 'right' } });
     alert(msg);
+}
+
+function escapeHtml(value){
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }
 
 function normalizeScannedCode(raw){
@@ -359,15 +381,30 @@ function renderFacilities(){
         return;
     }
     facilityList.forEach(function(f){
-        const active = selectedFacility && String(selectedFacility.facility_id) === String(f.facility_id) ? 'active' : '';
+        const isActive = selectedFacility && String(selectedFacility.facility_id) === String(f.facility_id);
+        const facilityCode = escapeHtml(f.facility_code || '');
+        const facilityName = escapeHtml(f.facility_name || '');
+        const totalItems = parseInt(f.active_item_count || 0, 10) || 0;
+        const totalUnits = parseInt(f.unit_count || 0, 10) || 0;
         wrap.append(`
-            <div class="facility-card ${active}" data-id="${f.facility_id}">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div class="facility-code">${f.facility_code}</div>
-                    <button class="btn btn-outline-secondary btn-sm btn-edit-facility" data-id="${f.facility_id}"><i class="bi bi-pencil"></i></button>
+            <div class="facility-group">
+                <div class="facility-header ${isActive ? 'active' : ''}" data-id="${f.facility_id}">
+                    <div class="facility-meta">
+                        <div class="title-row">
+                            <i class="bi bi-building"></i>
+                            <span>${facilityName}</span>
+                            <span class="badge bg-light text-dark facility-code">${facilityCode}</span>
+                        </div>
+                        <div class="small" style="opacity:0.9;">${totalUnits} unit(s) &middot; ${totalItems} item(s)</div>
+                    </div>
+                    <div class="facility-actions">
+                        <button class="btn btn-light btn-sm btn-add-unit" data-id="${f.facility_id}"><i class="bi bi-plus-lg"></i> Add Unit</button>
+                        <button class="btn btn-outline-light btn-sm btn-edit-facility" data-id="${f.facility_id}"><i class="bi bi-pencil"></i></button>
+                    </div>
                 </div>
-                <div class="fw-semibold">${f.facility_name}</div>
-                <div class="small-muted">${f.unit_count} unit(s) | ${f.active_item_count} active item(s)</div>
+                <div class="facility-units mt-2" data-facility-id="${f.facility_id}">
+                    ${isActive ? '<div class="small-muted">Loading units...</div>' : '<div class="small-muted">Select to view units.</div>'}
+                </div>
             </div>
         `);
     });
@@ -442,43 +479,59 @@ function initUserSelect2(){
 }
 
 function renderUnits(){
-    $('#selectedFacilityInfo').text(selectedFacility ? `${selectedFacility.facility_code} - ${selectedFacility.facility_name}` : 'Select a facility first.');
-    const wrap = $('#unitList');
-    wrap.empty();
-    if (!selectedFacility){
-        wrap.html('<div class="small-muted">Select a facility.</div>');
-        return;
-    }
+    if (!selectedFacility) return;
+    const container = $(`.facility-units[data-facility-id="${selectedFacility.facility_id}"]`);
+    if (!container.length) return;
+    container.empty();
     if (!unitList.length){
-        wrap.html('<div class="small-muted">No units yet for this facility.</div>');
+        container.html('<div class="small-muted">No units yet for this facility.</div>');
         return;
     }
     unitList.forEach(function(u){
         const active = selectedUnit && String(selectedUnit.unit_id) === String(u.unit_id) ? 'active' : '';
-        const officer = (u.unit_manager_name || '').trim();
-        wrap.append(`
-            <div class="d-flex align-items-center gap-1 mb-1">
-                <div class="unit-pill ${active} flex-grow-1" data-id="${u.unit_id}" title="${u.unit_type}">
-                    ${u.unit_code} - ${u.unit_name} (${u.active_item_count})
+        const officer = escapeHtml((u.unit_manager_name || '').trim());
+        const unitCode = escapeHtml(u.unit_code || '');
+        const unitName = escapeHtml(u.unit_name || '');
+        container.append(`
+            <div class="unit-card ${active}" data-id="${u.unit_id}">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div class="fw-semibold">${unitCode} - ${unitName} (${u.active_item_count || 0})</div>
+                    <button class="btn btn-outline-secondary btn-sm btn-edit-unit" data-id="${u.unit_id}" title="Edit Unit">
+                        <i class="bi bi-pencil"></i>
+                    </button>
                 </div>
-                <button class="btn btn-outline-secondary btn-sm btn-edit-unit" data-id="${u.unit_id}" title="Edit Unit">
-                    <i class="bi bi-pencil"></i>
-                </button>
+                ${officer ? `<div class="small-muted mt-1">Manager: ${officer}</div>` : ''}
             </div>
         `);
-        if (officer) {
-            wrap.append(`<span class="small-muted ms-1">Manager: ${officer}</span>`);
+    });
+}
+
+function loadFacilityItems(){
+    if (!selectedFacility){
+        facilityItems = [];
+        if (assignmentTable) assignmentTable.setData([]);
+        return;
+    }
+    facilityItems = [];
+    if (assignmentTable) assignmentTable.setData([]);
+    $.post(PROCESS_URL, { action: 'list_facility_inventory', facility_id: selectedFacility.facility_id }, function(res){
+        if (!res.success) {
+            showPageError(res.message || 'Failed to load items.');
+            return;
         }
+        facilityItems = res.data || [];
+        renderAssignments();
+    }, 'json').fail(function(){
+        showPageError('Server error loading items.');
     });
 }
 
 function loadAssignments(){
-    const tbody = $('#assignmentTable tbody');
-    tbody.empty();
     if (!selectedUnit){
-        tbody.html('<tr><td colspan="10" class="text-muted text-center">Select a unit first.</td></tr>');
+        if (!selectedFacility && assignmentTable) assignmentTable.setData([]);
         return;
     }
+    if (assignmentTable) assignmentTable.setData([]);
     $.post(PROCESS_URL, { action: 'list_unit_inventory', unit_id: selectedUnit.unit_id }, function(res){
         if (!res.success) { showPageError(res.message || 'Failed to load assignments.'); return; }
         assignmentList = res.data || [];
@@ -487,40 +540,18 @@ function loadAssignments(){
 }
 
 function renderAssignments(){
+    if (!assignmentTable) return;
+    const sourceRows = selectedUnit ? assignmentList : (selectedFacility ? facilityItems : []);
     const q = ($('#invSearch').val() || '').toLowerCase().trim();
-    const rows = assignmentList.filter(function(r){
-        if (!q) return true;
-        const hay = [r.module_type, r.item_code, r.item_description, r.status].join(' ').toLowerCase();
-        return hay.indexOf(q) !== -1;
-    });
-    const tbody = $('#assignmentTable tbody');
-    tbody.empty();
-    if (!rows.length){
-        tbody.html('<tr><td colspan="10" class="text-muted text-center">No assignments found.</td></tr>');
-        return;
+    assignmentTable.setData(sourceRows);
+    if (q) {
+        assignmentTable.setFilter(function(r){
+            const hay = [r.module_type, r.item_code, r.item_description, r.status, r.issued_to_name, r.accountable_name, r.managed_by_name, r.unit_name, r.unit_code].join(' ').toLowerCase();
+            return hay.indexOf(q) !== -1;
+        });
+    } else {
+        assignmentTable.clearFilter();
     }
-    rows.forEach(function(r){
-        const isReturned = String(r.status).toUpperCase() === 'RETURNED';
-        tbody.append(`
-            <tr>
-                <td>${r.module_type || ''}</td>
-                <td><span class="badge bg-light text-dark border">${r.item_code || ''}</span></td>
-                <td>${r.item_description || ''}</td>
-                <td class="text-center">${r.qty || ''}</td>
-                <td>${r.issued_to_name || '-'}</td>
-                <td>${r.accountable_name || '-'}</td>
-                <td>${r.managed_by_name || '-'}</td>
-                <td>${r.status || ''}</td>
-                <td>${r.issued_at || ''}</td>
-                <td>
-                    <div class="d-flex gap-1">
-                        <button class="btn btn-outline-warning btn-sm btn-report" data-id="${r.assignment_id}">Report</button>
-                        <button class="btn btn-outline-success btn-sm btn-return" data-id="${r.assignment_id}" ${isReturned ? 'disabled' : ''}>Return</button>
-                    </div>
-                </td>
-            </tr>
-        `);
-    });
 }
 
 function loadAssignableItems(){
@@ -653,20 +684,89 @@ function pickAssignableItemByCode(code){
     runSearch(moduleType);
 }
 
+function initAssignmentTable(){
+    assignmentTable = new Tabulator('#assignmentTable', {
+        layout: "fitColumns",
+        renderVertical: "basic",
+        responsiveLayout: "collapse",
+        pagination: "local",
+        paginationSize: 5,
+        paginationSizeSelector: [5, 10, 20, 50, true],
+        placeholder: "Select a facility or unit to view items.",
+        columns: [
+            { title: "Image", field: "category_photo_thumb_url", width: 60, hozAlign: "center", headerSort: false, formatter: function(cell){
+                const url = cell.getValue();
+                const full = cell.getRow().getData().category_photo_url;
+                const name = cell.getRow().getData().item_category_name || cell.getRow().getData().module_type || '';
+                if (url) {
+                    return `<div class="thumb-wrap"><img class="item-thumb js-thumb-preview" src="${url}" data-full="${full || url}" loading="lazy" alt="Item image"></div>`;
+                }
+                const initials = (String(name).trim().split(/\s+/).map(function(w){ return w.charAt(0); }).filter(Boolean).slice(0,2).join('') || 'IT').toUpperCase();
+                return `<div class="thumb-wrap"><div class="item-badge js-badge-preview" data-full="${full || ''}" title="${escapeHtml(name)}">${escapeHtml(initials)}</div></div>`;
+            }},
+            { title: "Item Code", field: "item_code", width: 130, formatter: function(cell){
+                const v = escapeHtml(cell.getValue() || '');
+                return v ? '<span class="badge bg-light text-dark border">' + v + '</span>' : '';
+            }},
+            { title: "Description", field: "item_description", widthGrow: 2, minWidth: 160, formatter: function(cell){
+                const row = cell.getRow().getData();
+                const desc = escapeHtml(row.item_description || '');
+                const unitLabel = !selectedUnit && row.unit_name
+                    ? '<div class="small text-muted">Unit: ' + escapeHtml(row.unit_name || '-') + (row.unit_code ? ' (' + escapeHtml(row.unit_code) + ')' : '') + '</div>'
+                    : '';
+                return desc + unitLabel;
+            }},
+            { title: "Qty", field: "qty", width: 60, hozAlign: "center" },
+            { title: "Issued To", field: "issued_to_name", width: 150, formatter: function(cell){
+                return escapeHtml(cell.getValue() || '-');
+            }},
+            { title: "Status", field: "status", width: 100 },
+            { title: "Issued At", field: "issued_at", width: 130 },
+            { title: "Actions", field: "assignment_id", width: 175, headerSort: false, formatter: function(cell){
+                const id = cell.getValue();
+                const row = cell.getRow().getData();
+                const isReturned = String(row.status || '').toUpperCase() === 'RETURNED';
+                return '<div class="d-flex gap-1"><button class="btn btn-outline-warning btn-sm btn-report" data-id="' + id + '">Report</button><button class="btn btn-outline-success btn-sm btn-return" data-id="' + id + '"' + (isReturned ? ' disabled' : '') + '>Return</button></div>';
+            }}
+        ]
+    });
+}
+
 $(document).ready(function(){
+    initAssignmentTable();
     initUserSelect2();
     initAssignableItemSelect2();
     loadFacilities();
+    renderAssignments();
 
-    $('#facilityList').on('click', '.facility-card', function(e){
-        if ($(e.target).closest('.btn-edit-facility').length) return;
+    $('#facilityList').on('click', '.facility-header', function(e){
+        if ($(e.target).closest('.btn-edit-facility, .btn-add-unit').length) return;
         const id = $(this).data('id');
+        if (selectedFacility && String(selectedFacility.facility_id) === String(id)) {
+            selectedFacility = null;
+            selectedUnit = null;
+            facilityItems = [];
+            assignmentList = [];
+            unitList = [];
+            currentPage = 1;
+            $('#btnAssignItem').prop('disabled', true);
+            $('#selectedUnitInfo').text('Select a facility or unit to view items.');
+            $('#selectedManagedBy').text('');
+            renderFacilities();
+            renderAssignments();
+            return;
+        }
         selectedFacility = facilityList.find(x => String(x.facility_id) === String(id)) || null;
+        facilityItems = [];
+        assignmentList = [];
         selectedUnit = null;
-        $('#btnAddUnit').prop('disabled', !selectedFacility);
+        currentPage = 1;
         $('#btnAssignItem').prop('disabled', true);
+        $('#selectedUnitInfo').text(selectedFacility ? (selectedFacility.facility_name || '') + ' (' + (selectedFacility.facility_code || '') + ') — All Units' : '');
+        $('#selectedManagedBy').text('Managed By: Multiple');
         renderFacilities();
         loadUnits();
+        loadFacilityItems();
         loadAssignments();
     });
 
@@ -707,7 +807,17 @@ $(document).ready(function(){
         }, 'json');
     });
 
-    $('#btnAddUnit').on('click', function(){
+    $('#facilityList').on('click', '.btn-add-unit', function(e){
+        e.preventDefault();
+        e.stopPropagation();
+        const id = $(this).data('id');
+        selectedFacility = facilityList.find(x => String(x.facility_id) === String(id)) || null;
+        facilityItems = [];
+        selectedUnit = null;
+        renderFacilities();
+        loadUnits();
+        loadFacilityItems();
+        $('#btnAssignItem').prop('disabled', true);
         if (!selectedFacility) return;
         $('#unitId').val('');
         $('#unitType').val('ROOM');
@@ -718,16 +828,22 @@ $(document).ready(function(){
         $('#unitModal').modal('show');
     });
 
-    $('#unitList').on('click', '.unit-pill', function(e){
+    $('#facilityList').on('click', '.unit-card', function(e){
         if ($(e.target).closest('.btn-edit-unit').length) return;
         const id = $(this).data('id');
         selectedUnit = unitList.find(x => String(x.unit_id) === String(id)) || null;
+        currentPage = 1;
         $('#btnAssignItem').prop('disabled', !selectedUnit);
+        if (selectedUnit) {
+            const _facCode = selectedFacility ? (selectedFacility.facility_code || '') : '';
+            $('#selectedUnitInfo').text((_facCode ? _facCode + ' / ' : '') + (selectedUnit.unit_code || '') + ' — ' + (selectedUnit.unit_name || ''));
+            $('#selectedManagedBy').text(selectedUnit.unit_manager_name ? 'Managed By: ' + selectedUnit.unit_manager_name : '');
+        }
         renderUnits();
         loadAssignments();
     });
 
-    $('#unitList').on('click', '.btn-edit-unit', function(e){
+    $('#facilityList').on('click', '.btn-edit-unit', function(e){
         e.preventDefault();
         e.stopPropagation();
         const id = $(this).data('id');
@@ -774,8 +890,23 @@ $(document).ready(function(){
         }, 'json');
     });
 
-    $('#invSearch').on('input', renderAssignments);
-    $('#btnRefreshAssignments').on('click', loadAssignments);
+    $('#invSearch').on('input', function(){
+        if (!assignmentTable) return;
+        const q = ($(this).val() || '').toLowerCase().trim();
+        if (q) {
+            assignmentTable.setFilter(function(r){
+                const hay = [r.module_type, r.item_code, r.item_description, r.status, r.issued_to_name, r.accountable_name, r.managed_by_name, r.unit_name, r.unit_code].join(' ').toLowerCase();
+                return hay.indexOf(q) !== -1;
+            });
+        } else {
+            assignmentTable.clearFilter();
+        }
+        assignmentTable.setPage(1);
+    });
+    $('#btnRefreshAssignments').on('click', function(){
+        if (selectedFacility && !selectedUnit) loadFacilityItems();
+        else loadAssignments();
+    });
 
     $('#btnAssignItem').on('click', function(){
         if (!selectedFacility || !selectedUnit) return;
@@ -835,6 +966,13 @@ $(document).ready(function(){
             loadFacilities();
             notifySuccess(res.message || 'Assigned');
         }, 'json');
+    });
+
+    $('#assignmentTable').on('click', '.js-thumb-preview', function(){
+        const full = $(this).data('full') || $(this).attr('src') || '';
+        if (!full) return;
+        $('#imagePreviewImg').attr('src', full);
+        $('#imagePreviewModal').modal('show');
     });
 
     $('#assignmentTable').on('click', '.btn-report', function(){

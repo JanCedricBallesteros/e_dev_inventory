@@ -19,6 +19,7 @@ if (!(role_has("USER") || role_has("USERS"))) {
     include_once DOMAIN_PATH . '/global/meta_data.php';
     include_once DOMAIN_PATH . '/global/include_top.php';
     ?>
+    <link href="<?= BASE_URL ?>assets/css/tabulator_bootstrap.min.css" rel="stylesheet">
     <style>
         .section-card { border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
         .section-card .card-header { min-height: 50px; display: flex; align-items: center; }
@@ -68,32 +69,19 @@ if (!(role_has("USER") || role_has("USERS"))) {
 
                 <div class="col-12 col-lg-8">
                     <div class="card section-card">
-                        <div class="card-header bg-eclearance text-white fw-semibold d-flex justify-content-between align-items-center">
-                            <span><i class="bi bi-box-seam"></i>&ensp;Unit Inventory</span>
-                            <div class="d-flex gap-2 align-items-center">
-                                <input type="text" id="assignSearch" class="form-control form-control-sm" placeholder="Search code, description, status..." style="max-width: 240px;">
-                                <button class="btn btn-light btn-sm" id="refreshAssignments">Refresh</button>
-                            </div>
+                        <div class="card-header bg-eclearance text-white fw-semibold">
+                            <i class="bi bi-box-seam"></i>&ensp;Unit Inventory
                         </div>
                         <div class="card-body bg-white mt-3">
-                            <div id="selectedUnitInfo" class="small-muted mb-2">Select a facility or unit to view assignments.</div>
-                            <div class="table-responsive">
-                                <table class="table table-sm table-bordered align-middle mb-0" id="assignmentTable">
-                                    <thead>
-                                        <tr>
-                                            <th style="width:70px;" class="text-center">Image</th>
-                                            <th>Item Code</th>
-                                            <th>Description</th>
-                                            <th class="text-center" style="width:90px;">Qty</th>
-                                            <th>Issued To</th>
-                                            <th>Status</th>
-                                            <th>Issued At</th>
-                                            <th style="width:150px;">Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody></tbody>
-                                </table>
+                            <div class="d-flex gap-2 mb-3">
+                                <input type="text" class="form-control" id="assignSearch" placeholder="Search code, description, status...">
+                                <button class="btn btn-outline-secondary" id="refreshAssignments">Refresh</button>
                             </div>
+                            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                                <div id="selectedUnitInfo" class="small-muted">Select a facility or unit to view assignments.</div>
+                                <div id="selectedManagedBy" class="small-muted"></div>
+                            </div>
+                            <div id="assignmentTable"></div>
                         </div>
                     </div>
                 </div>
@@ -119,12 +107,23 @@ if (!(role_has("USER") || role_has("USERS"))) {
     </div>
 </body>
 <?php include_once DOMAIN_PATH . '/global/include_bottom.php'; ?>
+<script src="<?= BASE_URL ?>assets/js/tabulator.min.js"></script>
 <script>
 const PROCESS_URL = <?php echo json_encode(BASE_URL . 'app/facility_records_process.php'); ?>;
 let managedUnits = [];
 let selectedUnit = null;
 let selectedFacility = null;
 let assignments = [];
+let assignmentTable = null;
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
 
 function togglePageMsg(msg) {
     const el = $('#pageMsg');
@@ -144,6 +143,52 @@ function statusBadge(status) {
     return `<span class="status-badge ${cls}">${s || ''}</span>`;
 }
 
+function initAssignmentTable(){
+    assignmentTable = new Tabulator('#assignmentTable', {
+        layout: "fitColumns",
+        renderVertical: "basic",
+        responsiveLayout: "collapse",
+        pagination: "local",
+        paginationSize: 5,
+        paginationSizeSelector: [5, 10, 20, 50, true],
+        placeholder: "Select a facility or unit to view assignments.",
+        columns: [
+            { title: "Image", field: "category_photo_thumb_url", width: 60, hozAlign: "center", headerSort: false, formatter: function(cell){
+                const url = cell.getValue();
+                const full = cell.getRow().getData().category_photo_url;
+                const name = cell.getRow().getData().item_category_name || cell.getRow().getData().item_description || '';
+                if (url) {
+                    return `<div class="thumb-wrap"><img class="item-thumb js-thumb-preview" src="${url}" data-full="${full || url}" loading="lazy" alt="Item image"></div>`;
+                }
+                const initials = (String(name).trim().split(/\s+/).map(function(w){ return w.charAt(0); }).filter(Boolean).slice(0,2).join('') || 'IT').toUpperCase();
+                return `<div class="thumb-wrap"><div class="item-badge" title="${escapeHtml(name)}">${escapeHtml(initials)}</div></div>`;
+            }},
+            { title: "Item Code", field: "item_code", width: 130, formatter: function(cell){
+                const v = escapeHtml(cell.getValue() || '');
+                return v ? '<span class="badge bg-light text-dark border">' + v + '</span>' : '';
+            }},
+            { title: "Description", field: "item_description", widthGrow: 2, minWidth: 160, formatter: function(cell){
+                return escapeHtml(cell.getValue() || '');
+            }},
+            { title: "Qty", field: "qty", width: 60, hozAlign: "center" },
+            { title: "Issued To", field: "issued_to_name", width: 150, formatter: function(cell){
+                return escapeHtml(cell.getValue() || '-');
+            }},
+            { title: "Status", field: "status", width: 120, formatter: function(cell){
+                return statusBadge(cell.getValue());
+            }},
+            { title: "Issued At", field: "issued_at", width: 130 },
+            { title: "Actions", field: "assignment_id", width: 185, headerSort: false, formatter: function(cell){
+                const id = cell.getValue();
+                const row = cell.getRow().getData();
+                const s = String(row.status || '').toUpperCase();
+                const isReturned = s === 'RETURNED' || s === 'RETURN_REQUESTED';
+                return '<div class="d-flex gap-1"><button class="btn btn-outline-warning btn-sm btn-report" data-id="' + id + '">Report</button><button class="btn btn-outline-primary btn-sm btn-return" data-id="' + id + '"' + (isReturned ? ' disabled' : '') + '>Return Request</button></div>';
+            }}
+        ]
+    });
+}
+
 function renderUnits() {
     const list = $('#unitList');
     list.empty();
@@ -161,6 +206,7 @@ function renderUnits() {
             grouped[facId] = {
                 facility_code: u.facility_code,
                 facility_name: u.facility_name,
+                facility_id: u.facility_id,
                 units: []
             };
         }
@@ -169,25 +215,29 @@ function renderUnits() {
     
     // Render each facility group
     Object.values(grouped).forEach(function(fac) {
-        const facActive = !selectedUnit && selectedFacility && String(selectedFacility.facility_id) === String(fac.units[0].facility_id) ? 'active' : '';
+        const facActive = !selectedUnit && selectedFacility && String(selectedFacility.facility_id) === String(fac.facility_id) ? 'active' : '';
         const totalItems = fac.units.reduce(function(sum, u) { return sum + (parseInt(u.active_item_count) || 0); }, 0);
+        const safeFacName = escapeHtml(fac.facility_name || 'Unknown Facility');
+        const safeFacCode = escapeHtml(fac.facility_code || '');
         list.append(`
             <div class="facility-group">
-                <div class="facility-header ${facActive}" data-facility-id="${fac.units[0].facility_id}">
-                    <i class="bi bi-building"></i>${fac.facility_name || 'Unknown Facility'}
-                    <span class="small" style="opacity:0.9;">(${fac.facility_code || ''}) &middot; ${totalItems} item(s)</span>
+                <div class="facility-header ${facActive}" data-facility-id="${fac.facility_id}">
+                    <i class="bi bi-building"></i>${safeFacName}
+                    <span class="small" style="opacity:0.9;">(${safeFacCode}) &middot; ${totalItems} item(s)</span>
                 </div>
-                <div class="facility-units" data-facility="${fac.facility_code || ''}">
+                <div class="facility-units" data-facility-id="${fac.facility_id}">
                 </div>
             </div>
         `);
         
-        const unitsContainer = list.find(`.facility-units[data-facility="${fac.facility_code || ''}"]`);
+        const unitsContainer = list.find(`.facility-units[data-facility-id="${fac.facility_id}"]`);
         fac.units.forEach(function(u) {
             const active = selectedUnit && String(selectedUnit.unit_id) === String(u.unit_id) ? 'active' : '';
+            const safeUnitCode = escapeHtml(u.unit_code || '');
+            const safeUnitName = escapeHtml(u.unit_name || '');
             unitsContainer.append(`
                 <div class="unit-card ${active}" data-id="${u.unit_id}">
-                    <div class="fw-semibold">${u.unit_code || ''} - ${u.unit_name || ''}</div>
+                    <div class="fw-semibold">${safeUnitCode} - ${safeUnitName}</div>
                     <div class="small-muted" style="margin-top:4px;">
                         <i class="bi bi-box-seam"></i> ${u.active_item_count || 0} assigned item(s)
                     </div>
@@ -198,53 +248,18 @@ function renderUnits() {
 }
 
 function renderAssignments() {
-    const tbody = $('#assignmentTable tbody');
-    tbody.empty();
-    if (!selectedUnit && !selectedFacility) {
-        tbody.html('<tr><td colspan="8" class="text-muted text-center">Select a facility or unit first.</td></tr>');
-        return;
-    }
+    if (!assignmentTable) return;
     const q = ($('#assignSearch').val() || '').toLowerCase().trim();
-    const filtered = assignments.filter(function(a) {
-        if (!q) return true;
-        const hay = [a.module_type, a.item_code, a.item_description, a.status].join(' ').toLowerCase();
-        return hay.indexOf(q) !== -1;
-    });
-    if (!filtered.length) {
-        tbody.html('<tr><td colspan="8" class="text-muted text-center">No assignments found.</td></tr>');
-        return;
+    assignmentTable.setData(assignments);
+    if (q) {
+        assignmentTable.setFilter(function(r) {
+            const hay = [r.module_type, r.item_code, r.item_description, r.status,
+                         r.issued_to_name, r.accountable_name, r.managed_by_name].join(' ').toLowerCase();
+            return hay.indexOf(q) !== -1;
+        });
+    } else {
+        assignmentTable.clearFilter();
     }
-    filtered.forEach(function(a) {
-        // Prepare image HTML - URLs are built server-side
-        let imageHtml = '';
-        if (a.category_photo_thumb_url) {
-            imageHtml = `<div class="thumb-wrap">
-                            <img class="item-thumb js-thumb-preview" src="${a.category_photo_thumb_url}" data-full="${a.category_photo_url || a.category_photo_thumb_url}" loading="lazy" alt="Item image">
-                        </div>`;
-        } else {
-            const name = String(a.item_category_name || a.item_description || 'IT').trim();
-            const initials = name.split(/\s+/).map(w => w.charAt(0)).filter(Boolean).slice(0,2).join('').toUpperCase();
-            imageHtml = `<div class="thumb-wrap"><div class="item-badge" title="${name}">${initials}</div></div>`;
-        }
-        
-        tbody.append(`
-            <tr>
-                <td class="text-center">${imageHtml}</td>
-                <td><span class="badge bg-light text-dark border">${a.item_code || ''}</span></td>
-                <td>${a.item_description || ''}</td>
-                <td class="text-center">${a.qty || ''}</td>
-                <td>${a.issued_to_name || '-'}</td>
-                <td>${statusBadge(a.status)}</td>
-                <td>${a.issued_at || ''}</td>
-                <td>
-                    <div class="d-flex gap-1 flex-wrap">
-                        <button class="btn btn-outline-warning btn-sm btn-report" data-id="${a.assignment_id}">Report</button>
-                        <button class="btn btn-outline-primary btn-sm btn-return" data-id="${a.assignment_id}">Return Request</button>
-                    </div>
-                </td>
-            </tr>
-        `);
-    });
 }
 
 function loadAssignments() {
@@ -269,6 +284,13 @@ function loadAssignments() {
         togglePageMsg('');
         assignments = res.data || [];
         $('#selectedUnitInfo').text(infoText);
+        if (selectedUnit && selectedUnit.unit_manager_name) {
+            $('#selectedManagedBy').text('Managed By: ' + selectedUnit.unit_manager_name);
+        } else if (selectedFacility) {
+            $('#selectedManagedBy').text('Managed By: Multiple');
+        } else {
+            $('#selectedManagedBy').text('');
+        }
         renderAssignments();
     }, 'json').fail(function(xhr) {
         const msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Server error while loading assignments.';
@@ -317,6 +339,7 @@ function updateStatus(assignmentId, status, label) {
 }
 
 $(document).ready(function() {
+    initAssignmentTable();
     loadManagedUnits();
 
     $('#unitList').on('click', '.facility-header', function() {
@@ -325,6 +348,7 @@ $(document).ready(function() {
         if (!facUnit) return;
         selectedUnit = null;
         selectedFacility = { facility_id: facUnit.facility_id, facility_code: facUnit.facility_code, facility_name: facUnit.facility_name };
+        $('#selectedManagedBy').text('Managed By: Multiple');
         renderUnits();
         loadAssignments();
     });
@@ -333,11 +357,29 @@ $(document).ready(function() {
         const id = $(this).data('id');
         selectedUnit = managedUnits.find(function(u) { return String(u.unit_id) === String(id); }) || null;
         selectedFacility = null;
+        if (selectedUnit && selectedUnit.unit_manager_name) {
+            $('#selectedManagedBy').text('Managed By: ' + selectedUnit.unit_manager_name);
+        } else {
+            $('#selectedManagedBy').text('');
+        }
         renderUnits();
         loadAssignments();
     });
 
-    $('#assignSearch').on('input', renderAssignments);
+    $('#assignSearch').on('input', function(){
+        if (!assignmentTable) return;
+        const q = ($(this).val() || '').toLowerCase().trim();
+        if (q) {
+            assignmentTable.setFilter(function(r){
+                const hay = [r.module_type, r.item_code, r.item_description, r.status,
+                             r.issued_to_name, r.accountable_name, r.managed_by_name].join(' ').toLowerCase();
+                return hay.indexOf(q) !== -1;
+            });
+        } else {
+            assignmentTable.clearFilter();
+        }
+        assignmentTable.setPage(1);
+    });
     $('#refreshAssignments').on('click', loadAssignments);
 
     $('#assignmentTable').on('click', '.btn-report', function() {
