@@ -1,5 +1,5 @@
 <?php
-// admin/modules/nonconsumable/process/ast_physical_checking_process.php
+// admin/modules/consumable/process/csm_physical_checking_process.php
 require_once dirname(__DIR__, 4) . '/config/config.php';
 require GLOBAL_FUNC;
 require CL_SESSION_PATH;
@@ -9,9 +9,10 @@ require ISLOGIN;
 
 header('Content-Type: application/json; charset=utf-8');
 
-$isStaffAst = ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && user_has_access(array("AST", "PO")));
+$isStaffCsm = ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && user_has_access(array("CSM", "PO")));
 $isAdmin = role_has("ADMIN");
-if (!isset($g_user_role) || (!$isAdmin && !$isStaffAst)) {
+
+if (!isset($g_user_role) || (!$isAdmin && !$isStaffCsm)) {
     http_response_code(403);
     echo json_encode(['success' => false, 'message' => 'Access denied.']);
     exit();
@@ -20,10 +21,12 @@ if (!isset($g_user_role) || (!$isAdmin && !$isStaffAst)) {
 function _post($k, $default = '') {
     return isset($_POST[$k]) ? trim((string)$_POST[$k]) : $default;
 }
+
 function _int($v, $default = 0) {
     if ($v === '' || $v === null) return $default;
     return (int)$v;
 }
+
 function _esc($v) {
     global $conn;
     $v = (string)$v;
@@ -32,10 +35,116 @@ function _esc($v) {
     }
     return addslashes($v);
 }
+
 function json_response($data, $code = 200) {
     http_response_code($code);
     echo json_encode($data);
     exit();
+}
+
+function build_upload_url($pathOrFile) {
+    $pathOrFile = trim((string)$pathOrFile);
+    if ($pathOrFile === '') return null;
+
+    if (preg_match('~^(https?:)?//~i', $pathOrFile)) {
+        return $pathOrFile;
+    }
+
+    $clean = ltrim($pathOrFile, '/');
+
+    if (strpos($clean, 'upload/') === 0) {
+        return BASE_URL . $clean;
+    }
+
+    return BASE_URL . 'upload/category/' . $clean;
+}
+
+function build_thumb_url($pathOrFile) {
+    $pathOrFile = trim((string)$pathOrFile);
+    if ($pathOrFile === '') return null;
+
+    $fileName = basename($pathOrFile);
+    if ($fileName === '') return null;
+
+    return BASE_URL . 'admin/modules/tools/category_image_thumb.php?f=' . urlencode($fileName) . '&s=100';
+}
+
+function derive_csm_stock_label($row) {
+    $status = isset($row['status']) ? (int)$row['status'] : 1;
+    $currentQty = (int)($row['current_unit_quantity'] ?? 0);
+    $critLevel = (int)($row['unit_crit_level'] ?? 0);
+
+    if ($status !== 1) {
+        return 'Unavailable';
+    }
+    if ($currentQty <= 0) {
+        return 'Out of Stock';
+    }
+    if ($critLevel > 0 && $currentQty <= $critLevel) {
+        return 'Critical Stock';
+    }
+    return 'Available';
+}
+
+function resolve_csm_item_image($item) {
+    $categoryId = (int)($item['category_id_ref'] ?? 0);
+    $categoryImageId = (int)($item['category_image_id'] ?? 0);
+    $itemCategoryImg = trim((string)($item['item_category_img'] ?? ''));
+    $categoryPhoto = trim((string)($item['category_photo'] ?? ''));
+
+    if ($categoryImageId <= 0 && $itemCategoryImg !== '' && ctype_digit($itemCategoryImg)) {
+        $categoryImageId = (int)$itemCategoryImg;
+    }
+
+    $resolved = '';
+
+    if ($categoryImageId > 0) {
+        $imgRes = call_mysql_query("
+            SELECT file_name, file_url
+            FROM csm_inventory_category_images
+            WHERE image_id = {$categoryImageId}
+            LIMIT 1
+        ");
+        $imgRow = $imgRes ? call_mysql_fetch_array($imgRes) : null;
+
+        if ($imgRow) {
+            $resolved = trim((string)($imgRow['file_url'] ?? ''));
+            if ($resolved === '') {
+                $resolved = trim((string)($imgRow['file_name'] ?? ''));
+            }
+        }
+    }
+
+    if ($resolved === '' && $itemCategoryImg !== '' && !ctype_digit($itemCategoryImg)) {
+        $resolved = $itemCategoryImg;
+    }
+
+    if ($resolved === '' && $categoryId > 0) {
+        $imgRes = call_mysql_query("
+            SELECT file_name, file_url
+            FROM csm_inventory_category_images
+            WHERE category_id = {$categoryId}
+            ORDER BY is_primary DESC, image_id ASC
+            LIMIT 1
+        ");
+        $imgRow = $imgRes ? call_mysql_fetch_array($imgRes) : null;
+
+        if ($imgRow) {
+            $resolved = trim((string)($imgRow['file_url'] ?? ''));
+            if ($resolved === '') {
+                $resolved = trim((string)($imgRow['file_name'] ?? ''));
+            }
+        }
+    }
+
+    if ($resolved === '' && $categoryPhoto !== '') {
+        $resolved = $categoryPhoto;
+    }
+
+    return [
+        'url' => $resolved !== '' ? build_upload_url($resolved) : null,
+        'thumb' => $resolved !== '' ? build_thumb_url($resolved) : null,
+    ];
 }
 
 $action = _post('action', '');
@@ -49,82 +158,106 @@ try {
             if (!$isAdmin) {
                 json_response(['success' => false, 'message' => 'Access denied.'], 403);
             }
+
             $audit_name = _post('audit_name');
             $start_date = _post('start_date');
             $end_date = _post('end_date');
             $status = _post('status', 'Pending');
+
             if ($start_date === '' || $end_date === '') {
                 json_response(['success' => false, 'message' => 'Start and end dates are required.'], 422);
             }
+
+            if ($end_date < $start_date) {
+                json_response(['success' => false, 'message' => 'End date cannot be earlier than start date.'], 422);
+            }
+
             if (!in_array($status, ['Pending', 'Active', 'Closed'], true)) {
                 $status = 'Pending';
             }
+
             $year = date('Y');
-            $sqlMax = "SELECT MAX(CAST(RIGHT(series_code,3) AS UNSIGNED)) AS maxnum
-                       FROM ast_audit_sessions
-                       WHERE series_code LIKE 'AST-PC-{$year}-%'";
+            $sqlMax = "
+                SELECT MAX(CAST(RIGHT(series_code, 3) AS UNSIGNED)) AS maxnum
+                FROM csm_audit_sessions
+                WHERE series_code LIKE 'CSM-PC-{$year}-%'
+            ";
             $resMax = call_mysql_query($sqlMax);
             $max = 0;
             if ($resMax && ($r = call_mysql_fetch_array($resMax))) {
                 $max = (int)($r['maxnum'] ?? 0);
             }
-            $next = str_pad((string)($max + 1), 3, '0', STR_PAD_LEFT);
-            $series_code = "AST-PC-{$year}-{$next}";
 
-            $sql = "INSERT INTO ast_audit_sessions
-                    (series_code, audit_name, start_date, end_date, status, created_by, created_at)
-                    VALUES (
-                        '" . _esc($series_code) . "',
-                        " . ($audit_name !== '' ? "'" . _esc($audit_name) . "'" : "NULL") . ",
-                        '" . _esc($start_date) . "',
-                        '" . _esc($end_date) . "',
-                        '" . _esc($status) . "',
-                        " . (int)$GLOBALS['s_user_id'] . ",
-                        NOW()
-                    )";
+            $next = str_pad((string)($max + 1), 3, '0', STR_PAD_LEFT);
+            $series_code = "CSM-PC-{$year}-{$next}";
+
+            $sql = "
+                INSERT INTO csm_audit_sessions
+                (series_code, audit_name, start_date, end_date, status, created_by, created_at)
+                VALUES (
+                    '" . _esc($series_code) . "',
+                    " . ($audit_name !== '' ? "'" . _esc($audit_name) . "'" : "NULL") . ",
+                    '" . _esc($start_date) . "',
+                    '" . _esc($end_date) . "',
+                    '" . _esc($status) . "',
+                    " . (int)$GLOBALS['s_user_id'] . ",
+                    NOW()
+                )
+            ";
+
             if (!call_mysql_query($sql)) {
                 json_response(['success' => false, 'message' => 'Failed to create session.'], 500);
             }
-            activity_log_new("AST PHYSICAL CHECK SESSION CREATE", "SUCCESS", array(
+
+            activity_log_new("CSM PHYSICAL CHECK SESSION CREATE", "SUCCESS", array(
                 'series_code' => $series_code,
                 'audit_name' => $audit_name,
                 'start_date' => $start_date,
                 'end_date' => $end_date,
                 'status' => $status
             ));
+
             json_response(['success' => true, 'message' => 'Session created.', 'series_code' => $series_code]);
             break;
         }
 
         case 'list_sessions': {
-            $sql = "SELECT s.*, u.f_name, u.l_name
-                    FROM ast_audit_sessions s
-                    LEFT JOIN users u ON u.user_id = s.created_by
-                    ORDER BY s.created_at DESC";
+            $sql = "
+                SELECT s.*, u.f_name, u.l_name
+                FROM csm_audit_sessions s
+                LEFT JOIN users u ON u.user_id = s.created_by
+                ORDER BY s.created_at DESC
+            ";
             $res = call_mysql_query($sql);
             $rows = [];
+
             if ($res) {
                 while ($row = call_mysql_fetch_array($res)) {
                     $row['created_by_name'] = trim(($row['f_name'] ?? '') . ' ' . ($row['l_name'] ?? ''));
                     $rows[] = $row;
                 }
             }
+
             json_response(['success' => true, 'data' => $rows]);
             break;
         }
 
         case 'list_active_sessions': {
-            $sql = "SELECT id, series_code, audit_name, start_date, end_date
-                    FROM ast_audit_sessions
-                    WHERE status = 'Active'
-                    ORDER BY created_at DESC";
+            $sql = "
+                SELECT id, series_code, audit_name, start_date, end_date
+                FROM csm_audit_sessions
+                WHERE status = 'Active'
+                ORDER BY created_at DESC
+            ";
             $res = call_mysql_query($sql);
             $rows = [];
+
             if ($res) {
                 while ($row = call_mysql_fetch_array($res)) {
                     $rows[] = $row;
                 }
             }
+
             json_response(['success' => true, 'data' => $rows]);
             break;
         }
@@ -133,163 +266,261 @@ try {
             if (!$isAdmin) {
                 json_response(['success' => false, 'message' => 'Access denied.'], 403);
             }
+
             $session_id = _int(_post('session_id'));
             $status = _post('status');
+
             if ($session_id <= 0 || !in_array($status, ['Pending', 'Active', 'Closed'], true)) {
                 json_response(['success' => false, 'message' => 'Invalid request.'], 422);
             }
-            $prevRes = call_mysql_query("SELECT series_code, status FROM ast_audit_sessions WHERE id = {$session_id} LIMIT 1");
+
+            $prevRes = call_mysql_query("
+                SELECT series_code, status
+                FROM csm_audit_sessions
+                WHERE id = {$session_id}
+                LIMIT 1
+            ");
             $prevRow = $prevRes ? call_mysql_fetch_array($prevRes) : null;
-            $sql = "UPDATE ast_audit_sessions SET status = '" . _esc($status) . "' WHERE id = {$session_id} LIMIT 1";
+
+            $sql = "
+                UPDATE csm_audit_sessions
+                SET status = '" . _esc($status) . "'
+                WHERE id = {$session_id}
+                LIMIT 1
+            ";
+
             if (!call_mysql_query($sql)) {
                 json_response(['success' => false, 'message' => 'Failed to update status.'], 500);
             }
-            activity_log_new("AST PHYSICAL CHECK SESSION STATUS", "SUCCESS", array(
+
+            activity_log_new("CSM PHYSICAL CHECK SESSION STATUS", "SUCCESS", array(
                 'session_id' => $session_id,
                 'series_code' => $prevRow['series_code'] ?? null,
                 'old_status' => $prevRow['status'] ?? null,
                 'new_status' => $status
             ));
+
             json_response(['success' => true, 'message' => 'Status updated.']);
             break;
         }
 
         case 'get_item_by_code': {
-            $property_code = _post('property_code');
-            if ($property_code === '') {
-                json_response(['success' => false, 'message' => 'Property code is required.'], 422);
+            $item_code = _post('item_code');
+            if ($item_code === '') {
+                $item_code = _post('property_code'); // compatibility fallback
             }
-            $sql = "SELECT i.*, c.item_category_name, c.category_photo
-                    FROM ast_inventory i
-                    LEFT JOIN ast_inventory_category c ON c.category_id = i.category_id
-                    WHERE i.property_code = '" . _esc($property_code) . "'
-                    LIMIT 1";
+
+            if ($item_code === '') {
+                json_response(['success' => false, 'message' => 'Inventory item code is required.'], 422);
+            }
+
+            $sql = "
+                SELECT
+                    i.*,
+                    c.category_id AS category_id_ref,
+                    c.item_category_name,
+                    c.category_photo
+                FROM csm_inventory i
+                LEFT JOIN csm_inventory_category c
+                    ON c.item_category_code = i.item_category_code
+                WHERE i.inventory_system_item_code = '" . _esc($item_code) . "'
+                   OR i.qr_verification = '" . _esc($item_code) . "'
+                ORDER BY i.inventory_id DESC
+                LIMIT 1
+            ";
             $res = call_mysql_query($sql);
             $row = $res ? call_mysql_fetch_array($res) : null;
+
             if (!$row) {
                 json_response(['success' => false, 'message' => 'Item not found.'], 404);
             }
-            $row['category_photo_url'] = $row['category_photo']
-                ? BASE_URL . 'upload/category/' . $row['category_photo']
-                : null;
-            $row['category_photo_thumb_url'] = $row['category_photo']
-                ? BASE_URL . 'admin/modules/tools/category_image_thumb.php?f=' . urlencode($row['category_photo']) . '&s=100'
-                : null;
+
+            $img = resolve_csm_item_image($row);
+            $row['item_image_url'] = $img['url'];
+            $row['item_image_thumb_url'] = $img['thumb'];
+            $row['system_stock_label'] = derive_csm_stock_label($row);
+
             json_response(['success' => true, 'data' => $row]);
             break;
         }
 
         case 'create_check': {
             $session_id = _int(_post('session_id'));
-            $property_code = _post('property_code');
-            $quantity_checked = 1;
-            $serial_number = _post('serial_number');
+            $item_code = _post('item_code');
+            if ($item_code === '') {
+                $item_code = _post('property_code'); // compatibility fallback
+            }
+
+            $counted_quantity = _int(_post('counted_quantity'), 0);
             $remarks = _post('remarks');
             $condition = _post('condition');
             $status_at_check = _post('status_at_check');
-            $facility = _post('facility');
-            $accountable = _post('accountable');
-            $issued_to = _post('issued_to');
-            $managed_by = _post('managed_by');
-            $date_issued = _post('date_issued');
+            $storage_location = _post('storage_location');
 
-            if ($session_id <= 0 || $property_code === '') {
-                json_response(['success' => false, 'message' => 'Session and property code are required.'], 422);
+            if ($session_id <= 0 || $item_code === '') {
+                json_response(['success' => false, 'message' => 'Session and inventory item code are required.'], 422);
             }
 
-            $resSession = call_mysql_query("SELECT status FROM ast_audit_sessions WHERE id = {$session_id} LIMIT 1");
+            if ($counted_quantity < 0) {
+                json_response(['success' => false, 'message' => 'Counted quantity cannot be negative.'], 422);
+            }
+
+            $resSession = call_mysql_query("
+                SELECT status
+                FROM csm_audit_sessions
+                WHERE id = {$session_id}
+                LIMIT 1
+            ");
             $session = $resSession ? call_mysql_fetch_array($resSession) : null;
+
             if (!$session || ($session['status'] ?? '') !== 'Active') {
                 json_response(['success' => false, 'message' => 'Only active sessions allow checking.'], 422);
             }
 
-            $resItem = call_mysql_query("SELECT * FROM ast_inventory WHERE property_code = '" . _esc($property_code) . "' LIMIT 1");
+            $resItem = call_mysql_query("
+                SELECT *
+                FROM csm_inventory
+                WHERE inventory_system_item_code = '" . _esc($item_code) . "'
+                LIMIT 1
+            ");
             $item = $resItem ? call_mysql_fetch_array($resItem) : null;
+
             if (!$item) {
                 json_response(['success' => false, 'message' => 'Item not found.'], 404);
             }
 
-            $property_id = (int)($item['item_id'] ?? 0);
-            $property_number = $item['property_number'] ?? '';
+            $inventory_id = (int)($item['inventory_id'] ?? 0);
+            $inventory_system_item_code = $item['inventory_system_item_code'] ?? '';
+            $item_category_code = $item['item_category_code'] ?? '';
             $item_description = $item['item_description'] ?? '';
-            $unit = $item['unit'] ?? '';
-            $date_stock = $item['created_at'] ?? null;
-            if ($serial_number === '' && isset($item['serial_number'])) {
-                $serial_number = trim((string)$item['serial_number']);
-            }
+            $acquisition_date = $item['acquisition_date'] ?? null;
+            $item_cost = isset($item['item_cost']) ? (float)$item['item_cost'] : 0;
+            $source_of_funds = $item['source_of_funds'] ?? '';
+            $system_unit_quantity = (int)($item['unit_quantity'] ?? 0);
+            $system_current_quantity = (int)($item['current_unit_quantity'] ?? 0);
+            $unit_crit_level = (int)($item['unit_crit_level'] ?? 0);
+            $system_status = isset($item['status']) ? (int)$item['status'] : 1;
+            $variance_quantity = $counted_quantity - $system_current_quantity;
             $checked_by = (int)$GLOBALS['s_user_id'];
 
-            $existing = call_mysql_query("SELECT id FROM ast_audit_checks WHERE session_id = {$session_id} AND property_code = '" . _esc($property_code) . "' LIMIT 1");
+            if ($status_at_check === '') {
+                $status_at_check = derive_csm_stock_label($item);
+            }
+
+            $existing = call_mysql_query("
+                SELECT id
+                FROM csm_audit_checks
+                WHERE session_id = {$session_id}
+                  AND inventory_system_item_code = '" . _esc($inventory_system_item_code) . "'
+                LIMIT 1
+            ");
             $existingRow = $existing ? call_mysql_fetch_array($existing) : null;
 
             if ($existingRow) {
-                $prevRes = call_mysql_query("SELECT * FROM ast_audit_checks WHERE id = " . (int)$existingRow['id'] . " LIMIT 1");
+                $prevRes = call_mysql_query("
+                    SELECT *
+                    FROM csm_audit_checks
+                    WHERE id = " . (int)$existingRow['id'] . "
+                    LIMIT 1
+                ");
                 $prev = $prevRes ? call_mysql_fetch_array($prevRes) : null;
-                $sql = "UPDATE ast_audit_checks SET
-                            serial_number = '" . _esc($serial_number) . "',
-                            quantity_checked = {$quantity_checked},
-                            unit = '" . _esc($unit) . "',
-                            date_stock = " . ($date_stock ? "'" . _esc($date_stock) . "'" : "NULL") . ",
-                            date_issued = " . ($date_issued !== '' ? "'" . _esc($date_issued) . "'" : "NULL") . ",
-                            status_at_check = '" . _esc($status_at_check) . "',
-                            facility = '" . _esc($facility) . "',
-                            accountable = '" . _esc($accountable) . "',
-                            issued_to = '" . _esc($issued_to) . "',
-                            managed_by = '" . _esc($managed_by) . "',
-                            `condition` = '" . _esc($condition) . "',
-                            remarks = '" . _esc($remarks) . "',
-                            checked_by = {$checked_by},
-                            checked_at = NOW()
-                        WHERE id = " . (int)$existingRow['id'] . " LIMIT 1";
+
+                $sql = "
+                    UPDATE csm_audit_checks SET
+                        inventory_id = {$inventory_id},
+                        item_category_code = '" . _esc($item_category_code) . "',
+                        item_description = '" . _esc($item_description) . "',
+                        acquisition_date = " . ($acquisition_date ? "'" . _esc($acquisition_date) . "'" : "NULL") . ",
+                        item_cost = " . number_format($item_cost, 2, '.', '') . ",
+                        source_of_funds = '" . _esc($source_of_funds) . "',
+                        system_unit_quantity = {$system_unit_quantity},
+                        system_current_quantity = {$system_current_quantity},
+                        counted_quantity = {$counted_quantity},
+                        variance_quantity = {$variance_quantity},
+                        unit_crit_level = {$unit_crit_level},
+                        system_status = {$system_status},
+                        status_at_check = '" . _esc($status_at_check) . "',
+                        `condition` = '" . _esc($condition) . "',
+                        storage_location = '" . _esc($storage_location) . "',
+                        remarks = '" . _esc($remarks) . "',
+                        checked_by = {$checked_by},
+                        checked_at = NOW()
+                    WHERE id = " . (int)$existingRow['id'] . "
+                    LIMIT 1
+                ";
             } else {
-                $sql = "INSERT INTO ast_audit_checks
-                        (session_id, property_id, property_code, property_number, item_description, serial_number,
-                         quantity_checked, unit, date_stock, date_issued, status_at_check, facility, accountable,
-                         issued_to, managed_by, `condition`, remarks, checked_by, checked_at)
-                        VALUES (
-                            {$session_id},
-                            {$property_id},
-                            '" . _esc($property_code) . "',
-                            '" . _esc($property_number) . "',
-                            '" . _esc($item_description) . "',
-                            '" . _esc($serial_number) . "',
-                            {$quantity_checked},
-                            '" . _esc($unit) . "',
-                            " . ($date_stock ? "'" . _esc($date_stock) . "'" : "NULL") . ",
-                            " . ($date_issued !== '' ? "'" . _esc($date_issued) . "'" : "NULL") . ",
-                            '" . _esc($status_at_check) . "',
-                            '" . _esc($facility) . "',
-                            '" . _esc($accountable) . "',
-                            '" . _esc($issued_to) . "',
-                            '" . _esc($managed_by) . "',
-                            '" . _esc($condition) . "',
-                            '" . _esc($remarks) . "',
-                            {$checked_by},
-                            NOW()
-                        )";
+                $sql = "
+                    INSERT INTO csm_audit_checks
+                    (
+                        session_id,
+                        inventory_id,
+                        inventory_system_item_code,
+                        item_category_code,
+                        item_description,
+                        acquisition_date,
+                        item_cost,
+                        source_of_funds,
+                        system_unit_quantity,
+                        system_current_quantity,
+                        counted_quantity,
+                        variance_quantity,
+                        unit_crit_level,
+                        system_status,
+                        status_at_check,
+                        `condition`,
+                        storage_location,
+                        remarks,
+                        checked_by,
+                        checked_at
+                    )
+                    VALUES
+                    (
+                        {$session_id},
+                        {$inventory_id},
+                        '" . _esc($inventory_system_item_code) . "',
+                        '" . _esc($item_category_code) . "',
+                        '" . _esc($item_description) . "',
+                        " . ($acquisition_date ? "'" . _esc($acquisition_date) . "'" : "NULL") . ",
+                        " . number_format($item_cost, 2, '.', '') . ",
+                        '" . _esc($source_of_funds) . "',
+                        {$system_unit_quantity},
+                        {$system_current_quantity},
+                        {$counted_quantity},
+                        {$variance_quantity},
+                        {$unit_crit_level},
+                        {$system_status},
+                        '" . _esc($status_at_check) . "',
+                        '" . _esc($condition) . "',
+                        '" . _esc($storage_location) . "',
+                        '" . _esc($remarks) . "',
+                        {$checked_by},
+                        NOW()
+                    )
+                ";
             }
 
             if (!call_mysql_query($sql)) {
                 json_response(['success' => false, 'message' => 'Failed to save check.'], 500);
             }
-            activity_log_new($existingRow ? "AST PHYSICAL CHECK UPDATE" : "AST PHYSICAL CHECK CREATE", "SUCCESS", array(
+
+            activity_log_new($existingRow ? "CSM PHYSICAL CHECK UPDATE" : "CSM PHYSICAL CHECK CREATE", "SUCCESS", array(
                 'session_id' => $session_id,
-                'property_code' => $property_code,
-                'property_number' => $property_number,
+                'inventory_id' => $inventory_id,
+                'inventory_system_item_code' => $inventory_system_item_code,
+                'item_category_code' => $item_category_code,
                 'item_description' => $item_description,
-                'quantity_checked' => $quantity_checked,
-                'unit' => $unit,
-                'serial_number' => $serial_number,
+                'system_unit_quantity' => $system_unit_quantity,
+                'system_current_quantity' => $system_current_quantity,
+                'counted_quantity' => $counted_quantity,
+                'variance_quantity' => $variance_quantity,
+                'unit_crit_level' => $unit_crit_level,
                 'status_at_check' => $status_at_check,
-                'facility' => $facility,
-                'accountable' => $accountable,
-                'issued_to' => $issued_to,
-                'managed_by' => $managed_by,
                 'condition' => $condition,
+                'storage_location' => $storage_location,
                 'remarks' => $remarks,
-                'date_issued' => $date_issued,
                 'previous' => isset($prev) && is_array($prev) ? $prev : null
             ));
+
             json_response(['success' => true, 'message' => 'Check saved.']);
             break;
         }
@@ -297,30 +528,44 @@ try {
         case 'list_checks': {
             $session_id = _int(_post('session_id'));
             $search = _post('search');
+
             $where = [];
+
             if ($session_id > 0) {
                 $where[] = "c.session_id = {$session_id}";
             }
+
             if ($search !== '') {
                 $searchEsc = _esc('%' . $search . '%');
-                $where[] = "(c.property_code LIKE '{$searchEsc}' OR c.item_description LIKE '{$searchEsc}')";
+                $where[] = "(
+                    c.inventory_system_item_code LIKE '{$searchEsc}'
+                    OR c.item_description LIKE '{$searchEsc}'
+                    OR c.item_category_code LIKE '{$searchEsc}'
+                    OR c.status_at_check LIKE '{$searchEsc}'
+                    OR c.storage_location LIKE '{$searchEsc}'
+                )";
             }
+
             $whereSql = !empty($where) ? ('WHERE ' . implode(' AND ', $where)) : '';
 
-            $sql = "SELECT c.*, s.series_code, u.f_name, u.l_name
-                    FROM ast_audit_checks c
-                    LEFT JOIN ast_audit_sessions s ON s.id = c.session_id
-                    LEFT JOIN users u ON u.user_id = c.checked_by
-                    {$whereSql}
-                    ORDER BY c.checked_at DESC";
+            $sql = "
+                SELECT c.*, s.series_code, u.f_name, u.l_name
+                FROM csm_audit_checks c
+                LEFT JOIN csm_audit_sessions s ON s.id = c.session_id
+                LEFT JOIN users u ON u.user_id = c.checked_by
+                {$whereSql}
+                ORDER BY c.checked_at DESC
+            ";
             $res = call_mysql_query($sql);
             $rows = [];
+
             if ($res) {
                 while ($row = call_mysql_fetch_array($res)) {
                     $row['checked_by_name'] = trim(($row['f_name'] ?? '') . ' ' . ($row['l_name'] ?? ''));
                     $rows[] = $row;
                 }
             }
+
             json_response(['success' => true, 'data' => $rows]);
             break;
         }

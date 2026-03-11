@@ -1,20 +1,5 @@
 <?php
-// csm_qrcode.php (QR-focused: list + search + select + print + PDF + scan QR)
-// - NO add/edit/delete
-// - Prints ONLY QR + tag details (NO status/qty/critical anywhere)
-// - Print layout option: Simple Sticker / Detailed Property Inventory Tag
-// - Data source: csm_inventory_process.php (action=list_inventory)
-//
-// UPDATED TO MATCH SQL (csm_inventory):
-// - item_name REMOVED (not in SQL) -> uses item_description
-// - acquisition_date, item_cost, source_of_funds supported (shown in list; not printed in tag unless you add it)
-// - qr_verification supported (searchable; not printed by default)
-// - category name supported IF list_inventory joins csm_inventory_category (item_category_name)
-//
-// FLEXIBLE PRINT (TRADE-OFF):
-// - Detailed tag grows based on content (no clipping, cost won't disappear)
-// - Grid alignment is NOT guaranteed because heights vary
-
+// csm_qrcode.php
 require_once dirname(__DIR__, 3) . '/config/config.php';
 require GLOBAL_FUNC;
 require CL_SESSION_PATH;
@@ -42,14 +27,311 @@ if (!(
     include_once DOMAIN_PATH . '/global/include_top.php';
     ?>
     <style>
-        /* Page UI (not print) */
-        .qr-card { border:1px solid #ddd; border-radius:12px; padding:10px; background:#fff; height:100%; }
-        .qr-img { max-width:150px; width:100%; height:auto; border:1px solid #dee2e6; border-radius:10px; background:#fff; padding:8px; }
-        .qr-badge { font-size:12px; }
-        .qr-desc { font-size:12px; font-weight:700; margin-top:8px; }
-        .qr-meta { font-size:12px; color:#6c757d; }
         .qr-topbar .input-group { max-width:380px; }
-        .qr-meta .meta-line { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+        .qr-preview-item{
+            position:relative;
+            border:1px solid #ddd;
+            border-radius:12px;
+            background:#fff;
+            padding:12px;
+            height:100%;
+            overflow:hidden;
+            cursor:pointer;
+            transition:box-shadow .15s ease, border-color .15s ease;
+        }
+        .qr-preview-item:hover{
+            border-color:#adb5bd;
+            box-shadow:0 2px 8px rgba(0,0,0,.06);
+        }
+        .qr-preview-item.is-selected{
+            border-color:#0d6efd;
+            box-shadow:0 0 0 2px rgba(13,110,253,.10);
+        }
+
+        .qr-preview-check{
+            position:absolute;
+            top:10px;
+            right:10px;
+            z-index:30;
+            background:#fff;
+            border:1px solid #dee2e6;
+            border-radius:8px;
+            padding:4px 7px;
+            box-shadow:0 1px 2px rgba(0,0,0,.06);
+            pointer-events:auto;
+        }
+        .qr-preview-check .form-check{
+            margin:0;
+            min-height:auto;
+        }
+        .qr-preview-check .form-check-input{
+            margin:0;
+            float:none;
+            cursor:pointer;
+        }
+
+        .qr-preview-stage{
+            width:100%;
+            display:flex;
+            justify-content:center;
+            align-items:flex-start;
+            overflow:auto;
+            padding-top:28px;
+            position:relative;
+            z-index:1;
+            pointer-events:none; /* preview itself won't block checkbox/card click */
+        }
+
+        .qr-preview-stage .simple-sticker,
+        .qr-preview-stage .tag-sticker{
+            flex:0 0 auto;
+        }
+
+        :root{
+            --tag-border:#1d1d1d;
+            --tag-grid:#2b2b2b;
+            --tag-header:#b9d4ea;
+            --tag-sub:#cfe3f5;
+            --tag-text:#111;
+
+            --detailed-w: 100mm;
+            --detailed-h: 48mm;
+            --simple-w: 70mm;
+            --simple-h: 38mm;
+
+            --gap: 6mm;
+        }
+
+        .tag-sticker,
+        .simple-sticker{
+            box-sizing:border-box;
+            background:#fff;
+        }
+
+        .tag-sticker{
+            width: var(--detailed-w);
+            height: auto;
+            min-height: var(--detailed-h);
+            border: 2px solid var(--tag-border);
+            border-radius: 1mm;
+            overflow: visible;
+            display:flex;
+            flex-direction:column;
+        }
+
+        .tag-top{
+            display:grid;
+            grid-template-columns: 18mm 1fr 14mm;
+            min-height: 12mm;
+            align-items:stretch;
+            border-bottom: 2px solid var(--tag-border);
+            box-sizing:border-box;
+        }
+
+        .tag-ccc{
+            background: var(--tag-header);
+            border-right: 2px solid var(--tag-border);
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            font-weight:800;
+            letter-spacing:.6px;
+            font-size: 10pt;
+        }
+
+        .tag-agency{
+            padding: 1.6mm 2mm;
+            line-height: 1.05;
+        }
+        .tag-agency .agency{
+            font-weight:700;
+            font-size: 7.5pt;
+        }
+        .tag-agency .subtitle{
+            color:#b02a37;
+            font-weight:800;
+            font-size: 7pt;
+            margin-top: .6mm;
+        }
+
+        .tag-logo{
+            border-left: 2px solid var(--tag-border);
+            display:flex;
+            align-items:center;
+            justify-content:center;
+        }
+        .tag-logo .logo-circle{
+            width: 9mm; height: 9mm;
+            border-radius: 50%;
+            border: 2px solid #b02a37;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            font-size: 7pt;
+            font-weight:800;
+            color:#b02a37;
+        }
+
+        .tag-body{
+            display:grid;
+            grid-template-columns: 1fr 24mm;
+            height:auto;
+        }
+
+        .tag-form{
+            border-right: 2px solid var(--tag-border);
+            height:auto;
+            box-sizing:border-box;
+            display:block;
+        }
+
+        .tag-row{
+            display:grid;
+            grid-template-columns: 32mm 1fr;
+            border-bottom: 1px solid var(--tag-grid);
+            box-sizing:border-box;
+            min-height: 5.2mm;
+        }
+        .tag-row:last-child{ border-bottom:none; }
+
+        .tag-label{
+            background:#fafafa;
+            border-right:1px solid var(--tag-grid);
+            padding: 0.9mm 1.2mm;
+            font-size: 6.6pt;
+            font-style: italic;
+            color:#333;
+            display:flex;
+            align-items:center;
+            box-sizing:border-box;
+        }
+
+        .tag-value{
+            padding: 0.9mm 1.2mm;
+            font-size: 6.8pt;
+            font-weight: 600;
+            display:block;
+            box-sizing:border-box;
+            white-space: normal;
+            overflow: visible;
+            text-overflow: clip;
+            overflow-wrap:anywhere;
+            word-break:break-word;
+            line-height: 1.15;
+        }
+        .tag-value.is-strong{ font-weight: 800; }
+
+        .tag-qr{
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+            justify-content:flex-start;
+            padding: 2mm 1.5mm 1.5mm;
+            box-sizing:border-box;
+            gap: 1mm;
+        }
+        .tag-qr img{
+            width: 18mm;
+            height: 18mm;
+            object-fit:contain;
+            border:1px solid #c9c9c9;
+            padding: 1mm;
+            background:#fff;
+            box-sizing:border-box;
+        }
+        .tag-code{
+            font-size: 6.2pt;
+            font-weight:900;
+            text-align:center;
+            line-height:1.05;
+            word-break:break-word;
+        }
+
+        .tag-remarks{
+            min-height: 9mm;
+            height:auto;
+            border-top: 2px solid var(--tag-border);
+            display:grid;
+            grid-template-columns: 32mm 1fr;
+            box-sizing:border-box;
+        }
+        .tag-remarks .tag-label{
+            background: var(--tag-sub);
+            border-right: 1px solid var(--tag-border);
+            font-size: 6.6pt;
+        }
+        .tag-remarks .tag-value{
+            background: var(--tag-sub);
+            font-weight: 700;
+            color:#111;
+            font-size: 6.8pt;
+            white-space: normal;
+            overflow: visible;
+        }
+
+        .simple-sticker{
+            width: var(--simple-w);
+            height: var(--simple-h);
+            border:2px solid var(--tag-border);
+            border-radius: 1mm;
+            padding: 2mm;
+            display:grid;
+            grid-template-columns: 1fr 22mm;
+            gap: 2mm;
+            align-items:center;
+            overflow:hidden;
+        }
+        .simple-meta{
+            display:flex;
+            flex-direction:column;
+            gap:1mm;
+            min-width:0;
+        }
+        .simple-code{
+            font-weight:900;
+            font-size: 8.5pt;
+        }
+        .simple-name{
+            font-size: 7pt;
+            font-weight:800;
+            white-space: normal;
+            overflow:hidden;
+            display: -webkit-box;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 2;
+            line-height: 1.15;
+            overflow-wrap:anywhere;
+            word-break:break-word;
+        }
+        .simple-cat{
+            font-size: 6.8pt;
+            color:#555;
+            white-space:nowrap;
+            overflow:hidden;
+            text-overflow:ellipsis;
+        }
+        .simple-qr{
+            text-align:center;
+        }
+        .simple-qr img{
+            width: 18mm;
+            height: 18mm;
+            object-fit:contain;
+            border:1px solid #c9c9c9;
+            padding: 1mm;
+            background:#fff;
+            box-sizing:border-box;
+        }
+
+        @media (max-width: 1200px){
+            .qr-preview-stage .tag-sticker{ transform:scale(.92); transform-origin: top center; margin-bottom:-14px; }
+            .qr-preview-stage .simple-sticker{ transform:scale(.96); transform-origin: top center; margin-bottom:-6px; }
+        }
+        @media (max-width: 768px){
+            .qr-preview-stage .tag-sticker{ transform:scale(.86); transform-origin: top center; margin-bottom:-26px; }
+            .qr-preview-stage .simple-sticker{ transform:scale(.92); transform-origin: top center; margin-bottom:-10px; }
+        }
     </style>
 </head>
 
@@ -70,11 +352,18 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                 <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3 qr-topbar">
                     <div class="input-group">
                         <span class="input-group-text"><i class="bi bi-search"></i></span>
-                        <input type="text" id="qrSearch" class="form-control" placeholder="Search item code, description, category, or source of funds">
+                        <input type="text" id="qrSearch" class="form-control" placeholder="Search item code, description, category, source of funds, or QR verification">
                     </div>
 
-                    <div class="d-flex align-items-center gap-2">
-                        <div class="form-check">
+                    <div class="d-flex align-items-center flex-wrap gap-2">
+                        <div class="dropdown">
+                            <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" id="btnDateBatch" data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="bi bi-calendar3"></i>&ensp;Select by Date
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end" id="dateBatchMenu" style="max-height:300px;overflow-y:auto;min-width:220px;"></ul>
+                        </div>
+
+                        <div class="form-check mb-0">
                             <input class="form-check-input" type="checkbox" id="selectAllQr">
                             <label class="form-check-label" for="selectAllQr">Select All</label>
                         </div>
@@ -98,6 +387,20 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                     </div>
                 </div>
 
+                <div class="d-flex flex-wrap align-items-center justify-content-between mb-2 gap-2">
+                    <div id="qrPageInfo" class="text-muted small"></div>
+                    <div class="d-flex align-items-center gap-2">
+                        <label class="mb-0 small text-muted">Per page:</label>
+                        <select id="qrPageSize" class="form-select form-select-sm" style="width:auto;">
+                            <option value="10">10</option>
+                            <option value="20" selected>20</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                        </select>
+                        <div id="qrPagination"></div>
+                    </div>
+                </div>
+
                 <div id="qrMsg" class="alert alert-danger d-none mb-2"></div>
                 <div class="small text-muted mb-2">
                     Tip: Scan QR will auto-fill search and filter the list.
@@ -110,7 +413,6 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
     </section>
 </main>
 
-<!-- SCAN QR MODAL -->
 <div class="modal fade" id="scanQrModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -154,16 +456,27 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 
 <script>
 const BASE_URL = <?php echo json_encode(BASE_URL); ?>;
-
-// IMPORTANT: Adjust to your real module path if different.
 const PROCESS_URL = BASE_URL + 'admin/modules/consumable/process/csm_inventory_process.php';
 const QR_GENERATOR_URL = BASE_URL + 'admin/modules/tools/qr_image.php';
 
 let qrItems = [];
 let qrMsgTimeout = null;
 
+let currentPage = 1;
+let pageSize = 20;
+let lastFilter = '';
+let selectedCodes = new Set();
+let dateFilter = '';
+let filteredItems = [];
+
 function escapeHtml(s){
-  return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  return String(s ?? '').replace(/[&<>"']/g, m => ({
+    '&':'&amp;',
+    '<':'&lt;',
+    '>':'&gt;',
+    '"':'&quot;',
+    "'":'&#39;'
+  }[m]));
 }
 
 function showQrMessage(message) {
@@ -177,79 +490,229 @@ function showQrMessage(message) {
   qrMsgTimeout = setTimeout(() => el.addClass('d-none').text(''), 4000);
 }
 
-function renderList(filter = '') {
+function updateButtons() {
+  const selectedCount = selectedCodes.size;
+  $('#btnPrintSelected').prop('disabled', selectedCount === 0);
+  $('#btnSavePdf').prop('disabled', selectedCount === 0);
+}
+
+function getSelectedCodes(){
+  return Array.from(selectedCodes);
+}
+
+function buildSimpleSticker({code, desc, catLine, qrUrl}) {
+  return `
+    <div class="simple-sticker">
+      <div class="simple-meta">
+        <div class="simple-code">${escapeHtml(code)}</div>
+        <div class="simple-name">${escapeHtml(desc || '')}</div>
+        <div class="simple-cat">${escapeHtml(catLine || '')}</div>
+      </div>
+      <div class="simple-qr">
+        <img src="${qrUrl}" alt="QR ${escapeHtml(code)}">
+      </div>
+    </div>
+  `;
+}
+
+function buildDetailedTag({ code, desc, catLine, acq, cost, notes, qrUrl }) {
+  return `
+    <div class="tag-sticker">
+      <div class="tag-top">
+        <div class="tag-ccc">CCC</div>
+        <div class="tag-agency">
+          <div class="agency">City Government of Calamba</div>
+          <div class="subtitle">Property Inventory Tag</div>
+        </div>
+        <div class="tag-logo">
+          <div class="logo-circle">CG</div>
+        </div>
+      </div>
+
+      <div class="tag-body">
+        <div class="tag-form">
+          <div class="tag-row">
+            <div class="tag-label">Property Tag</div>
+            <div class="tag-value is-strong">${escapeHtml(code)}</div>
+          </div>
+
+          <div class="tag-row">
+            <div class="tag-label">Item Description</div>
+            <div class="tag-value">${escapeHtml(desc || '')}</div>
+          </div>
+
+          <div class="tag-row">
+            <div class="tag-label">Category</div>
+            <div class="tag-value">${escapeHtml(catLine || '')}</div>
+          </div>
+
+          <div class="tag-row">
+            <div class="tag-label">Acquisition Date</div>
+            <div class="tag-value">${escapeHtml(acq || '')}</div>
+          </div>
+
+          <div class="tag-row">
+            <div class="tag-label">Cost</div>
+            <div class="tag-value">${escapeHtml(cost || '')}</div>
+          </div>
+        </div>
+
+        <div class="tag-qr">
+          <img src="${qrUrl}" alt="QR ${escapeHtml(code)}">
+          <div class="tag-code">${escapeHtml(code)}</div>
+        </div>
+      </div>
+
+      <div class="tag-remarks">
+        <div class="tag-label">Notes</div>
+        <div class="tag-value">${escapeHtml(notes || '')}</div>
+      </div>
+    </div>
+  `;
+}
+
+function buildScreenPreviewCard(item, layout) {
+  const code = item.inventory_system_item_code || '';
+  const desc = item.item_description || '';
+  const catCode = item.item_category_code || '';
+  const catName = item.item_category_name || '';
+  const acq = item.acquisition_date || '';
+  const cost = (item.item_cost != null && item.item_cost !== '') ? String(item.item_cost) : '';
+  const notes = item.notes || item.note || item.remarks || '';
+  const qrUrl = QR_GENERATOR_URL + '?v=' + encodeURIComponent(code);
+
+  const catLine = (catName && catCode) ? `${catName} (${catCode})` : (catName || catCode);
+
+  let previewHtml = '';
+  if (layout === 'detailed') {
+    previewHtml = buildDetailedTag({ code, desc, catLine, acq, cost, notes, qrUrl });
+  } else {
+    previewHtml = buildSimpleSticker({ code, desc, catLine, qrUrl });
+  }
+
+  const selectedClass = selectedCodes.has(code) ? ' is-selected' : '';
+
+  return `
+    <div class="col-12 col-sm-6 col-lg-6">
+      <div class="qr-preview-item${selectedClass}" data-code="${escapeHtml(code)}">
+        <div class="qr-preview-check">
+          <div class="form-check">
+            <input class="form-check-input qr-check" type="checkbox" data-code="${escapeHtml(code)}" ${selectedCodes.has(code) ? 'checked' : ''}>
+          </div>
+        </div>
+        <div class="qr-preview-stage ${layout === 'detailed' ? 'preview-detailed' : 'preview-simple'}">
+          ${previewHtml}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderPagination(total, totalPages) {
+  const info = $('#qrPageInfo');
+  const nav  = $('#qrPagination');
+
+  if (total === 0) {
+    info.html('');
+    nav.html('');
+    return;
+  }
+
+  const start = (currentPage - 1) * pageSize + 1;
+  const end   = Math.min(currentPage * pageSize, total);
+  const selCount = selectedCodes.size;
+
+  info.html(`Showing ${start}&ndash;${end} of ${total}${selCount > 0 ? ` &bull; <strong>${selCount}</strong> selected` : ''}`);
+
+  const maxVisible = 5;
+  let startPage = Math.max(1, currentPage - Math.floor(maxVisible / 2));
+  let endPage   = Math.min(totalPages, startPage + maxVisible - 1);
+
+  if (endPage - startPage < maxVisible - 1) {
+    startPage = Math.max(1, endPage - maxVisible + 1);
+  }
+
+  let btns = '';
+  btns += `<button type="button" class="btn btn-sm btn-outline-secondary me-1" data-page="1" ${currentPage === 1 ? 'disabled' : ''}>First</button>`;
+  btns += `<button type="button" class="btn btn-sm btn-outline-secondary me-1" data-page="${currentPage - 1}" ${currentPage === 1 ? 'disabled' : ''}>Prev</button>`;
+
+  if (startPage > 1) btns += `<button type="button" class="btn btn-sm btn-outline-secondary me-1" disabled>&hellip;</button>`;
+
+  for (let p = startPage; p <= endPage; p++) {
+    btns += `<button type="button" class="btn btn-sm btn-outline-secondary me-1${p === currentPage ? ' active' : ''}" data-page="${p}">${p}</button>`;
+  }
+
+  if (endPage < totalPages) btns += `<button type="button" class="btn btn-sm btn-outline-secondary me-1" disabled>&hellip;</button>`;
+
+  btns += `<button type="button" class="btn btn-sm btn-outline-secondary me-1" data-page="${currentPage + 1}" ${currentPage === totalPages ? 'disabled' : ''}>Next</button>`;
+  btns += `<button type="button" class="btn btn-sm btn-outline-secondary" data-page="${totalPages}" ${currentPage === totalPages ? 'disabled' : ''}>Last</button>`;
+
+  nav.html(btns);
+}
+
+function renderList(filter = '', resetPage = false) {
+  if (resetPage) currentPage = 1;
+  lastFilter = filter;
+
   const list = $('#qrList');
   list.empty();
 
   const f = (filter || '').trim().toLowerCase();
+  const layout = ($('#printLayout').val() || 'simple');
 
-  const filtered = qrItems.filter(item => {
-    const code = (item.inventory_system_item_code || '').toLowerCase();
-    const desc = (item.item_description || '').toLowerCase();
+  filteredItems = qrItems.filter(item => {
+    const code    = (item.inventory_system_item_code || '').toLowerCase();
+    const desc    = (item.item_description || '').toLowerCase();
     const catCode = (item.item_category_code || '').toLowerCase();
-    const catName = (item.item_category_name || '').toLowerCase(); // if joined
-    const sof  = (item.source_of_funds || '').toLowerCase();
-    const qrver = (item.qr_verification || '').toLowerCase();
-    return f === '' ||
+    const catName = (item.item_category_name || '').toLowerCase();
+    const sof     = (item.source_of_funds || '').toLowerCase();
+    const qrver   = (item.qr_verification || '').toLowerCase();
+
+    const matchesSearch = (
+      f === '' ||
       code.includes(f) ||
       desc.includes(f) ||
       catCode.includes(f) ||
       catName.includes(f) ||
       sof.includes(f) ||
-      qrver.includes(f);
+      qrver.includes(f)
+    );
+
+    const matchesDate = (
+      dateFilter === '' ||
+      (item.created_at && String(item.created_at).startsWith(dateFilter))
+    );
+
+    return matchesSearch && matchesDate;
   });
 
-  if (filtered.length === 0) {
+  if (filteredItems.length === 0) {
     $('#qrEmpty').show();
+    $('#selectAllQr').prop('checked', false);
+    renderPagination(0, 0);
+    updateButtons();
     return;
   }
+
   $('#qrEmpty').hide();
 
-  const cards = filtered.map(item => {
-    const code = item.inventory_system_item_code || '';
-    const desc = item.item_description || '';
-    const catCode = item.item_category_code || '';
-    const catName = item.item_category_name || '';
-    const sof = item.source_of_funds || '';
-    const qrUrl = QR_GENERATOR_URL + '?v=' + encodeURIComponent(code);
+  const totalItems = filteredItems.length;
+  const totalPages = Math.ceil(totalItems / pageSize);
 
-    const categoryLine = (catName && catCode)
-      ? `${catName} (${catCode})`
-      : (catName || catCode);
+  if (currentPage > totalPages) currentPage = totalPages;
+  if (currentPage < 1) currentPage = 1;
 
-    const metaLines = [
-      categoryLine ? `<span class="meta-line"><b>Category:</b> ${escapeHtml(categoryLine)}</span>` : '',
-      sof ? `<span class="meta-line"><b>Source:</b> ${escapeHtml(sof)}</span>` : ''
-    ].filter(Boolean).join('');
+  const start = (currentPage - 1) * pageSize;
+  const pageItems = filteredItems.slice(start, start + pageSize);
 
-    return `
-      <div class="col-12 col-sm-6 col-md-4 col-lg-3">
-        <div class="qr-card">
-          <div class="d-flex align-items-center justify-content-between mb-2">
-            <div class="form-check">
-              <input class="form-check-input qr-check" type="checkbox" data-code="${escapeHtml(code)}">
-            </div>
-            <span class="badge bg-light text-dark border qr-badge">${escapeHtml(code)}</span>
-          </div>
-
-          <div class="text-center">
-            <img src="${qrUrl}" alt="QR ${escapeHtml(code)}" class="qr-img">
-          </div>
-
-          <div class="qr-desc">${escapeHtml(desc || code)}</div>
-          <div class="qr-meta">${metaLines || `<span class="meta-line">${escapeHtml(categoryLine || '')}</span>`}</div>
-        </div>
-      </div>
-    `;
-  });
-
+  const cards = pageItems.map(item => buildScreenPreviewCard(item, layout));
   list.append(cards.join(''));
-}
 
-function updateButtons() {
-  const selectedCount = $('.qr-check:checked').length;
-  $('#btnPrintSelected').prop('disabled', selectedCount === 0);
-  $('#btnSavePdf').prop('disabled', selectedCount === 0);
+  const allSelected = filteredItems.length > 0 && filteredItems.every(i => selectedCodes.has(i.inventory_system_item_code));
+  $('#selectAllQr').prop('checked', allSelected);
+
+  renderPagination(totalItems, totalPages);
+  updateButtons();
 }
 
 function loadQrItems() {
@@ -270,14 +733,6 @@ function loadQrItems() {
   });
 }
 
-function getSelectedCodes(){
-  return $('.qr-check:checked').map(function(){ return $(this).data('code'); }).get();
-}
-
-/* =========================
-   PRINT/PDF STYLES + TEMPLATES
-   DETAILED = FLEXIBLE HEIGHT (NO CLIPPING)
-========================= */
 const TAG_PRINT_CSS = `
   :root{
     --tag-border:#1d1d1d;
@@ -287,7 +742,7 @@ const TAG_PRINT_CSS = `
     --tag-text:#111;
 
     --detailed-w: 100mm;
-    --detailed-h: 48mm; /* baseline min height */
+    --detailed-h: 48mm;
     --simple-w: 70mm;
     --simple-h: 38mm;
 
@@ -302,7 +757,6 @@ const TAG_PRINT_CSS = `
     margin:0;
   }
 
-  /* ===== SIMPLE still uses grid paging ===== */
   .print-page.simple{
     display:grid;
     gap: var(--gap);
@@ -316,7 +770,6 @@ const TAG_PRINT_CSS = `
     break-after:auto;
   }
 
-  /* ===== DETAILED uses flex-wrap (variable heights) ===== */
   .print-page.detailed{
     display:flex;
     flex-wrap:wrap;
@@ -330,18 +783,17 @@ const TAG_PRINT_CSS = `
   .simple-sticker{
     break-inside: avoid;
     page-break-inside: avoid;
+    box-sizing:border-box;
+    background:#fff;
   }
 
-  /* ===================== DETAILED STICKER (FLEXIBLE) ===================== */
   .tag-sticker{
     width: var(--detailed-w);
-    height: auto;               /* flexible */
-    min-height: var(--detailed-h); /* baseline */
+    height: auto;
+    min-height: var(--detailed-h);
     border: 2px solid var(--tag-border);
     border-radius: 1mm;
-    background:#fff;
-    overflow: visible;          /* do not clip content */
-    box-sizing:border-box;
+    overflow: visible;
     display:flex;
     flex-direction:column;
   }
@@ -402,14 +854,14 @@ const TAG_PRINT_CSS = `
   .tag-body{
     display:grid;
     grid-template-columns: 1fr 24mm;
-    height:auto;                /* ✅ flexible */
+    height:auto;
   }
 
   .tag-form{
     border-right: 2px solid var(--tag-border);
-    height:auto;                /* flexible */
+    height:auto;
     box-sizing:border-box;
-    display:block;              /* allow rows to expand */
+    display:block;
   }
 
   .tag-row{
@@ -417,7 +869,7 @@ const TAG_PRINT_CSS = `
     grid-template-columns: 32mm 1fr;
     border-bottom: 1px solid var(--tag-grid);
     box-sizing:border-box;
-    min-height: 5.2mm;          /* baseline */
+    min-height: 5.2mm;
   }
   .tag-row:last-child{ border-bottom:none; }
 
@@ -439,9 +891,8 @@ const TAG_PRINT_CSS = `
     font-weight: 600;
     display:block;
     box-sizing:border-box;
-
-    white-space: normal;        /* wrap */
-    overflow: visible;          /* no clipping */
+    white-space: normal;
+    overflow: visible;
     text-overflow: clip;
     overflow-wrap:anywhere;
     word-break:break-word;
@@ -476,8 +927,8 @@ const TAG_PRINT_CSS = `
   }
 
   .tag-remarks{
-    min-height: 9mm;            /* baseline */
-    height:auto;                /* flexible */
+    min-height: 9mm;
+    height:auto;
     border-top: 2px solid var(--tag-border);
     display:grid;
     grid-template-columns: 32mm 1fr;
@@ -497,22 +948,19 @@ const TAG_PRINT_CSS = `
     overflow: visible;
   }
 
-  /* ===================== SIMPLE STICKER (unchanged fixed) ===================== */
   .simple-sticker{
     width: var(--simple-w);
     height: var(--simple-h);
     border:2px solid var(--tag-border);
     border-radius: 1mm;
-    background:#fff;
     padding: 2mm;
     display:grid;
     grid-template-columns: 1fr 22mm;
     gap: 2mm;
     align-items:center;
-    box-sizing:border-box;
     overflow:hidden;
   }
-  .simple-meta{ display:flex; flex-direction:column; gap:1mm; }
+  .simple-meta{ display:flex; flex-direction:column; gap:1mm; min-width:0; }
   .simple-code{ font-weight:900; font-size: 8.5pt; }
   .simple-name{
     font-size: 7pt;
@@ -548,93 +996,11 @@ const TAG_PRINT_CSS = `
   }
 `;
 
-function buildSimpleSticker({code, desc, catLine, qrUrl}) {
-  return `
-    <div class="simple-sticker">
-      <div class="simple-meta">
-        <div class="simple-code">${escapeHtml(code)}</div>
-        <div class="simple-name">${escapeHtml(desc || '')}</div>
-        <div class="simple-cat">${escapeHtml(catLine || '')}</div>
-      </div>
-      <div class="simple-qr">
-        <img src="${qrUrl}" alt="QR ${escapeHtml(code)}">
-      </div>
-    </div>
-  `;
-}
-
-/**
- * Detailed tag EXACTLY like your screenshot:
- * Property Tag, Item Description, Category, Acquisition Date, Cost, Notes
- * (Flexible wrapping; no clipping)
- */
-function buildDetailedTag({ code, desc, catLine, acq, cost, notes, qrUrl }) {
-  return `
-    <div class="tag-sticker">
-      <div class="tag-top">
-        <div class="tag-ccc">CCC</div>
-        <div class="tag-agency">
-          <div class="agency">City Government of Calamba</div>
-          <div class="subtitle">Property Inventory Tag</div>
-        </div>
-        <div class="tag-logo">
-          <div class="logo-circle">CG</div>
-        </div>
-      </div>
-
-      <div class="tag-body">
-        <div class="tag-form">
-          <div class="tag-row">
-            <div class="tag-label">Property Tag</div>
-            <div class="tag-value is-strong">${escapeHtml(code)}</div>
-          </div>
-
-          <div class="tag-row">
-            <div class="tag-label">Item Description</div>
-            <div class="tag-value">${escapeHtml(desc || '')}</div>
-          </div>
-
-          <div class="tag-row">
-            <div class="tag-label">Category</div>
-            <div class="tag-value">${escapeHtml(catLine || '')}</div>
-          </div>
-
-          <div class="tag-row">
-            <div class="tag-label">Acquisition Date</div>
-            <div class="tag-value">${escapeHtml(acq || '')}</div>
-          </div>
-
-          <div class="tag-row">
-            <div class="tag-label">Cost</div>
-            <div class="tag-value">${escapeHtml(cost || '')}</div>
-          </div>
-        </div>
-
-        <div class="tag-qr">
-          <img src="${qrUrl}" alt="QR ${escapeHtml(code)}">
-          <div class="tag-code">${escapeHtml(code)}</div>
-        </div>
-      </div>
-
-      <div class="tag-remarks">
-        <div class="tag-label">Notes</div>
-        <div class="tag-value">${escapeHtml(notes || '')}</div>
-      </div>
-    </div>
-  `;
-}
-
-/**
- * Paging:
- * - SIMPLE: keep fixed pages for clean alignment
- * - DETAILED: no forced per-page; let browser paginate naturally (variable heights)
- */
 function buildPagesHtml(layout, cards) {
   if (layout === 'detailed') {
     return `<div class="print-page detailed is-last">${cards.join('')}</div>`;
   }
 
-  // Simple sticker paging
   const perPage = 12;
   const gridCols = 'repeat(3, var(--simple-w))';
 
@@ -647,38 +1013,33 @@ function buildPagesHtml(layout, cards) {
   return pages.join('');
 }
 
-/* -------- PRINT -------- */
 function printSelected() {
   const layout = ($('#printLayout').val() || 'simple');
 
   const byCode = {};
   qrItems.forEach(item => {
-    if (item.inventory_system_item_code) byCode[item.inventory_system_item_code] = item;
+    if (item.inventory_system_item_code) {
+      byCode[item.inventory_system_item_code] = item;
+    }
   });
 
-  const selectedCodes = getSelectedCodes();
-  if (!selectedCodes.length) return;
+  const codes = getSelectedCodes();
+  if (!codes.length) return;
 
-  const cards = selectedCodes.map(code => {
+  const cards = codes.map(code => {
     const item = byCode[code] || {};
-
     const desc = item.item_description || '';
     const acq  = item.acquisition_date || '';
     const cost = (item.item_cost != null && item.item_cost !== '') ? item.item_cost : '';
-
     const catCode = item.item_category_code || '';
     const catName = item.item_category_name || '';
     const catLine = (catName && catCode) ? `${catName} (${catCode})` : (catName || catCode);
-
-    // Optional notes field if your process returns it; otherwise blank.
     const notes = item.notes || item.note || item.remarks || '';
-
     const qrUrl = QR_GENERATOR_URL + '?v=' + encodeURIComponent(code);
 
-    if (layout === 'simple') {
-      return buildSimpleSticker({ code, desc, catLine, qrUrl });
-    }
-    return buildDetailedTag({ code, desc, catLine, acq, cost, notes, qrUrl });
+    return layout === 'simple'
+      ? buildSimpleSticker({ code, desc, catLine, qrUrl })
+      : buildDetailedTag({ code, desc, catLine, acq, cost, notes, qrUrl });
   });
 
   const pagesHtml = buildPagesHtml(layout, cards);
@@ -697,7 +1058,6 @@ function printSelected() {
   printWin.document.close();
   printWin.focus();
 
-  // Wait for images to load before printing
   try {
     const imgs = printWin.document.images;
     const promises = [];
@@ -705,13 +1065,20 @@ function printSelected() {
       const img = imgs[i];
       if (img.complete) continue;
       promises.push(new Promise(resolve => {
-        const done = () => { img.removeEventListener('load', done); img.removeEventListener('error', done); resolve(); };
+        const done = () => {
+          img.removeEventListener('load', done);
+          img.removeEventListener('error', done);
+          resolve();
+        };
         img.addEventListener('load', done);
         img.addEventListener('error', done);
       }));
     }
-    const timeoutMs = 8000;
-    Promise.race([Promise.all(promises), new Promise(r => setTimeout(r, timeoutMs))]).then(() => {
+
+    Promise.race([
+      Promise.all(promises),
+      new Promise(r => setTimeout(r, 8000))
+    ]).then(() => {
       try { printWin.focus(); } catch(e){}
       printWin.print();
     });
@@ -721,37 +1088,33 @@ function printSelected() {
   }
 }
 
-/* -------- PDF -------- */
 function saveToPdf() {
   const layout = ($('#printLayout').val() || 'simple');
 
   const byCode = {};
   qrItems.forEach(item => {
-    if (item.inventory_system_item_code) byCode[item.inventory_system_item_code] = item;
+    if (item.inventory_system_item_code) {
+      byCode[item.inventory_system_item_code] = item;
+    }
   });
 
-  const selectedCodes = getSelectedCodes();
-  if (!selectedCodes.length) return;
+  const codes = getSelectedCodes();
+  if (!codes.length) return;
 
-  const cards = selectedCodes.map(code => {
+  const cards = codes.map(code => {
     const item = byCode[code] || {};
-
     const desc = item.item_description || '';
     const acq  = item.acquisition_date || '';
     const cost = (item.item_cost != null && item.item_cost !== '') ? item.item_cost : '';
-
     const catCode = item.item_category_code || '';
     const catName = item.item_category_name || '';
     const catLine = (catName && catCode) ? `${catName} (${catCode})` : (catName || catCode);
-
     const notes = item.notes || item.note || item.remarks || '';
-
     const qrUrl = QR_GENERATOR_URL + '?v=' + encodeURIComponent(code);
 
-    if (layout === 'simple') {
-      return buildSimpleSticker({ code, desc, catLine, qrUrl });
-    }
-    return buildDetailedTag({ code, desc, catLine, acq, cost, notes, qrUrl });
+    return layout === 'simple'
+      ? buildSimpleSticker({ code, desc, catLine, qrUrl })
+      : buildDetailedTag({ code, desc, catLine, acq, cost, notes, qrUrl });
   });
 
   const pagesHtml = buildPagesHtml(layout, cards);
@@ -771,9 +1134,6 @@ function saveToPdf() {
   html2pdf().set(opt).from(element).save();
 }
 
-/* =========================
-   SCANNER (decode -> fill search)
-========================= */
 function playBeep() {
   const AudioContext = window.AudioContext || window.webkitAudioContext;
   const ctx = new AudioContext();
@@ -785,7 +1145,10 @@ function playBeep() {
   oscillator.connect(gain);
   gain.connect(ctx.destination);
   oscillator.start();
-  setTimeout(() => { oscillator.stop(); ctx.close(); }, 120);
+  setTimeout(() => {
+    oscillator.stop();
+    ctx.close();
+  }, 120);
 }
 
 let html5QrcodeScanner = null;
@@ -818,6 +1181,7 @@ async function loadCameras(){
       showScanError('No cameras found / permission issue.');
       return;
     }
+
     cameraSelect.innerHTML = '';
     cameras.forEach((cam, idx) => {
       const opt = document.createElement('option');
@@ -847,7 +1211,7 @@ async function startScanner(){
   }
 
   if(html5QrcodeScanner){
-    try{ await html5QrcodeScanner.stop(); } catch(e){}
+    try { await html5QrcodeScanner.stop(); } catch(e){}
   }
 
   html5QrcodeScanner = new Html5Qrcode('preview');
@@ -864,12 +1228,8 @@ async function startScanner(){
       (decodedText) => {
         playBeep();
         document.getElementById('lastScanned').textContent = decodedText;
-
         $('#qrSearch').val(decodedText);
-        renderList(decodedText);
-
-        $('#selectAllQr').prop('checked', false);
-        updateButtons();
+        renderList(decodedText, true);
       },
       () => {}
     );
@@ -883,32 +1243,159 @@ async function startScanner(){
 async function stopScanner(){
   showScanError('');
   if(!html5QrcodeScanner || !isScanning) return;
-  try{ await html5QrcodeScanner.stop(); } catch(e){}
+  try { await html5QrcodeScanner.stop(); } catch(e){}
   setRunning(false);
 }
 
-/* =========================
-   INIT
-========================= */
+function rebuildDateBatchMenu() {
+  const menu = $('#dateBatchMenu');
+  menu.empty();
+
+  const dateMap = {};
+  qrItems.forEach(item => {
+    const code = item.inventory_system_item_code || '';
+    if (!item.created_at || !code) return;
+
+    const d = String(item.created_at).split(' ')[0];
+    if (!dateMap[d]) dateMap[d] = [];
+    dateMap[d].push(code);
+  });
+
+  const dates = Object.keys(dateMap).sort().reverse();
+
+  if (dates.length === 0) {
+    menu.append('<li><span class="dropdown-item-text text-muted small">No dates available</span></li>');
+    return;
+  }
+
+  menu.append('<li><a class="dropdown-item small text-danger" href="#" data-date="__clear__"><i class="bi bi-x-circle me-1"></i>Clear Selection</a></li>');
+  menu.append('<li><hr class="dropdown-divider my-1"></li>');
+
+  dates.forEach(d => {
+    const count = dateMap[d].length;
+    const label = new Date(d + 'T00:00:00').toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
+    menu.append(`<li><a class="dropdown-item small" href="#" data-date="${escapeHtml(d)}">${escapeHtml(label)} <span class="badge bg-secondary ms-1">${count}</span></a></li>`);
+  });
+}
+
 $(document).ready(function(){
   loadQrItems();
 
   $('#qrSearch').on('keyup', function(){
-    renderList($(this).val());
-    $('#selectAllQr').prop('checked', false);
-    updateButtons();
+    renderList($(this).val(), true);
   });
 
-  $(document).on('change', '.qr-check', function(){
-    const total = $('.qr-check').length;
-    const checked = $('.qr-check:checked').length;
-    $('#selectAllQr').prop('checked', total > 0 && total === checked);
+  $('#printLayout').on('change', function(){
+    renderList(lastFilter);
+  });
+
+  // Checkbox direct change
+  $(document).on('change', '.qr-check', function(e){
+    const code = $(this).data('code');
+    if ($(this).is(':checked')) {
+      selectedCodes.add(code);
+    } else {
+      selectedCodes.delete(code);
+    }
+
+    const card = $(this).closest('.qr-preview-item');
+    card.toggleClass('is-selected', $(this).is(':checked'));
+
+    const allSelected = filteredItems.length > 0 && filteredItems.every(i => selectedCodes.has(i.inventory_system_item_code));
+    $('#selectAllQr').prop('checked', allSelected);
+
     updateButtons();
+    renderPagination(filteredItems.length, Math.ceil(filteredItems.length / pageSize));
+    e.stopPropagation();
+  });
+
+  // Clicking the card toggles the checkbox
+  $(document).on('click', '.qr-preview-item', function(e){
+    if ($(e.target).closest('.qr-preview-check').length) return;
+
+    const checkbox = $(this).find('.qr-check').first();
+    checkbox.prop('checked', !checkbox.prop('checked')).trigger('change');
   });
 
   $('#selectAllQr').on('change', function(){
-    $('.qr-check').prop('checked', $(this).is(':checked'));
+    if ($(this).is(':checked')) {
+      filteredItems.forEach(i => {
+        if (i.inventory_system_item_code) selectedCodes.add(i.inventory_system_item_code);
+      });
+    } else {
+      filteredItems.forEach(i => {
+        if (i.inventory_system_item_code) selectedCodes.delete(i.inventory_system_item_code);
+      });
+    }
+    renderList(lastFilter);
+  });
+
+  $('#btnDateBatch').closest('.dropdown').on('show.bs.dropdown', function() {
+    rebuildDateBatchMenu();
+  });
+
+  $(document).on('click', '#dateBatchMenu a', function(e) {
+    e.preventDefault();
+    const date = $(this).data('date');
+
+    if (date === '__clear__') {
+      selectedCodes.clear();
+      dateFilter = '';
+      $('#btnDateBatch')
+        .removeClass('btn-warning')
+        .addClass('btn-outline-secondary')
+        .html('<i class="bi bi-calendar3"></i>&ensp;Select by Date');
+    } else {
+      dateFilter = date;
+
+      qrItems.forEach(item => {
+        if (item.created_at && String(item.created_at).startsWith(date) && item.inventory_system_item_code) {
+          selectedCodes.add(item.inventory_system_item_code);
+        }
+      });
+
+      const label = new Date(date + 'T00:00:00').toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+      });
+
+      $('#btnDateBatch')
+        .removeClass('btn-outline-secondary')
+        .addClass('btn-warning')
+        .html(`<i class="bi bi-calendar-check"></i>&ensp;${label} <i class="bi bi-x ms-1" id="btnClearDate"></i>`);
+    }
+
+    renderList(lastFilter, true);
     updateButtons();
+  });
+
+  $(document).on('click', '#btnClearDate', function(e) {
+    e.stopPropagation();
+    dateFilter = '';
+    selectedCodes.clear();
+    $('#btnDateBatch')
+      .removeClass('btn-warning')
+      .addClass('btn-outline-secondary')
+      .html('<i class="bi bi-calendar3"></i>&ensp;Select by Date');
+    renderList(lastFilter, true);
+    updateButtons();
+  });
+
+  $(document).on('click', '#qrPagination button[data-page]', function() {
+    const page = parseInt($(this).data('page'), 10);
+    if (!page || page < 1) return;
+    currentPage = page;
+    renderList(lastFilter);
+  });
+
+  $('#qrPageSize').on('change', function() {
+    pageSize = parseInt($(this).val(), 10) || 20;
+    renderList(lastFilter, true);
   });
 
   $('#btnPrintSelected').on('click', printSelected);
@@ -925,7 +1412,9 @@ $(document).ready(function(){
   $('#btnStop').on('click', stopScanner);
 
   $('#cameraSelect').on('change', function(){
-    if(isScanning){ stopScanner().then(() => startScanner()); }
+    if(isScanning){
+      stopScanner().then(() => startScanner());
+    }
   });
 
   $('#scanQrModal').on('hidden.bs.modal', function(){
