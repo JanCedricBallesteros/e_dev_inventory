@@ -132,7 +132,7 @@ function togglePageMsg(msg) {
 }
 
 function statusBadge(status) {
-    const s = String(status || '').toUpperCase();
+    const s = escapeHtml(String(status || '').toUpperCase());
     const map = {
         'ACTIVE': 'bg-success text-white',
         'REPORTED': 'bg-warning text-dark',
