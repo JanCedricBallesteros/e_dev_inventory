@@ -721,7 +721,16 @@ function initAssignmentTable(){
                 return escapeHtml(cell.getValue() || '-');
             }},
             { title: "Status", field: "status", width: 100 },
-            { title: "Issued At", field: "issued_at", width: 130 },
+            { title: "Issued At", field: "issued_at", width: 130, formatter: function(cell){
+                const v = String(cell.getValue() || '');
+                if (!v) return '';
+                // Try to split date and time if possible
+                const parts = v.split(/\s+/);
+                if (parts.length >= 2) {
+                    return `<div style="line-height:1.2;white-space:normal;">${escapeHtml(parts[0])}<br>${escapeHtml(parts.slice(1).join(' '))}</div>`;
+                }
+                return `<div style="line-height:1.2;white-space:normal;">${escapeHtml(v)}</div>`;
+            } },
             { title: "Actions", field: "assignment_id", width: 175, headerSort: false, formatter: function(cell){
                 const id = cell.getValue();
                 const row = cell.getRow().getData();

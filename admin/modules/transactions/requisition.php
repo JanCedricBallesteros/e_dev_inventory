@@ -59,6 +59,30 @@ if (($type === 'AST' && !$canAST) || ($type === 'CSM' && !$canCSM)) {
         .tab-pill { border-radius: 999px; }
         .muted { color: #6c757d; }
         .status-badge { padding: 0.2rem 0.55rem; border-radius: 999px; font-size: 0.8rem; }
+        .item-thumb { width: 50px; height: 50px; border-radius: 6px; object-fit: cover; border: 1px solid #e5e7eb; background: #f8f9fa; cursor: zoom-in; }
+        .item-badge { width: 50px; height: 50px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; background: #1E3A8A; color: #fff; font-weight: 600; font-size: 0.9rem; text-transform: uppercase; border: 1px solid rgba(0,0,0,0.06); cursor: default; }
+        .thumb-wrap { display: flex; align-items: center; justify-content: center; }
+        .img-preview { max-width: 100%; max-height: 70vh; border-radius: 8px; }
+        .two-line-cell {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            white-space: normal;
+            word-break: break-word;
+            line-height: 1.25;
+        }
+        .three-line-cell {
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            white-space: normal;
+            word-break: break-word;
+            line-height: 1.25;
+        }
     </style>
 </head>
 
@@ -112,6 +136,22 @@ if (($type === 'AST' && !$canAST) || ($type === 'CSM' && !$canCSM)) {
     </main>
 
 <?php include_once FOOTER_PATH; ?>
+
+<!-- Image Preview Modal -->
+<div class="modal fade" id="imagePreviewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-semibold"><i class="bi bi-image"></i>&ensp;Item Image</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center">
+                <img id="imagePreviewImg" class="img-preview" src="" alt="Item image preview">
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="modal fade" id="approveModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
@@ -196,8 +236,6 @@ if (($type === 'AST' && !$canAST) || ($type === 'CSM' && !$canCSM)) {
     </div>
 </div>
 <?php include_once DOMAIN_PATH . '/global/include_bottom.php'; ?>
-<script src="<?= BASE_URL ?>assets/js/jquery.min.js"></script>
-<script src="<?= BASE_URL ?>assets/js/tabulator.min.js"></script>
 <script>
 const BASE_URL = <?php echo json_encode(BASE_URL); ?>;
 const REQ_TYPE = <?php echo json_encode($type); ?>;
@@ -213,6 +251,18 @@ function escapeHtml(value) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+}
+
+function twoLineText(value, fallback) {
+    const raw = (value === null || value === undefined || value === '') ? (fallback || '-') : String(value);
+    const safe = escapeHtml(raw);
+    return `<span class="two-line-cell" title="${safe}">${safe}</span>`;
+}
+
+function threeLineText(value, fallback) {
+    const raw = (value === null || value === undefined || value === '') ? (fallback || '-') : String(value);
+    const safe = escapeHtml(raw);
+    return `<span class="three-line-cell" title="${safe}">${safe}</span>`;
 }
 
 function statusBadge(raw) {
@@ -319,20 +369,57 @@ function initReqTable() {
             return response.data || [];
         },
         columns: [
-            { title: 'ID', field: 'requisition_id', width: 80 },
-            { title: 'Requester', field: 'requester_name', width: 200 },
-            { title: 'Employment', field: 'employment_status', width: 140 },
-            { title: 'Item Code', field: 'item_code', width: 140 },
-            { title: 'Description', field: 'item_description', widthGrow: 2 },
-            { title: 'Qty', field: 'qty_requested', width: 70, hozAlign: 'center' },
-            { title: 'Workflow', field: 'workflow_status', width: 130, formatter: function(cell){
+            { title: 'Image', field: 'category_photo_thumb_url', width: 62, hozAlign: 'center', headerSort: false, formatter: function(cell){
+                const url = cell.getValue();
+                const full = cell.getRow().getData().category_photo_url;
+                const name = cell.getRow().getData().item_category_name || cell.getRow().getData().item_description || '';
+                if (url) {
+                    return `<div class="thumb-wrap"><img class="item-thumb js-thumb-preview" src="${url}" data-full="${escapeHtml(full || url)}" loading="lazy" alt="Item image"></div>`;
+                }
+                const initials = (String(name).trim().split(/\s+/).map(function(w){ return w.charAt(0); }).filter(Boolean).slice(0,2).join('') || 'IT').toUpperCase();
+                return `<div class="thumb-wrap"><div class="item-badge" title="${escapeHtml(name)}">${escapeHtml(initials)}</div></div>`;
+            }},
+            { title: 'ID', field: 'requisition_id', width: 60, hozAlign: 'center' },
+            { title: 'Requester', field: 'requester_name', widthGrow: 1, minWidth: 150, headerFilter: 'input', formatter: function(cell){
+                return twoLineText(cell.getValue());
+            }},
+            { title: 'Employment', field: 'employment_status', width: 155, headerFilter: 'select', headerFilterParams: { values: { '': 'All', 'teaching': 'Teaching', 'non_teaching': 'Non-Teaching' } }, headerFilterFunc: function(headerValue, rowValue, rowData) { if (!headerValue) return true; return String(rowData.position_category || '').toLowerCase() === headerValue; }, formatter: function(cell){
+                const row = cell.getRow().getData();
+                const status = escapeHtml(cell.getValue() || '-');
+                const cat = String(row.position_category || '').toLowerCase();
+                let label = '';
+                if (cat === 'teaching') {
+                    label = 'Teaching';
+                } else if (cat === 'non_teaching') {
+                    label = 'Non-Teaching';
+                }
+                const sub = label ? `<div class="text-muted small">${label}</div>` : '';
+                return `<div style="line-height:1.3;white-space:normal;">${status}${sub}</div>`;
+            }},
+            { title: 'Item Code', field: 'item_code', width: 125, headerFilter: 'input', formatter: function(cell){
+                const v = escapeHtml(cell.getValue() || '');
+                return v ? `<span class="badge bg-light text-dark border">${v}</span>` : '-';
+            }},
+            { title: 'Description', field: 'item_description', widthGrow: 2, minWidth: 180, headerFilter: 'input', formatter: function(cell){
+                return threeLineText(cell.getValue());
+            }},
+            { title: 'Qty', field: 'qty_requested', width: 55, hozAlign: 'center' },
+            { title: 'Workflow', field: 'workflow_status', width: 120, headerFilter: 'select', headerFilterParams: { values: { '': 'All', 'pending': 'Pending', 'reviewed': 'Reviewed', 'approved': 'Approved', 'for_claiming': 'For Claiming', 'claimed': 'Claimed', 'not_claimed': 'Not Claimed', 'disapproved': 'Disapproved' } }, formatter: function(cell){
                 return statusBadge(cell.getValue());
             }},
-            { title: 'Updated', field: 'updated_at', width: 140 },
-            { title: 'Remarks', field: 'remarks', width: 180, formatter: function(cell){
-                return escapeHtml(cell.getValue() || '') || '-';
+            { title: 'Updated', field: 'updated_at', width: 130, formatter: function(cell){
+                const v = String(cell.getValue() || '');
+                if (!v) return '-';
+                const parts = v.split(/\s+/);
+                if (parts.length >= 2) {
+                    return `<div style="line-height:1.2;white-space:normal;">${escapeHtml(parts[0])}<br><span class="text-muted">${escapeHtml(parts.slice(1).join(' '))}</span></div>`;
+                }
+                return escapeHtml(v);
             }},
-            { title: 'Actions', field: 'requisition_id', width: 260, hozAlign: 'center', formatter: function(cell){
+            { title: 'Remarks', field: 'remarks', widthGrow: 1, minWidth: 130, formatter: function(cell){
+                return twoLineText(cell.getValue() || '', '-');
+            }},
+            { title: 'Actions', field: 'requisition_id', width: 210, hozAlign: 'center', formatter: function(cell){
                 const id = cell.getValue();
                 const data = cell.getRow().getData();
                 const wf = String(data.workflow_status || '').toLowerCase();
@@ -484,6 +571,13 @@ $(document).ready(function() {
     $('#reqRefresh').on('click', loadReqData);
     $('#reqSearch').on('keyup', loadReqData);
     $('#reqStatus').on('change', loadReqData);
+
+    $('body').on('click', '.js-thumb-preview', function() {
+        const full = $(this).data('full') || $(this).attr('data-full');
+        if (!full) return;
+        $('#imagePreviewImg').attr('src', full);
+        $('#imagePreviewModal').modal('show');
+    });
 });
 </script>
 </body>

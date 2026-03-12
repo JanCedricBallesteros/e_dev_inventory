@@ -24,6 +24,30 @@ if (!(role_has("USER") || role_has("USERS"))) {
         .section-card { border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
         .tab-pill { border-radius: 999px; }
         .status-badge { padding: 0.2rem 0.55rem; border-radius: 999px; font-size: 0.8rem; }
+        .item-thumb { width: 50px; height: 50px; border-radius: 6px; object-fit: cover; border: 1px solid #e5e7eb; background: #f8f9fa; cursor: zoom-in; }
+        .item-badge { width: 50px; height: 50px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; background: #1E3A8A; color: #fff; font-weight: 600; font-size: 0.9rem; text-transform: uppercase; border: 1px solid rgba(0,0,0,0.06); cursor: default; }
+        .thumb-wrap { display: flex; align-items: center; justify-content: center; }
+        .img-preview { max-width: 100%; max-height: 70vh; border-radius: 8px; }
+        .two-line-cell {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            white-space: normal;
+            word-break: break-word;
+            line-height: 1.25;
+        }
+        .three-line-cell {
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            white-space: normal;
+            word-break: break-word;
+            line-height: 1.25;
+        }
     </style>
 </head>
 
@@ -87,6 +111,21 @@ if (!(role_has("USER") || role_has("USERS"))) {
     </main>
 
     <?php include_once FOOTER_PATH; ?>
+
+    <!-- Image Preview Modal -->
+    <div class="modal fade" id="imagePreviewModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-semibold"><i class="bi bi-image"></i>&ensp;Item Image</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <img id="imagePreviewImg" class="img-preview" src="" alt="Item image preview">
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Request Modal -->
     <div class="modal fade" id="requestModal" tabindex="-1" aria-hidden="true">
@@ -168,6 +207,18 @@ function escapeHtml(value) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+}
+
+function twoLineText(value, fallback) {
+    const raw = (value === null || value === undefined || value === '') ? (fallback || '-') : String(value);
+    const safe = escapeHtml(raw);
+    return `<span class="two-line-cell" title="${safe}">${safe}</span>`;
+}
+
+function threeLineText(value, fallback) {
+    const raw = (value === null || value === undefined || value === '') ? (fallback || '-') : String(value);
+    const safe = escapeHtml(raw);
+    return `<span class="three-line-cell" title="${safe}">${safe}</span>`;
 }
 
 function statusBadge(raw) {
@@ -257,20 +308,35 @@ function syncRequestQtyUI() {
             return response.data || [];
         },
         columns: [
-            { title: 'Item Code', field: 'item_code', width: 160 },
-            { title: 'Description', field: 'item_description', widthGrow: 2 },
-            { title: 'Stock', field: 'available_qty', width: 110, hozAlign: 'center', formatter: function(cell){
+            { title: 'Image', field: 'category_photo_thumb_url', width: 62, hozAlign: 'center', headerSort: false, formatter: function(cell){
+                const url = cell.getValue();
+                const full = cell.getRow().getData().category_photo_url;
+                const name = cell.getRow().getData().item_category_name || cell.getRow().getData().item_description || '';
+                if (url) {
+                    return `<div class="thumb-wrap"><img class="item-thumb js-thumb-preview" src="${url}" data-full="${escapeHtml(full || url)}" loading="lazy" alt="Item image"></div>`;
+                }
+                const initials = (String(name).trim().split(/\s+/).map(function(w){ return w.charAt(0); }).filter(Boolean).slice(0,2).join('') || 'IT').toUpperCase();
+                return `<div class="thumb-wrap"><div class="item-badge" title="${escapeHtml(name)}">${escapeHtml(initials)}</div></div>`;
+            }},
+            { title: 'Item Code', field: 'item_code', width: 125, headerFilter: 'input', formatter: function(cell){
+                const v = escapeHtml(cell.getValue() || '');
+                return v ? `<span class="badge bg-light text-dark border">${v}</span>` : '-';
+            }},
+            { title: 'Description', field: 'item_description', widthGrow: 2, minWidth: 180, headerFilter: 'input', formatter: function(cell){
+                return threeLineText(cell.getValue());
+            }},
+            { title: 'Stock', field: 'available_qty', width: 85, hozAlign: 'center', formatter: function(cell){
                 if (currentType === 'AST') return 'Available';
                 const v = parseInt(cell.getValue(), 10);
                 return Number.isFinite(v) ? v : 0;
             }},
-            { title: 'Unit', field: 'unit', width: 90 },
-            { title: 'Allowed Status', field: 'allowed_status_names', width: 180, formatter: function(cell){
+            { title: 'Unit', field: 'unit', width: 80 },
+            { title: 'Allowed Status', field: 'allowed_status_names', widthGrow: 1, minWidth: 140, formatter: function(cell){
                 const v = cell.getValue();
-                return v ? `<span class="text-muted small">${v}</span>` : 'All';
+                return v ? `<span class="text-muted small">${escapeHtml(v)}</span>` : 'All';
             }},
-            { title: 'Action', field: 'item_code', width: 120, hozAlign: 'center', formatter: function(cell){
-                const code = cell.getValue();
+            { title: 'Action', field: 'item_code', width: 110, hozAlign: 'center', formatter: function(cell){
+                const code = escapeHtml(cell.getValue() || '');
                 return `<button class="btn btn-sm btn-primary btn-request" data-code="${code}">Request</button>`;
             }}
         ]
@@ -349,34 +415,60 @@ function initMyReqTable() {
             return response.data || [];
         },
         columns: [
-            { title: 'ID', field: 'requisition_id', width: 80 },
-            { title: 'Item Code', field: 'item_code', width: 140, formatter: function(cell){
+            { title: 'Image', field: 'category_photo_thumb_url', width: 62, hozAlign: 'center', headerSort: false, formatter: function(cell){
+                const url = cell.getValue();
+                const full = cell.getRow().getData().category_photo_url;
+                const name = cell.getRow().getData().item_category_name || cell.getRow().getData().item_description || '';
+                if (url) {
+                    return `<div class="thumb-wrap"><img class="item-thumb js-thumb-preview" src="${url}" data-full="${escapeHtml(full || url)}" loading="lazy" alt="Item image"></div>`;
+                }
+                const initials = (String(name).trim().split(/\s+/).map(function(w){ return w.charAt(0); }).filter(Boolean).slice(0,2).join('') || 'IT').toUpperCase();
+                return `<div class="thumb-wrap"><div class="item-badge" title="${escapeHtml(name)}">${escapeHtml(initials)}</div></div>`;
+            }},
+            { title: 'ID', field: 'requisition_id', width: 60, hozAlign: 'center' },
+            { title: 'Item Code', field: 'item_code', width: 125, headerFilter: 'input', formatter: function(cell){
                 const v = escapeHtml(cell.getValue() || '');
-                return v ? '<span class="badge bg-light text-dark border">' + v + '</span>' : '';
+                return v ? '<span class="badge bg-light text-dark border">' + v + '</span>' : '-';
             }},
-            { title: 'Description', field: 'item_description', widthGrow: 2, formatter: function(cell){
-                return escapeHtml(cell.getValue() || '');
+            { title: 'Description', field: 'item_description', widthGrow: 2, minWidth: 180, headerFilter: 'input', formatter: function(cell){
+                return threeLineText(cell.getValue());
             }},
-            { title: 'Qty', field: 'qty_requested', width: 70, hozAlign: 'center' },
-            { title: 'Workflow', field: 'workflow_status', width: 130, formatter: function(cell){
+            { title: 'Qty', field: 'qty_requested', width: 55, hozAlign: 'center' },
+            { title: 'Workflow', field: 'workflow_status', width: 120, headerFilter: 'select', headerFilterParams: { values: { '': 'All', 'pending': 'Pending', 'reviewed': 'Reviewed', 'approved': 'Approved', 'for_claiming': 'For Claiming', 'claimed': 'Claimed', 'not_claimed': 'Not Claimed', 'disapproved': 'Disapproved' } }, formatter: function(cell){
                 return statusBadge(cell.getValue());
             }},
-            { title: 'Updated', field: 'updated_at', width: 140 },
-            { title: 'Claimed', field: 'claimed_at', width: 140 },
-            { title: 'Facility/Unit', field: 'facility_name', width: 180, formatter: function(cell){
+            { title: 'Updated', field: 'updated_at', width: 130, formatter: function(cell){
+                const v = String(cell.getValue() || '');
+                if (!v) return '-';
+                const parts = v.split(/\s+/);
+                if (parts.length >= 2) {
+                    return `<div style="line-height:1.2;white-space:normal;">${escapeHtml(parts[0])}<br><span class="text-muted">${escapeHtml(parts.slice(1).join(' '))}</span></div>`;
+                }
+                return escapeHtml(v);
+            }},
+            { title: 'Claimed', field: 'claimed_at', width: 130, formatter: function(cell){
+                const v = String(cell.getValue() || '');
+                if (!v) return '-';
+                const parts = v.split(/\s+/);
+                if (parts.length >= 2) {
+                    return `<div style="line-height:1.2;white-space:normal;">${escapeHtml(parts[0])}<br><span class="text-muted">${escapeHtml(parts.slice(1).join(' '))}</span></div>`;
+                }
+                return escapeHtml(v);
+            }},
+            { title: 'Facility / Unit', field: 'facility_name', widthGrow: 1, minWidth: 150, headerFilter: 'input', formatter: function(cell){
                 const row = cell.getRow().getData();
                 const fac = escapeHtml(row.facility_name || '');
                 const unit = escapeHtml(row.unit_name || '');
                 if (!fac && !unit) return '-';
-                return fac + (unit ? ' / ' + unit : '');
+                const facLine = fac ? `<div class="two-line-cell" title="${fac}">${fac}</div>` : '';
+                const unitLine = unit ? `<div class="text-muted small two-line-cell" title="${unit}">${unit}</div>` : '';
+                return `<div style="line-height:1.3;white-space:normal;">${facLine}${unitLine}</div>`;
             }},
-            { title: 'Reason', field: 'reason', width: 180, formatter: function(cell){
-                const v = escapeHtml(cell.getValue() || '');
-                return v || '-';
+            { title: 'Reason', field: 'reason', widthGrow: 1, minWidth: 130, formatter: function(cell){
+                return twoLineText(cell.getValue() || '', '-');
             }},
-            { title: 'Remarks', field: 'remarks', width: 180, formatter: function(cell){
-                const v = escapeHtml(cell.getValue() || '');
-                return v || '-';
+            { title: 'Remarks', field: 'remarks', widthGrow: 1, minWidth: 130, formatter: function(cell){
+                return twoLineText(cell.getValue() || '', '-');
             }}
         ]
     });
@@ -404,6 +496,13 @@ $(document).ready(function() {
         if (table) {
             table.setData(PROCESS_URL, { action: 'list_available_items', type: currentType }, 'POST');
         }
+    });
+
+    $('body').on('click', '.js-thumb-preview', function() {
+        const full = $(this).data('full') || $(this).attr('data-full');
+        if (!full) return;
+        $('#imagePreviewImg').attr('src', full);
+        $('#imagePreviewModal').modal('show');
     });
 
     $('#reqFacilityId').on('change', function() {

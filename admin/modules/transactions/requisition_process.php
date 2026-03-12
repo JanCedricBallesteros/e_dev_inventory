@@ -163,6 +163,7 @@ try {
 
             $hasUpdatedAt = table_column_exists('requisition_items', 'updated_at');
             $hasApprovedAt = table_column_exists('requisition_items', 'approved_at');
+            
             $sql = "SELECT 
                         r.requisition_id,
                         r.module_type,
@@ -186,9 +187,18 @@ try {
                         u.l_name,
                         u.suffix,
                         u.employment_status_id,
-                        es.status_name AS employment_status
+                        u.position,
+                        es.status_name AS employment_status,
+                        ast_cat.category_photo AS ast_category_photo,
+                        ast_cat.item_category_name AS ast_category_name,
+                        csm_inv.item_category_img AS csm_category_img,
+                        csm_cat.item_category_name AS csm_category_name
                     FROM requisition_items r
                     {$assignJoin}
+                    LEFT JOIN ast_inventory ast_inv ON r.module_type = 'AST' AND r.item_code = ast_inv.property_code
+                    LEFT JOIN ast_inventory_category ast_cat ON ast_inv.category_id = ast_cat.category_id
+                    LEFT JOIN csm_inventory csm_inv ON r.module_type = 'CSM' AND r.item_code = csm_inv.inventory_system_item_code
+                    LEFT JOIN csm_inventory_category csm_cat ON csm_inv.item_category_code = csm_cat.item_category_code
                     LEFT JOIN users u ON u.user_id = r.requester_user_id
                     LEFT JOIN employment_status es ON es.employment_status_id = u.employment_status_id
                     {$where}
@@ -221,6 +231,7 @@ try {
                     }
                 }
                 $row['requester_name'] = get_full_name($row['f_name'], $row['m_name'], $row['l_name'], $row['suffix']);
+                $row['position_category'] = normalize_position_category($row['position'] ?? '');
                 $rawStatus = strtolower((string)($row['status'] ?? 'pending'));
                 if (!empty($row['claim_assignment_id']) || !empty($row['claimed_at'])) {
                     $row['workflow_status'] = 'claimed';
@@ -231,6 +242,31 @@ try {
                 } else {
                     $row['workflow_status'] = $rawStatus;
                 }
+                
+                // Resolve category images
+                $row['category_photo_url'] = null;
+                $row['category_photo_thumb_url'] = null;
+                $row['item_category_name'] = null;
+                $moduleType = strtoupper((string)($row['module_type'] ?? ''));
+                if ($moduleType === 'AST' && !empty($row['ast_category_photo'])) {
+                    $row['item_category_name'] = $row['ast_category_name'] ?? null;
+                    $row['category_photo_url'] = BASE_URL . 'upload/category/' . $row['ast_category_photo'];
+                    $row['category_photo_thumb_url'] = BASE_URL . 'admin/modules/tools/category_image_thumb.php?f=' . urlencode($row['ast_category_photo']) . '&s=100';
+                } elseif ($moduleType === 'CSM') {
+                    $row['item_category_name'] = $row['csm_category_name'] ?? null;
+                    $csmImg = $row['csm_category_img'] ?? '';
+                    if (!empty($csmImg)) {
+                        if (strpos($csmImg, 'upload/') === 0 || strpos($csmImg, '/') !== false) {
+                            $row['category_photo_url'] = BASE_URL . $csmImg;
+                            $row['category_photo_thumb_url'] = BASE_URL . 'admin/modules/tools/category_image_thumb.php?f=' . urlencode(basename($csmImg)) . '&s=100';
+                        } else {
+                            $row['category_photo_url'] = BASE_URL . 'upload/category/' . $csmImg;
+                            $row['category_photo_thumb_url'] = BASE_URL . 'admin/modules/tools/category_image_thumb.php?f=' . urlencode($csmImg) . '&s=100';
+                        }
+                    }
+                }
+                unset($row['ast_category_photo'], $row['ast_category_name'], $row['csm_category_img'], $row['csm_category_name']);
+                
                 $rows[] = $row;
             }
             json_response(['success' => true, 'data' => $rows]);

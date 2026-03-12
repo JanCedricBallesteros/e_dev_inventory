@@ -184,8 +184,11 @@ try {
                     $where .= " AND (i.property_code LIKE '{$searchEsc}' OR i.item_description LIKE '{$searchEsc}')";
                 }
 
-                $sql = "SELECT i.property_code, i.item_description, i.unit, i.allowed_employment_status
+                $sql = "SELECT i.property_code, i.item_description, i.unit, i.allowed_employment_status,
+                               ast_cat.category_photo AS ast_category_photo,
+                               ast_cat.item_category_name AS ast_category_name
                         FROM ast_inventory i
+                        LEFT JOIN ast_inventory_category ast_cat ON ast_cat.category_id = i.category_id
                         {$where}
                         ORDER BY i.created_at DESC";
                 $res = call_mysql_query($sql);
@@ -223,12 +226,15 @@ try {
                     }
 
                     $row['allowed_status_names'] = build_allowed_status_label($norm, $statusMap);
-
+                    $astPhoto = !empty($row['ast_category_photo']) ? $row['ast_category_photo'] : '';
                     $rows[] = [
                         'item_code' => $row['property_code'],
                         'item_description' => $row['item_description'],
                         'unit' => $row['unit'] ?? '',
-                        'allowed_status_names' => $row['allowed_status_names']
+                        'allowed_status_names' => $row['allowed_status_names'],
+                        'item_category_name' => $row['ast_category_name'] ?? '',
+                        'category_photo_url' => $astPhoto ? BASE_URL . 'upload/category/' . $astPhoto : null,
+                        'category_photo_thumb_url' => $astPhoto ? BASE_URL . 'admin/modules/tools/category_image_thumb.php?f=' . urlencode($astPhoto) . '&s=100' : null,
                     ];
                 }
                 json_response(['success' => true, 'data' => $rows]);
@@ -239,8 +245,11 @@ try {
                     $searchEsc = _esc('%' . $search . '%');
                     $where .= " AND (c.inventory_system_item_code LIKE '{$searchEsc}' OR c.item_name LIKE '{$searchEsc}' OR c.item_description LIKE '{$searchEsc}')";
                 }
-                $sql = "SELECT c.inventory_system_item_code, c.item_name, c.item_description, c.current_unit_quantity
+                $sql = "SELECT c.inventory_system_item_code, c.item_name, c.item_description, c.current_unit_quantity,
+                               c.item_category_img AS csm_category_img,
+                               csm_cat.item_category_name AS csm_category_name
                         FROM csm_inventory c
+                        LEFT JOIN csm_inventory_category csm_cat ON csm_cat.item_category_code = c.item_category_code
                         {$where}
                         ORDER BY c.created_at DESC";
                 $res = call_mysql_query($sql);
@@ -250,12 +259,27 @@ try {
                 $rows = [];
                 while ($row = call_mysql_fetch_array($res)) {
                     $desc = $row['item_description'] ?: $row['item_name'];
+                    $csmImg = !empty($row['csm_category_img']) ? $row['csm_category_img'] : '';
+                    $csmPhotoUrl = null;
+                    $csmThumbUrl = null;
+                    if ($csmImg) {
+                        if (strpos($csmImg, 'upload/') === 0 || strpos($csmImg, '/') !== false) {
+                            $csmPhotoUrl = BASE_URL . $csmImg;
+                            $csmThumbUrl = BASE_URL . 'admin/modules/tools/category_image_thumb.php?f=' . urlencode(basename($csmImg)) . '&s=100';
+                        } else {
+                            $csmPhotoUrl = BASE_URL . 'upload/category/' . $csmImg;
+                            $csmThumbUrl = BASE_URL . 'admin/modules/tools/category_image_thumb.php?f=' . urlencode($csmImg) . '&s=100';
+                        }
+                    }
                     $rows[] = [
                         'item_code' => $row['inventory_system_item_code'],
                         'item_description' => $desc,
                         'available_qty' => (int)($row['current_unit_quantity'] ?? 0),
                         'unit' => '',
-                        'allowed_status_names' => 'All'
+                        'allowed_status_names' => 'All',
+                        'item_category_name' => $row['csm_category_name'] ?? '',
+                        'category_photo_url' => $csmPhotoUrl,
+                        'category_photo_thumb_url' => $csmThumbUrl,
                     ];
                 }
                 json_response(['success' => true, 'data' => $rows]);
@@ -493,11 +517,19 @@ try {
                         f.facility_code,
                         f.facility_name,
                         u.unit_code,
-                        u.unit_name
+                        u.unit_name,
+                        ast_cat.category_photo AS ast_category_photo,
+                        ast_cat.item_category_name AS ast_category_name,
+                        csm_inv.item_category_img AS csm_category_img,
+                        csm_cat.item_category_name AS csm_category_name
                     FROM requisition_items r
                     {$assignJoin}
                     LEFT JOIN facility_records_facilities f ON f.facility_id = a.facility_id
                     LEFT JOIN facility_records_units u ON u.unit_id = a.unit_id
+                    LEFT JOIN ast_inventory ast_inv ON r.module_type = 'AST' AND r.item_code = ast_inv.property_code
+                    LEFT JOIN ast_inventory_category ast_cat ON ast_inv.category_id = ast_cat.category_id
+                    LEFT JOIN csm_inventory csm_inv ON r.module_type = 'CSM' AND r.item_code = csm_inv.inventory_system_item_code
+                    LEFT JOIN csm_inventory_category csm_cat ON csm_inv.item_category_code = csm_cat.item_category_code
                     {$where}
                     ORDER BY r.created_at DESC";
             $res = call_mysql_query($sql);
@@ -534,6 +566,29 @@ try {
                     } else {
                         $row['workflow_status'] = $rawStatus;
                     }
+                    // Resolve category images
+                    $row['category_photo_url'] = null;
+                    $row['category_photo_thumb_url'] = null;
+                    $row['item_category_name'] = null;
+                    $moduleType = strtoupper((string)($row['module_type'] ?? ''));
+                    if ($moduleType === 'AST' && !empty($row['ast_category_photo'])) {
+                        $row['item_category_name'] = $row['ast_category_name'] ?? null;
+                        $row['category_photo_url'] = BASE_URL . 'upload/category/' . $row['ast_category_photo'];
+                        $row['category_photo_thumb_url'] = BASE_URL . 'admin/modules/tools/category_image_thumb.php?f=' . urlencode($row['ast_category_photo']) . '&s=100';
+                    } elseif ($moduleType === 'CSM') {
+                        $row['item_category_name'] = $row['csm_category_name'] ?? null;
+                        $csmImg = $row['csm_category_img'] ?? '';
+                        if (!empty($csmImg)) {
+                            if (strpos($csmImg, 'upload/') === 0 || strpos($csmImg, '/') !== false) {
+                                $row['category_photo_url'] = BASE_URL . $csmImg;
+                                $row['category_photo_thumb_url'] = BASE_URL . 'admin/modules/tools/category_image_thumb.php?f=' . urlencode(basename($csmImg)) . '&s=100';
+                            } else {
+                                $row['category_photo_url'] = BASE_URL . 'upload/category/' . $csmImg;
+                                $row['category_photo_thumb_url'] = BASE_URL . 'admin/modules/tools/category_image_thumb.php?f=' . urlencode($csmImg) . '&s=100';
+                            }
+                        }
+                    }
+                    unset($row['ast_category_photo'], $row['ast_category_name'], $row['csm_category_img'], $row['csm_category_name']);
                     $rows[] = $row;
                 }
             }
