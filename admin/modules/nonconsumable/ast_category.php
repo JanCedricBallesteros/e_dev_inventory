@@ -237,7 +237,7 @@ function initTable() {
         paginationSizeSelector: [5, 10, 20, 50, true],
         columns: [
             {
-                title: "Photo",
+                title: "Image",
                 field: "category_photo_thumb_url",
                 width: 80,
                 headerSort: false,
@@ -330,8 +330,10 @@ $('#addCategoryForm').on('submit', function(e) {
                 $('#addMsg').html('<div class="alert alert-danger">' + res.message + '</div>');
             }
         },
-        error: function() {
-            $('#addMsg').html('<div class="alert alert-danger">Error adding category.</div>');
+        error: function(xhr) {
+            // Surface backend validation messages even on non-200 responses
+            const msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Error adding category.';
+            $('#addMsg').html('<div class="alert alert-danger">' + msg + '</div>');
         }
     });
 });
@@ -401,8 +403,10 @@ $('#editCategoryForm').on('submit', function(e) {
                 $('#editMsg').html('<div class="alert alert-danger">' + res.message + '</div>');
             }
         },
-        error: function() {
-            $('#editMsg').html('<div class="alert alert-danger">Error updating category.</div>');
+        error: function(xhr) {
+            // Show server-side validation error when status is 4xx
+            const msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Error updating category.';
+            $('#editMsg').html('<div class="alert alert-danger">' + msg + '</div>');
         }
     });
 });
@@ -486,9 +490,13 @@ $('#categoryTable').on('click', '.js-thumb-preview, .item-badge', function() {
             contentType: false,
             dataType: 'json',
             success: function(res) {
+                // Reset row highlights before applying new ones
+                $('#bulkRows .bulk-row').removeClass('border-danger');
+                $('#bulkRows .duplicate-hint').remove();
+
                 if (res.success) {
-                    let msg = `<div class="alert alert-success">
-                        <strong>Success!</strong> Inserted: ${res.inserted}, Skipped: ${res.skipped}
+                    let msg = `<div class="alert alert-primary mt-2">
+                        <strong></strong> Inserted: ${res.inserted}, Skipped: ${res.skipped}
                     </div>`;
                 
                 if (res.errors && res.errors.length > 0) {
@@ -500,9 +508,25 @@ $('#categoryTable').on('click', '.js-thumb-preview, .item-badge', function() {
                 }
                 
                     $('#bulkMsg').html(msg);
-                    $('#bulkAddForm')[0].reset();
-                    $('#bulkRows').html('');
-                    addBulkRow();
+
+                    // If there are error rows, rebuild the form showing only the problematic rows
+                    if (res.errors && res.errors.length > 0 && res.error_rows && res.error_rows.length > 0) {
+                        $('#bulkRows').html('');
+                        res.error_rows.forEach(function(er) {
+                            addBulkRow(er.name || '');
+                            const rowEl = $('#bulkRows .bulk-row').last();
+                            rowEl.addClass('border-danger');
+                            const nameInput = rowEl.find('input[name="bulk_names[]"]');
+                            const reasonText = er.reason === 'duplicate' ? 'Duplicate category name' : (er.reason === 'required' ? 'Category name is required' : 'Could not save this row');
+                            nameInput.after(`<div class="text-danger small duplicate-hint mt-1">${reasonText}</div>`);
+                        });
+                    } else {
+                        // No errors: reset form for a clean slate
+                        $('#bulkAddForm')[0].reset();
+                        $('#bulkRows').html('');
+                        addBulkRow();
+                    }
+
                     table.replaceData();
                     
                 } else {

@@ -539,7 +539,7 @@ $(document).ready(function() {
                 $('#requestModal').modal('hide');
                 showReqMessage('');
                 loadItems();
-                loadMyReqs();
+                setTimeout(loadMyReqs, 400);
             } else {
                 $('#reqModalMsg').removeClass('d-none').text(res.message || 'Request failed.');
             }

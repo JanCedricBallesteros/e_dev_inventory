@@ -149,12 +149,17 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                     <input type="text" class="form-control" id="propertyCodeField" placeholder="AST-XXX-0001 ... AST-XXX-000N" readonly>
                                 </div>
 
+                                <div class="col-12">
+                                    <label class="form-label fw-semibold">Item Description</label>
+                                    <textarea class="form-control" name="item_description" id="itemDescription" rows="2" placeholder="Describe the item" required></textarea>
+                                </div>
+
                                 <input type="hidden" name="number_of_units" id="numberOfUnits" value="1">
                                 <input type="hidden" name="serial_numbers_json" id="serialNumbersJson" value="[]">
                                 <div class="col-md-4">
-                                    <label class="form-label fw-semibold">Unit</label>
+                                    <label class="form-label fw-semibold">Unit (measurement)</label>
                                     <select class="form-select" name="unit" id="unitSelect" required>
-                                        <option value="">Select or type unit</option>
+                                        <option value="">Select existing or type a new unit</option>
                                     </select>
                                 </div>
                                 <div class="col-md-4">
@@ -167,19 +172,14 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                 </div>
 
                                 <div class="col-12">
-                                    <label class="form-label fw-semibold">Item Description</label>
-                                    <textarea class="form-control" name="item_description" id="itemDescription" rows="2" placeholder="Describe the item" required></textarea>
-                                </div>
-
-                                <div class="col-12">
                                     <div class="d-flex align-items-center justify-content-between mb-1">
-                                        <label class="form-label fw-semibold mb-0">Unit Rows</label>
+                                        <label class="form-label fw-semibold mb-0">Quantity Rows</label>
                                         <button type="button" class="btn btn-sm btn-outline-primary" id="addUnitRowBtn">
-                                            <i class="bi bi-plus-lg"></i> Add Row
+                                            <i class="bi bi-plus-lg"></i> Add Quantity
                                         </button>
                                     </div>
                                     <div id="unitRows" class="d-flex flex-column gap-2"></div>
-                                    <div class="small text-muted mt-1">Each row = one item unit to be created.</div>
+                                    <div class="small text-muted mt-1">Each row = one item quantity to be created.</div>
                                 </div>
 
                                 <div class="col-12">
@@ -370,14 +370,14 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                         <div class="col-md-6"><span class="text-muted">Unit:</span> <span class="fw-semibold" id="reviewUnit"></span></div>
                         <div class="col-md-6"><span class="text-muted">Source of Fund:</span> <span class="fw-semibold" id="reviewSource"></span></div>
                         <div class="col-md-6"><span class="text-muted">Cost:</span> <span class="fw-semibold" id="reviewCost"></span></div>
-                        <div class="col-md-6"><span class="text-muted">Units to Create:</span> <span class="fw-semibold" id="reviewUnits"></span></div>
+                        <div class="col-md-6"><span class="text-muted">Quantities to Create:</span> <span class="fw-semibold" id="reviewUnits"></span></div>
                         <div class="col-md-6"><span class="text-muted">Property Code Range:</span> <span class="fw-semibold" id="reviewRange"></span></div>
                     </div>
                     <div class="review-table-wrap">
                         <table class="table table-sm table-striped mb-0">
                             <thead class="table-light">
                                 <tr>
-                                    <th style="width:80px;">Unit #</th>
+                                    <th style="width:90px;">Quantity #</th>
                                     <th style="width:260px;">Property Code</th>
                                     <th>Serial Number</th>
                                 </tr>
@@ -469,14 +469,14 @@ function loadUnits() {
     $.post(PROCESS_URL, { action: 'list_units' }, function(res) {
         if (res.success) {
             const units = res.data || [];
-            const options = ['<option value="">Select or type unit</option>'];
+            const options = ['<option value="">Select existing or type a new unit</option>'];
             units.forEach(unit => {
                 options.push(`<option value="${unit}">${unit}</option>`);
             });
             $('#unitSelect').html(options.join(''));
 
             $('#unitSelect').select2({
-                placeholder: 'Select or type unit',
+                placeholder: 'Select existing or type a new unit',
                 allowClear: true,
                 tags: true,
                 width: '100%'
@@ -544,7 +544,7 @@ function addUnitRow(serialVal = '') {
         <div class="unit-row border rounded p-2">
             <div class="row g-2 align-items-center">
                 <div class="col-sm-3 col-md-2">
-                    <span class="badge bg-light text-dark border">Unit ${idx}</span>
+                    <span class="badge bg-light text-dark border">Quantity ${idx}</span>
                 </div>
                 <div class="col-sm-9 col-md-8">
                     <input type="text" class="form-control form-control-sm serial-row-input" maxlength="150" placeholder="Serial number (optional)" value="${serialVal}">
@@ -561,7 +561,7 @@ function addUnitRow(serialVal = '') {
 
 function refreshUnitRowLabels() {
     $('#unitRows .unit-row').each(function(i) {
-        $(this).find('.badge').text('Unit ' + (i + 1));
+        $(this).find('.badge').text('Quantity ' + (i + 1));
     });
 }
 
@@ -602,7 +602,7 @@ function collectAddItemDraft() {
         property_number: ($('#propertyNumberField').val() || '').trim().toUpperCase(),
         item_description: ($('#itemDescription').val() || '').trim(),
         unit: ($('#unitSelect').val() || '').trim(),
-        unit_label: unitLabelRaw && unitLabelRaw !== 'Select or type unit' ? unitLabelRaw : '',
+        unit_label: unitLabelRaw && unitLabelRaw !== 'Select existing or type a new unit' ? unitLabelRaw : '',
         source_of_fund: ($('#sourceOfFund').val() || '').trim(),
         cost_value: ($('#costValue').val() || '').trim(),
         serial_rows: serialRows,
@@ -616,8 +616,8 @@ function validateAddItemDraft(draft) {
     if (!/^[A-Za-z0-9]+$/.test(draft.property_number)) return 'Property number must contain letters and numbers only.';
     if (!draft.item_description) return 'Item description is required.';
     if (!draft.unit) return 'Unit is required.';
-    if (draft.number_of_units <= 0) return 'Please add at least one unit row.';
-    if (draft.number_of_units > 200) return 'Maximum 200 units per add is allowed.';
+    if (draft.number_of_units <= 0) return 'Please add at least one quantity row.';
+    if (draft.number_of_units > 200) return 'Maximum 200 quantity rows per add is allowed.';
     return '';
 }
 
@@ -932,7 +932,12 @@ function initTable() {
                 const v = cell.getValue();
                 return v && String(v).trim() !== '' ? v : '-';
             }},
-            { title: 'Qty', field: 'quantity', width: 80, hozAlign: 'center' },
+            { title: 'Qty / Unit', field: 'quantity', width: 110, hozAlign: 'center', headerFilter: 'number', headerFilterPlaceholder: '<= qty', headerFilterFunc: '<=', formatter: function(cell){
+                const row = cell.getRow().getData();
+                const qty = row.quantity !== null && row.quantity !== undefined ? parseInt(row.quantity, 10) : '';
+                const unit = row.unit ? String(row.unit) : '';
+                return `<div class="text-center">${qty}${unit ? ' <span class="text-muted">' + escapeHtml(unit) + '</span>' : ''}</div>`;
+            }},
             { title: 'Allowed Status', field: 'allowed_status_names', width: 180, headerFilter: 'input', headerFilterPlaceholder: 'Filter...', formatter: function(cell){
                 const v = cell.getValue();
                 if (!v) return '-';
@@ -940,7 +945,6 @@ function initTable() {
                 const html = parts.map(p => `<div class="text-muted small" style="line-height:1.3;">${p}</div>`).join('');
                 return html;
             }},
-            { title: 'Unit', field: 'unit', width: 90, headerFilter: 'input', headerFilterPlaceholder: 'Filter...' },
             { title: 'Source', field: 'source_of_fund', width: 130, headerFilter: 'input', headerFilterPlaceholder: 'Filter...' },
             { title: 'Cost', field: 'cost_value', width: 110, headerFilter: 'input', headerFilterPlaceholder: 'Filter...', formatter: function(cell){
                 const v = cell.getValue();

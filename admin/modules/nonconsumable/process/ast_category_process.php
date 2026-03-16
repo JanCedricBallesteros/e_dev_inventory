@@ -95,6 +95,13 @@ try {
                 json_response(['success' => false, 'message' => 'Category name is required.'], 422);
             }
 
+            // Prevent duplicate names (case-insensitive)
+            $dupSql = "SELECT category_id FROM ast_inventory_category WHERE LOWER(item_category_name) = LOWER('" . _esc($item_category_name) . "') LIMIT 1";
+            $dupRes = call_mysql_query($dupSql);
+            if ($dupRes && mysqli_num_rows($dupRes) > 0) {
+                json_response(['success' => false, 'message' => 'Category name already exists.'], 422);
+            }
+
             // Handle image upload
             $photoName = null;
             if (isset($_FILES['category_photo']) && $_FILES['category_photo']['error'] === UPLOAD_ERR_OK) {
@@ -172,6 +179,13 @@ try {
                 json_response(['success' => false, 'message' => 'Category name is required.'], 422);
             }
 
+            // Enforce unique category name (case-insensitive) excluding current record
+            $dupSql = "SELECT category_id FROM ast_inventory_category WHERE LOWER(item_category_name) = LOWER('" . _esc($item_category_name) . "') AND category_id <> {$category_id} LIMIT 1";
+            $dupRes = call_mysql_query($dupSql);
+            if ($dupRes && mysqli_num_rows($dupRes) > 0) {
+                json_response(['success' => false, 'message' => 'Category name already exists.'], 422);
+            }
+
             // Get current photo + name for audit log
             $sqlGet = "SELECT item_category_name, category_photo FROM ast_inventory_category WHERE category_id = {$category_id} LIMIT 1";
             $resGet = call_mysql_query($sqlGet);
@@ -234,6 +248,7 @@ try {
             $rowIndex = 0;
             $insertedNames = [];
             $skippedNames = [];
+            $errorRows = [];
 
             // Pull existing names for fast duplicate checks
             $existingNames = [];
@@ -252,6 +267,7 @@ try {
                 if (empty($name)) {
                     $skipped++;
                     $errors[] = "Row {$rowIndex}: Category name is required.";
+                    $errorRows[] = array('row' => $rowIndex, 'name' => '', 'reason' => 'required');
                     continue;
                 }
 
@@ -259,7 +275,8 @@ try {
                 if (isset($existingNames[$nameKey])) {
                     $skipped++;
                     $skippedNames[] = $name . ' (duplicate)';
-                    $errors[] = "Row {$rowIndex}: Category name already exists.";
+                    $errors[] = "\"{$name}\" category name already exists.";
+                    $errorRows[] = array('row' => $rowIndex, 'name' => $name, 'reason' => 'duplicate');
                     continue;
                 }
 
@@ -291,7 +308,8 @@ try {
                     }
                     $skipped++;
                     $skippedNames[] = $name . ' (insert failed)';
-                    $errors[] = "Row {$rowIndex}: Failed to insert.";
+                    $errors[] = "Row {$rowIndex}: ({$name}) failed to insert.";
+                    $errorRows[] = array('row' => $rowIndex, 'name' => $name, 'reason' => 'insert_failed');
                 }
             }
 
@@ -312,6 +330,7 @@ try {
                 'inserted' => $inserted,
                 'skipped' => $skipped,
                 'errors' => $errors
+                ,'error_rows' => $errorRows
             ]);
             break;
 
