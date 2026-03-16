@@ -967,7 +967,7 @@ function updateQrPreview(codes) {
 
 function initTable() {
     inventoryTable = new Tabulator('#inventoryTable', {
-        height: "600px",
+        height: "auto",
         ajaxURL: PROCESS_URL,
         ajaxParams: { action: 'list_items', limit: 200 },
         ajaxConfig: 'POST',
@@ -977,13 +977,15 @@ function initTable() {
         pagination: 'local',
         paginationSize: 10,
         paginationSizeSelector: [5, 10, 20, 50, true],
+        paginationCounter: 'rows',
         ajaxResponse: function(url, params, response) {
             return response.data || [];
         },
         columns: [
             { title: 'Property Code', field: 'property_code', width: 200, headerFilter: 'input', headerFilterPlaceholder: 'Filter...', formatter: function(cell){
                 const val = cell.getValue();
-                return `<span class="badge bg-light text-dark border badge-code">${val}</span>`;
+                const safe = escapeHtml(val || '');
+                return safe || '<span class="text-muted">-</span>';
             }},
             { title: 'Category', field: 'item_category_name', width: 170, headerFilter: 'input', headerFilterPlaceholder: 'Filter...' },
             { title: 'Description', field: 'item_description', widthGrow: 2, headerFilter: 'input', headerFilterPlaceholder: 'Filter...' },

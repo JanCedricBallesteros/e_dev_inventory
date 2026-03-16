@@ -569,6 +569,7 @@ function initTable() {
         pagination: "local",
         paginationSize: 10,
         paginationSizeSelector: [5, 10, 20, 50, true],
+        paginationCounter: "rows",
         selectable: true,
         groupBy: "item_category_name",
         groupHeader: function(value, count, data) {

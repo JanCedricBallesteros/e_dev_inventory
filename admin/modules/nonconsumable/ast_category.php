@@ -235,6 +235,7 @@ function initTable() {
         pagination: "local",
         paginationSize: 10,
         paginationSizeSelector: [5, 10, 20, 50, true],
+        paginationCounter: "rows",
         columns: [
             {
                 title: "Image",
