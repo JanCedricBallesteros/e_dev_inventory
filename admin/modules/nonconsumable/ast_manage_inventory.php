@@ -908,6 +908,7 @@ function updateQrPreview(codes) {
 
 function initTable() {
     inventoryTable = new Tabulator('#inventoryTable', {
+        height: "600px",
         ajaxURL: PROCESS_URL,
         ajaxParams: { action: 'list_items', limit: 200 },
         ajaxConfig: 'POST',
