@@ -83,6 +83,18 @@ $isAdmin = role_has("ADMIN");
         .pill-critical { background: #fef3c7; color: #92400e; }
         .pill-out { background: #fee2e2; color: #991b1b; }
         .pill-unavailable { background: #e5e7eb; color: #374151; }
+
+        /* Camera preview copied from csm_manage_inventory.php */
+        #preview-wrapper {
+            width: 100%;
+            max-width: 420px;
+            margin: 0 auto;
+            position: relative;
+            background: #000;
+            border-radius: 10px;
+            overflow: hidden;
+            aspect-ratio: 4 / 3;
+        }
     </style>
 </head>
 
@@ -319,36 +331,33 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
     </section>
 </main>
 
-<div class="modal fade" id="searchQrModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
+<!-- Scan QR -->
+<div class="modal fade" id="scanQrModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title fw-semibold">
-                    <i class="bi bi-qr-code-scan"></i>&ensp;Scan QR
-                </h5>
+                <h5 class="modal-title fw-semibold"><i class="bi bi-upc-scan"></i>&ensp;Scan QR</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <div class="d-flex gap-2 mb-2">
-                    <select id="searchCameraSelect" class="form-select form-select-sm" style="max-width: 260px;">
+                    <select id="cameraSelect" class="form-select form-select-sm" style="max-width: 260px;">
                         <option value="">Loading cameras...</option>
                     </select>
-                    <button type="button" id="searchBtnStart" class="btn btn-success btn-sm">Start</button>
-                    <button type="button" id="searchBtnStop" class="btn btn-outline-danger btn-sm" disabled>Stop</button>
+                    <button type="button" id="btnStart" class="btn btn-success btn-sm">Start</button>
+                    <button type="button" id="btnStop" class="btn btn-outline-danger btn-sm" disabled>Stop</button>
                 </div>
-
-                <div id="searchPreviewWrapper" style="width:100%;max-width:420px;margin:0 auto;position:relative;background:#000;border-radius:10px;overflow:hidden;aspect-ratio:1;">
-                    <div id="searchPreview" style="position:absolute;top:0;left:0;width:100%;height:100%;"></div>
-                    <div class="scanner-loading" id="searchScannerLoading" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;font-size:14px;z-index:10;text-align:center;">
+                <div id="preview-wrapper">
+                    <div id="preview"></div>
+                    <div class="scanner-loading" id="scannerLoading" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;font-size:14px;z-index:10;text-align:center;">
                         <div>Initializing camera...</div>
                     </div>
                 </div>
-
                 <div class="mt-2 small">
                     <span class="text-muted">Last scanned:</span>
-                    <span id="searchLastScanned" class="fw-semibold">—</span>
+                    <span id="lastScanned" class="fw-semibold">—</span>
                 </div>
-                <div id="searchScanError" class="text-danger small mt-1" style="display:none;"></div>
+                <div id="scanError" class="text-danger small mt-1" style="display:none;"></div>
             </div>
         </div>
     </div>
@@ -358,10 +367,9 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 
 <script src="<?= BASE_URL ?>assets/js/jquery.min.js"></script>
 <script src="<?= BASE_URL ?>assets/js/tabulator.min.js"></script>
-<script src="https://unpkg.com/html5-qrcode"></script>
-<script src="<?= BASE_URL ?>assets/js/qr_search.js"></script>
 <?php include_once DOMAIN_PATH . '/global/include_bottom.php'; ?>
 
+<script src="https://unpkg.com/html5-qrcode"></script>
 <script>
 const BASE_URL = <?= json_encode(BASE_URL); ?>;
 const PROCESS_URL = BASE_URL + 'admin/modules/consumable/process/csm_physical_checking_process.php';
@@ -442,8 +450,8 @@ function initSessionsTable() {
         responsiveLayout: 'collapse',
         placeholder: 'No sessions found',
         pagination: 'local',
-        paginationSize: 5,
-        paginationSizeSelector: [5, 10, 20, 50],
+        paginationSize: 20,
+        paginationSizeSelector: [20, 100, 500, 1000, true],
         columns: [
             {
                 title: 'Series Code',
@@ -496,8 +504,8 @@ function initChecksTable() {
         responsiveLayout: 'collapse',
         placeholder: 'No checked items found',
         pagination: 'local',
-        paginationSize: 10,
-        paginationSizeSelector: [5, 10, 20, 50],
+        paginationSize: 20,
+        paginationSizeSelector: [20, 100, 500, 1000, true],
         ajaxResponse: function(url, params, response) {
             return response.data || [];
         },
@@ -612,22 +620,8 @@ $(document).ready(function() {
     initChecksTable();
     loadSessions();
 
-    if (typeof initQrSearch === 'function') {
-        initQrSearch({
-            searchInput: '#itemCodeInput',
-            onSearch: function(decodedText) {
-                if (!decodedText) return;
-                const code = String(decodedText).trim();
-                $('#itemCodeInput').val(code);
-                resetItemUI();
-                loadItem(code);
-                $('#searchQrModal').modal('hide');
-            }
-        });
-    }
-
-    $('#searchQrModal').on('shown.bs.modal', function() {
-        $('#searchBtnStart').trigger('click');
+    $('#openSearchScanner').on('click', function() {
+        $('#scanQrModal').modal('show');
     });
 
     $('#btnLoadItem').on('click', function(e) {
@@ -742,6 +736,174 @@ $(document).ready(function() {
             search: $('#checkSearch').val().trim()
         }, 'POST');
     });
+});
+
+/* Camera function copied from csm_manage_inventory.php and adapted for this page */
+
+function playBeep() {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AudioContext();
+
+    const oscillator = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    oscillator.type = 'sine';
+    oscillator.frequency.value = 1000;
+    gain.gain.value = 0.15;
+
+    oscillator.connect(gain);
+    gain.connect(ctx.destination);
+
+    oscillator.start();
+    setTimeout(() => {
+        oscillator.stop();
+        ctx.close();
+    }, 120);
+}
+
+let html5QrcodeScanner = null;
+let isScanning = false;
+
+function showScanError(msg) {
+    const errEl = document.getElementById('scanError');
+    const loadingEl = document.getElementById('scannerLoading');
+    errEl.textContent = msg;
+    errEl.style.display = msg ? 'block' : 'none';
+    loadingEl.style.display = 'none';
+    if (msg) console.error('QR Error:', msg);
+}
+
+function setRunning(running) {
+    document.getElementById('btnStart').disabled = running;
+    document.getElementById('btnStop').disabled = !running;
+    document.getElementById('cameraSelect').disabled = running;
+    document.getElementById('scannerLoading').style.display = running ? 'flex' : 'none';
+    isScanning = running;
+}
+
+async function loadCameras() {
+    showScanError('');
+    const cameraSelect = document.getElementById('cameraSelect');
+    cameraSelect.innerHTML = `<option value="">Loading cameras...</option>`;
+
+    try {
+        const cameras = await Html5Qrcode.getCameras();
+        if (!cameras || cameras.length === 0) {
+            cameraSelect.innerHTML = `<option value="">No cameras found</option>`;
+            showScanError('No cameras found. Ensure:\n• Camera is connected\n• Browser has permission to access camera\n• HTTPS is enabled (or localhost)\n• No other app is using the camera');
+            return;
+        }
+
+        cameraSelect.innerHTML = '';
+        cameras.forEach((cam, idx) => {
+            const opt = document.createElement('option');
+            opt.value = cam.id;
+            opt.textContent = cam.label || `Camera ${idx + 1}`;
+            cameraSelect.appendChild(opt);
+        });
+
+        const backCam = cameras.find(c => /back|rear|environment/i.test(c.label || ''));
+        const defaultCam = backCam ? backCam.id : cameras[0].id;
+        cameraSelect.value = defaultCam;
+
+    } catch (e) {
+        cameraSelect.innerHTML = `<option value="">Camera permission denied</option>`;
+        const errMsg = e && e.message ? e.message : String(e);
+        showScanError(`Cannot access cameras: ${errMsg}`);
+    }
+}
+
+async function startScanner() {
+    showScanError('');
+    setRunning(true);
+
+    const cameraSelect = document.getElementById('cameraSelect');
+    const selectedCamId = cameraSelect.value;
+    if (!selectedCamId) {
+        showScanError('Please select a camera first.');
+        setRunning(false);
+        return;
+    }
+
+    if (html5QrcodeScanner) {
+        try { await html5QrcodeScanner.stop(); } catch (e) {}
+    }
+
+    html5QrcodeScanner = new Html5Qrcode('preview');
+
+    const isMobile = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(navigator.userAgent.toLowerCase());
+    let config;
+    if (isMobile) {
+        config = {
+            fps: 15,
+            qrbox: { width: 250, height: 250 },
+            aspectRatio: 1.0,
+            disableFlip: false,
+            showTorchButtonIfSupported: true,
+            supportedScanTypes: []
+        };
+    } else {
+        config = {
+            fps: 10,
+            qrbox: { width: 200, height: 200 },
+            disableFlip: false,
+            showTorchButtonIfSupported: false,
+            supportedScanTypes: []
+        };
+    }
+
+    try {
+        await html5QrcodeScanner.start(
+            selectedCamId,
+            config,
+            (decodedText) => {
+                playBeep();
+                document.getElementById('lastScanned').textContent = decodedText;
+                $('#itemCodeInput').val(decodedText);
+                resetItemUI();
+                loadItem(decodedText);
+                $('#scanQrModal').modal('hide');
+            },
+            (errorMessage) => {}
+        );
+        document.getElementById('scannerLoading').style.display = 'none';
+    } catch (e) {
+        setRunning(false);
+        showScanError('Failed to start camera: ' + (e && e.message ? e.message : String(e)));
+    }
+}
+
+async function stopScanner() {
+    showScanError('');
+    if (!html5QrcodeScanner || !isScanning) return;
+
+    try {
+        await html5QrcodeScanner.stop();
+        setRunning(false);
+    } catch (e) {
+        setRunning(false);
+    }
+}
+
+$('#scanQrModal').on('shown.bs.modal', function () {
+    loadCameras();
+    setRunning(false);
+    document.getElementById('lastScanned').textContent = '—';
+    document.getElementById('preview').innerHTML = '';
+});
+
+$('#btnStart').on('click', startScanner);
+$('#btnStop').on('click', stopScanner);
+
+$('#cameraSelect').on('change', function () {
+    if (isScanning) {
+        stopScanner().then(() => startScanner());
+    }
+});
+
+$('#scanQrModal').on('hidden.bs.modal', function () {
+    stopScanner();
+    document.getElementById('preview').innerHTML = '';
 });
 </script>
 </body>
