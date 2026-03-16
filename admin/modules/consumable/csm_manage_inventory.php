@@ -54,11 +54,11 @@ $categories = getAllCategories();
     -webkit-overflow-scrolling: touch;
 }
 #consumeable-table .tabulator{
-    min-width: 1220px;
+    min-width: 1320px;
 }
 @media (max-width: 576px){
     #consumeable-table .tabulator{
-        min-width: 940px;
+        min-width: 1020px;
     }
     #consumeable-table .tabulator .tabulator-cell,
     #consumeable-table .tabulator .tabulator-col{
@@ -254,6 +254,15 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
       </div>
 
       <div class="card-body mt-3 bg-white">
+        <div class="d-flex flex-wrap gap-2 mb-3">
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="btnShowAllRows">
+            <i class="bi bi-list-ul"></i> Show All
+          </button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="btnResetPagination">
+            <i class="bi bi-arrow-counterclockwise"></i> Reset Pages
+          </button>
+        </div>
+
         <div id="consumeable-table" class="table table-bordered tabulator"></div>
       </div>
 
@@ -304,9 +313,9 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
           <li><b>Item Code</b>: numbers only (or leave blank for auto).</li>
           <li><b>Itemized Description</b>: be specific (model, size, details, notes).</li>
           <li><b>Category</b>: choose the correct category.</li>
-          <li><b>Unit Quantity</b> and <b>Critical Level</b>: verify correctness.</li>
-          <li><b>Available to Issue</b>: set initial available quantity carefully.</li>
-          <li><b>Acquisition Date</b> is auto-set to today when you add the record.</li>
+          <li><b>Cost Value</b>: verify the correct amount.</li>
+          <li><b>Unit</b>: specify the measurement or count type (pcs, box, pack, ream, etc.).</li>
+          <li><b>Quantities</b> and <b>Critical Level</b>: verify correctness.</li>
           <li><b>Allowed Employment Status</b> can be configured later using the <b>Rules</b> button.</li>
         </ul>
       </div>
@@ -359,29 +368,33 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
               <label class="form-label">Itemized Description</label>
               <textarea name="item_description" class="form-control" placeholder="Enter itemized description (include details, specs, notes)" required></textarea>
               <div class="form-text">
-                This is the main item field (item_name is removed in DB). Put the complete details here.
+                This is the main item field. Put the complete details here.
               </div>
             </div>
 
             <div class="col-md-3">
-              <label class="form-label">Unit Quantity</label>
-              <input type="number" name="unit_quantity" class="form-control" placeholder="Enter Unit Quantity" required min="0">
+              <label class="form-label">Cost Value</label>
+              <input type="number" step="0.01" name="cost_value" class="form-control" placeholder="Enter Cost Value" required min="0">
             </div>
 
             <div class="col-md-3">
-              <label class="form-label">Available to Issue</label>
-              <input type="number" name="current_unit_quantity" class="form-control" placeholder="Enter Available to Issue" required min="0">
-              <div class="form-text">This can be updated later using the separate “Available” button.</div>
+              <label class="form-label">Unit</label>
+              <input type="text" name="unit" class="form-control" placeholder="e.g. pcs, box, pack" required>
             </div>
 
-            <div class="col-md-3">
+            <div class="col-md-2">
+              <label class="form-label">Total Quantity</label>
+              <input type="number" name="unit_quantity" class="form-control" placeholder="0" required min="0">
+            </div>
+
+            <div class="col-md-2">
+              <label class="form-label">Available Qty</label>
+              <input type="number" name="current_unit_quantity" class="form-control" placeholder="0" required min="0">
+            </div>
+
+            <div class="col-md-2">
               <label class="form-label">Critical Level</label>
-              <input type="number" name="unit_crit_level" class="form-control" placeholder="Enter Critical Level" required min="0">
-            </div>
-
-            <div class="col-md-3">
-              <label class="form-label">Item Cost</label>
-              <input type="number" step="0.01" name="item_cost" class="form-control" placeholder="Enter Item Cost" required min="0">
+              <input type="number" name="unit_crit_level" class="form-control" placeholder="0" required min="0">
             </div>
 
             <div class="col-md-12">
@@ -452,21 +465,26 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
             </div>
 
             <div class="col-md-3">
-              <label class="form-label">Unit Quantity</label>
-              <input type="number" name="unit_quantity" id="edit_unit_quantity" class="form-control" required min="0">
+              <label class="form-label">Cost Value</label>
+              <input type="number" step="0.01" name="cost_value" id="edit_cost_value" class="form-control" required min="0">
             </div>
 
             <div class="col-md-3">
+              <label class="form-label">Unit</label>
+              <input type="text" name="unit" id="edit_unit" class="form-control" required>
+            </div>
+
+            <div class="col-md-2">
+              <label class="form-label">Total Quantity</label>
+              <input type="number" name="unit_quantity" id="edit_unit_quantity" class="form-control" required min="0">
+            </div>
+
+            <div class="col-md-2">
               <label class="form-label">Critical Level</label>
               <input type="number" name="unit_crit_level" id="edit_unit_crit_level" class="form-control" required min="0">
             </div>
 
-            <div class="col-md-3">
-              <label class="form-label">Item Cost</label>
-              <input type="number" step="0.01" name="item_cost" id="edit_item_cost" class="form-control" required min="0">
-            </div>
-
-            <div class="col-md-3">
+            <div class="col-md-2">
               <label class="form-label">Source of Funds</label>
               <input type="text" name="source_of_funds" id="edit_source_of_funds" class="form-control">
             </div>
@@ -497,7 +515,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title fw-semibold">
-          <i class="bi bi-box-arrow-in-down"></i>&ensp;Update Available to Issue
+          <i class="bi bi-box-arrow-in-down"></i>&ensp;Update Available Quantity
         </h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
@@ -509,10 +527,10 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
             <div class="fw-semibold" id="avail_item_label">—</div>
           </div>
 
-          <label class="form-label">Available to Issue</label>
+          <label class="form-label">Available Quantity</label>
           <input type="number" class="form-control" name="current_unit_quantity" id="avail_current_unit_quantity" min="0" required>
 
-          <div class="form-text">This updates only the “Available to Issue” value.</div>
+          <div class="form-text">This updates only the available quantity value.</div>
 
           <div id="availableMsg" class="mt-2"></div>
 
@@ -526,7 +544,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
   </div>
 </div>
 
-<!-- AST-STYLE RULES MODAL -->
+<!-- RULES MODAL -->
 <div class="modal fade ast-rules-modal" id="availabilityRulesModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered">
     <div class="modal-content">
@@ -552,9 +570,10 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
             <input type="number" class="form-control" name="current_unit_quantity" id="rules_current_unit_quantity" min="0">
             <div class="ast-rule-help">
               <div>Must be between 0 and total quantity.</div>
-              <div>Single set: quantity will update this item's current available qty.</div>
+              <div>Single set: quantity will update this item's available quantity.</div>
               <div>Single set: status is auto-computed from quantity and rules.</div>
               <div>Total Qty: <span id="rules_total_qty_text">-</span></div>
+              <div>Unit: <span id="rules_unit_text">-</span></div>
             </div>
           </div>
 
@@ -781,7 +800,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                 Also accepts: <code>0001</code>, <code>CSM0001</code>, <code>CSM-0001</code>, <code> csm 0001 </code>
               </div>
               <div class="small mt-1">
-                Acquisition Date is auto-set to <b>today</b> on insert (no acquisition_date column needed).
+                Acquisition Date is auto-set to <b>today</b> on insert.
               </div>
             </div>
             <a class="btn btn-sm btn-outline-primary"
@@ -828,16 +847,13 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
         <div class="mt-3">
           <details>
             <summary class="small text-muted">Show expected CSV columns</summary>
-            <pre class="small mb-0 mt-2">inventory_system_item_code,item_description,item_category_code,unit_quantity,current_unit_quantity,unit_crit_level,item_cost,source_of_funds,status,allowed_employment_status</pre>
+            <pre class="small mb-0 mt-2">inventory_system_item_code,item_description,item_category_code,cost_value,unit,unit_quantity,current_unit_quantity,unit_crit_level,source_of_funds,status,allowed_employment_status</pre>
           </details>
           <div class="small text-muted mt-2">
-            <b>inventory_system_item_code</b>: numbers only (or blank). Example: <code>1</code> becomes <code>CSM-0002-0001</code> (depending on category).
+            <b>inventory_system_item_code</b>: numbers only (or blank).
           </div>
           <div class="small text-muted mt-1">
             <b>allowed_employment_status</b>: optional. Examples: <code>ALL</code>, <code>NONE</code>, <code>{"teaching":[1],"non_teaching":[2]}</code>.
-          </div>
-          <div class="small text-muted mt-1">
-            <b>status</b>: numeric. Use <code>1</code> for Available and <code>0</code> for Unavailable. Final status is still auto-computed by qty, critical level, and rules.
           </div>
         </div>
       </div>
@@ -891,6 +907,10 @@ function badgeStatusHtml(status){
   if(v === 2) return '<span class="badge bg-warning text-dark">Stock Critical</span>';
   if(v === 3) return '<span class="badge bg-danger">Out of Stock</span>';
   return '<span class="badge bg-secondary">Unavailable</span>';
+}
+function formatMoney(v){
+  let n = parseFloat(v || 0);
+  return '₱ ' + n.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
 }
 function applyItemCodeSmartFilter(input){
   const raw = String(input ?? '').trim();
@@ -959,11 +979,9 @@ function makeSelect2Data() {
 
 function normalizeNoneSelection($el, changedId) {
   let vals = ($el.val() || []).map(String);
-
   if (!vals.length) return;
 
   const hasNone = vals.includes('NONE');
-
   if (!hasNone) return;
 
   if (changedId === 'NONE') {
@@ -1066,6 +1084,7 @@ function resetRulesModalState(){
   $('#rules_item_count').text('1 item selected');
   $('#rules_current_unit_quantity').val('');
   $('#rules_total_qty_text').text('-');
+  $('#rules_unit_text').text('-');
   $('#rules_crit_level_text').text('0');
   $('#rules_status_text').html('—');
   if ($('#rules_teaching_status').hasClass('select2-hidden-accessible')) {
@@ -1099,6 +1118,7 @@ function openAvailabilityRulesModal(id){
       $('#rules_item_count').text('1 item selected');
       $('#rules_current_unit_quantity').val(d.current_unit_quantity ?? 0);
       $('#rules_total_qty_text').text(d.unit_quantity ?? '-');
+      $('#rules_unit_text').text(d.unit || '-');
       $('#rules_crit_level_text').text(d.unit_crit_level ?? 0);
       $('#rules_status_text').html(badgeStatusHtml(d.status));
 
@@ -1168,7 +1188,6 @@ var columns = [
 
   {title:"Item Code", field:"inventory_system_item_code", minWidth:170},
   {title:"Itemized Description", field:"item_description", minWidth:320, formatter:"textarea"},
-
   {
     title:"Category",
     field:"item_category_code",
@@ -1178,9 +1197,9 @@ var columns = [
       return escHtml(groupLabel(d.item_category_code || '', d.item_category_name || ''));
     }
   },
-
-  {title:"Actual Qty", field:"unit_quantity", align:"right", minWidth:90},
-  {title:"Available to Issue", field:"current_unit_quantity", align:"right", minWidth:150},
+  {title:"Unit", field:"unit", minWidth:110, hozAlign:"center"},
+  {title:"Total Qty", field:"unit_quantity", align:"right", minWidth:100},
+  {title:"Available Qty", field:"current_unit_quantity", align:"right", minWidth:120},
 
   {
     title:"Status",
@@ -1204,7 +1223,16 @@ var columns = [
     }
   },
 
-  {title:"Cost", field:"item_cost", align:"right", formatter:"money", formatterParams:{precision:2}, minWidth:110},
+  {
+    title:"Cost Value",
+    field:"cost_value",
+    minWidth:130,
+    hozAlign:"right",
+    formatter:function(cell){
+      return formatMoney(cell.getValue());
+    }
+  },
+
   {title:"Source of Funds", field:"source_of_funds", minWidth:160},
   {title:"Acquisition Date", field:"acquisition_date", minWidth:130},
   {title:"Created At", field:"created_at", minWidth:160},
@@ -1268,29 +1296,22 @@ var table = new Tabulator("#consumeable-table", {
     const qty = data.reduce((sum, r) => sum + (parseInt(r.unit_quantity, 10) || 0), 0);
     return `${escHtml(value)} <span class="text-muted small">(${count} items, Qty ${qty})</span>`;
   },
-  groupStartOpen: true,
-  dataLoaded: function(data){
-    updatePaginationAllOption(data);
-  },
-  dataFiltered: function(filters, rows){
-    updatePaginationAllOption(rows.map(r => r.getData ? r.getData() : r));
-  }
+  groupStartOpen: true
 });
 
 window.table = table;
 
-function updatePaginationAllOption(dataRows){
-  const totalRows = Array.isArray(dataRows) ? dataRows.length : 0;
-
-  $('#pageSizeAllOption').remove();
-
-  const $select = $('#consumeable-table').find('select.tabulator-page-size');
-  if (!$select.length) return;
-
-  if (totalRows > 0) {
-    $select.append(`<option id="pageSizeAllOption" value="${totalRows}">All</option>`);
+$('#btnShowAllRows').off('click').on('click', function(){
+  const rowCount = table.getDataCount("active");
+  if (rowCount > 0) {
+    table.setPageSize(rowCount);
   }
-}
+});
+
+$('#btnResetPagination').off('click').on('click', function(){
+  table.setPageSize(20);
+  table.setPage(1);
+});
 
 function refreshTableData(){
   $.ajax({
@@ -1301,9 +1322,7 @@ function refreshTableData(){
     success: function(res){
       if(res && res.success){
         const rows = res.data || [];
-        table.setData(rows).then(function(){
-          updatePaginationAllOption(rows);
-        });
+        table.setData(rows);
       }
     },
     error: function(xhr){
@@ -1400,9 +1419,10 @@ function openEditModal(id){
       $('#edit_inventory_system_item_code').val(numericPart);
       $('#edit_item_description').val(d.item_description || '');
       $('#edit_item_category_code').val(d.item_category_code || '');
+      $('#edit_cost_value').val(d.cost_value ?? 0);
+      $('#edit_unit').val(d.unit || '');
       $('#edit_unit_quantity').val(d.unit_quantity ?? 0);
       $('#edit_unit_crit_level').val(d.unit_crit_level ?? 0);
-      $('#edit_item_cost').val(d.item_cost ?? 0);
       $('#edit_source_of_funds').val(d.source_of_funds || '');
 
       $('#editRecordModal').modal('show');
@@ -1451,7 +1471,7 @@ function openAvailableModal(id){
     success: function(res){
       if(res && res.success){
         const d = res.data || {};
-        $('#avail_item_label').text(`${d.inventory_system_item_code || ''} — ${String(d.item_description || '').slice(0, 60)}`);
+        $('#avail_item_label').text(`${d.inventory_system_item_code || ''} — ${String(d.item_description || '').slice(0, 60)} (${d.unit || '-'})`);
         $('#avail_current_unit_quantity').val(d.current_unit_quantity ?? 0);
       }else{
         $('#avail_item_label').text(`ID #${id}`);
