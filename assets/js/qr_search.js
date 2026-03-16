@@ -8,7 +8,7 @@
         const gain = ctx.createGain();
         oscillator.type = 'sine';
         oscillator.frequency.value = 1000;
-        gain.gain.value = 0.15;
+        gain.gain.value = 5;
         oscillator.connect(gain);
         gain.connect(ctx.destination);
         oscillator.start();

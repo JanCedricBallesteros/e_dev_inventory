@@ -348,6 +348,38 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
     </div>
 </div>
 
+<!-- SERIAL BARCODE SCAN MODAL -->
+<div class="modal fade" id="serialScanModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-semibold"><i class="bi bi-upc-scan"></i>&ensp;Scan Barcode for Serial No.</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex gap-2 mb-2">
+                    <select id="serialCameraSelect" class="form-select form-select-sm" style="max-width: 260px;">
+                        <option value="">Loading cameras...</option>
+                    </select>
+                    <button type="button" id="serialBtnStart" class="btn btn-success btn-sm">Start</button>
+                    <button type="button" id="serialBtnStop" class="btn btn-outline-danger btn-sm" disabled>Stop</button>
+                </div>
+                <div style="width:100%;max-width:420px;aspect-ratio:1;background:#000;border-radius:10px;overflow:hidden;position:relative;margin:0 auto;">
+                    <div id="serialPreview" style="position:absolute;inset:0;"></div>
+                    <div id="serialScannerLoading" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;color:#fff;font-size:14px;">
+                        Initializing camera...
+                    </div>
+                </div>
+                <div class="mt-2 small">
+                    <span class="text-muted">Last scanned:</span>
+                    <span id="serialScanLast" class="fw-semibold">-</span>
+                </div>
+                <div id="serialScanError" class="text-danger small mt-1" style="display:none;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- REVIEW ADD ITEM MODAL -->
 <div class="modal fade" id="reviewAddItemModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
@@ -418,6 +450,28 @@ let propertyCodeXhr = null;
 let pendingAddItemDraft = null;
 let isSavingAddItem = false;
 let pageMsgTimeout = null;
+let serialScanner = null;
+let serialTargetInput = null;
+let lastSerialScan = '';
+let lastSerialScanAt = 0;
+
+function playSerialBeep(kind) {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    const ctx = new AudioContext();
+    const oscillator = ctx.createOscillator();
+    const gain = ctx.createGain();
+    oscillator.type = 'sine';
+    oscillator.frequency.value = (kind === 'error') ? 330 : 900;
+    gain.gain.value = 5;
+    oscillator.connect(gain);
+    gain.connect(ctx.destination);
+    oscillator.start();
+    setTimeout(() => {
+        oscillator.stop();
+        ctx.close();
+    }, kind === 'error' ? 220 : 120);
+}
 
 
 function showMessage(target, type, text) {
@@ -547,7 +601,12 @@ function addUnitRow(serialVal = '') {
                     <span class="badge bg-light text-dark border">Quantity ${idx}</span>
                 </div>
                 <div class="col-sm-9 col-md-8">
-                    <input type="text" class="form-control form-control-sm serial-row-input" maxlength="150" placeholder="Serial number (optional)" value="${serialVal}">
+                    <div class="input-group input-group-sm">
+                        <input type="text" class="form-control serial-row-input" maxlength="150" placeholder="Serial number (optional)" value="${serialVal}">
+                        <button class="btn btn-outline-secondary btn-scan-serial" type="button" title="Scan barcode for serial">
+                            <i class="bi bi-upc-scan"></i> Scan
+                        </button>
+                    </div>
                 </div>
                 <div class="col-md-2 text-end">
                     <button type="button" class="btn btn-sm btn-outline-danger btn-remove-unit-row">Remove</button>
@@ -1022,6 +1081,174 @@ function loadItemByCode(code) {
     }, 'json');
 }
 
+function setupSerialScannerModal() {
+    if (typeof Html5Qrcode === 'undefined') return;
+
+    function showSerialMessage(message) {
+        if (!message) return;
+        $('#serialScanError').text(message).show();
+        playSerialBeep('error');
+    }
+
+    function isDuplicateInBatch(serial, currentInput) {
+        const serialNorm = String(serial || '').trim().toLowerCase();
+        if (!serialNorm) return false;
+        let duplicate = false;
+        $('#unitRows .serial-row-input').each(function() {
+            if (currentInput && this === currentInput[0]) return;
+            const other = String($(this).val() || '').trim().toLowerCase();
+            if (other && other === serialNorm) {
+                duplicate = true;
+                return false;
+            }
+        });
+        return duplicate;
+    }
+
+    function checkSerialExistsInDb(serial, currentInput, onSuccess) {
+        if (!serial) return;
+        const now = Date.now();
+        if (serial === lastSerialScan && (now - lastSerialScanAt) < 1500) {
+            return;
+        }
+        lastSerialScan = serial;
+        lastSerialScanAt = now;
+        $('#serialScanError').hide();
+        if (isDuplicateInBatch(serial, currentInput)) {
+            showSerialMessage('Duplicate serial number detected in this batch.');
+            return;
+        }
+        $.post(PROCESS_URL, { action: 'check_serial_exists', serial_number: serial }, function(res) {
+            if (res && res.success && res.exists) {
+                showSerialMessage('Serial number already exists in inventory.');
+                return;
+            }
+            if (typeof onSuccess === 'function') {
+                playSerialBeep('success');
+                onSuccess();
+            }
+        }, 'json').fail(function() {
+            showSerialMessage('Unable to validate serial number. Try again.');
+        });
+    }
+
+    function pickPreferredCamera(cameras) {
+        if (!Array.isArray(cameras) || cameras.length === 0) return '';
+        const preferred = cameras.find(c => /back|rear|environment/i.test(c.label || ''));
+        return (preferred ? preferred.id : cameras[0].id) || '';
+    }
+
+    function startSerialScanner(cameraId) {
+        if (serialScanner) return;
+        $('#serialScanError').hide();
+        $('#serialScannerLoading').show();
+        $('#serialBtnStart').prop('disabled', true);
+        $('#serialBtnStop').prop('disabled', false);
+
+        serialScanner = new Html5Qrcode('serialPreview');
+        const formats = [
+            Html5QrcodeSupportedFormats.CODE_128,
+            Html5QrcodeSupportedFormats.CODE_39,
+            Html5QrcodeSupportedFormats.CODE_93,
+            Html5QrcodeSupportedFormats.EAN_13,
+            Html5QrcodeSupportedFormats.EAN_8,
+            Html5QrcodeSupportedFormats.UPC_A,
+            Html5QrcodeSupportedFormats.UPC_E,
+            Html5QrcodeSupportedFormats.ITF,
+            Html5QrcodeSupportedFormats.CODABAR
+        ];
+        const config = { fps: 10, qrbox: 250, formatsToSupport: formats };
+        const cameraConfig = cameraId ? { deviceId: { exact: cameraId } } : { facingMode: "environment" };
+        serialScanner.start(
+            cameraConfig,
+            config,
+            function(decodedText, decodedResult) {
+                const formatName = decodedResult && decodedResult.result && decodedResult.result.format
+                    ? decodedResult.result.format.formatName
+                    : '';
+                if (String(formatName).toUpperCase() === 'QR_CODE') {
+                    return;
+                }
+                $('#serialScanLast').text(decodedText || '-');
+                if (!serialTargetInput) {
+                    return;
+                }
+                const raw = decodedText || '';
+                checkSerialExistsInDb(raw, serialTargetInput, function() {
+                    serialTargetInput.val(raw).trigger('input');
+                    stopSerialScanner();
+                    $('#serialScanModal').modal('hide');
+                });
+            },
+            function() {}
+        ).then(function() {
+            $('#serialScannerLoading').hide();
+        }).catch(function() {
+            $('#serialScanError').text('Unable to start scanner.').show();
+            $('#serialScannerLoading').hide();
+            stopSerialScanner();
+        });
+    }
+
+    function stopSerialScanner() {
+        if (serialScanner) {
+            serialScanner.stop().then(function() {
+                serialScanner.clear();
+                serialScanner = null;
+            }).catch(function() {
+                serialScanner = null;
+            });
+        }
+        $('#serialBtnStart').prop('disabled', false);
+        $('#serialBtnStop').prop('disabled', true);
+        $('#serialScannerLoading').hide();
+    }
+
+    $('#serialBtnStart').on('click', function() {
+        const cameraId = $('#serialCameraSelect').val();
+        if (!cameraId) {
+            $('#serialScanError').text('Select a camera first.').show();
+            return;
+        }
+        startSerialScanner(cameraId);
+    });
+
+    $('#serialBtnStop').on('click', function() {
+        stopSerialScanner();
+    });
+
+    $('#serialScanModal').on('hidden.bs.modal', function() {
+        stopSerialScanner();
+        serialTargetInput = null;
+    }).on('shown.bs.modal', function() {
+        $('#serialScanLast').text('-');
+        $('#serialScanError').hide();
+        $('#serialCameraSelect').html('<option value="">Loading cameras...</option>');
+        Html5Qrcode.getCameras().then(function(cameras) {
+            if (!cameras || !cameras.length) {
+                $('#serialCameraSelect').html('<option value="">No camera found</option>');
+                return;
+            }
+            const options = cameras.map(function(cam) {
+                return `<option value="${cam.id}">${cam.label || cam.id}</option>`;
+            });
+            $('#serialCameraSelect').html(options.join(''));
+            const preferredId = pickPreferredCamera(cameras);
+            if (preferredId) {
+                $('#serialCameraSelect').val(preferredId);
+            }
+            startSerialScanner(preferredId);
+        }).catch(function() {
+            $('#serialCameraSelect').html('<option value="">Unable to access cameras</option>');
+        });
+    });
+
+    $('#unitRows').on('click', '.btn-scan-serial', function() {
+        serialTargetInput = $(this).closest('.input-group').find('.serial-row-input');
+        $('#serialScanModal').modal('show');
+    });
+}
+
     $(document).ready(function() {
         loadCategories();
         loadUnits();
@@ -1029,6 +1256,7 @@ function loadItemByCode(code) {
         initTableLazy();
         resetUnitRows();
         refreshPropertyCode();
+        setupSerialScannerModal();
 
     $('#propertyNumberField').on('keypress', function(e) {
         // Only allow letters and numbers

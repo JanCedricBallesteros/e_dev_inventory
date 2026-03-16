@@ -355,6 +355,19 @@ if ($action === '') {
 
 try {
     switch ($action) {
+        case 'check_serial_exists':
+            $serial = sanitize_serial_number(_post('serial_number'));
+            if ($serial === '') {
+                json_response(['success' => true, 'exists' => false]);
+            }
+            if (!has_serial_number_column()) {
+                json_response(['success' => true, 'exists' => false]);
+            }
+            $serialEsc = _esc($serial);
+            $res = call_mysql_query("SELECT serial_number FROM ast_inventory WHERE serial_number = '{$serialEsc}' LIMIT 1");
+            $exists = ($res && call_mysql_fetch_array($res)) ? true : false;
+            json_response(['success' => true, 'exists' => $exists]);
+            break;
 
         case 'list_categories':
             $sql = "SELECT category_id, item_category_name, category_photo FROM ast_inventory_category ORDER BY item_category_name";
