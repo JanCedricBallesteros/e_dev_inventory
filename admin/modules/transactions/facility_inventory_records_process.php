@@ -127,6 +127,43 @@ if (!fr_required_tables_ready()) {
 
 try {
     switch ($action) {
+        case 'locate_assignment':
+            $item_code = trim((string)_post('item_code'));
+            if ($item_code === '') {
+                json_response(array('success' => false, 'message' => 'Item code is required.'), 422);
+            }
+            $module_type = '';
+            $upper = strtoupper($item_code);
+            if (strpos($upper, 'AST-') === 0) $module_type = 'AST';
+            if (strpos($upper, 'CSM-') === 0) $module_type = 'CSM';
+            $whereModule = $module_type !== '' ? "AND a.module_type = '" . _esc($module_type) . "'" : "";
+
+            $sql = "SELECT
+                        a.assignment_id,
+                        a.module_type,
+                        a.item_code,
+                        a.status,
+                        a.facility_id,
+                        a.unit_id,
+                        f.facility_name,
+                        f.facility_code,
+                        u.unit_name,
+                        u.unit_code
+                    FROM facility_records_assignments a
+                    LEFT JOIN facility_records_facilities f ON f.facility_id = a.facility_id
+                    LEFT JOIN facility_records_units u ON u.unit_id = a.unit_id
+                    WHERE a.item_code = '" . _esc($item_code) . "'
+                      {$whereModule}
+                      AND a.status <> 'RETURNED'
+                    ORDER BY a.issued_at DESC, a.assignment_id DESC
+                    LIMIT 1";
+            $res = call_mysql_query($sql);
+            $row = $res ? call_mysql_fetch_array($res) : null;
+            if (!$row) {
+                json_response(array('success' => false, 'message' => 'No active assignment found for this item.'));
+            }
+            json_response(array('success' => true, 'data' => $row));
+            break;
         case 'list_facilities':
             $sql = "SELECT
                         f.facility_id,

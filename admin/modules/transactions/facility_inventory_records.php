@@ -91,7 +91,12 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                     </div>
                     <div class="card-body mt-3 bg-white">
                         <div class="d-flex gap-2 mb-3">
-                            <input type="text" class="form-control" id="invSearch" placeholder="Search code/description/status...">
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="invSearch" placeholder="Search code/description/status...">
+                                <button class="btn btn-outline-secondary" type="button" id="openInvSearchScanner" title="Scan QR">
+                                    <i class="bi bi-qr-code-scan"></i>
+                                </button>
+                            </div>
                             <button class="btn btn-outline-secondary" id="btnRefreshAssignments">Refresh</button>
                         </div>
                         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
@@ -291,6 +296,38 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
     </div>
 </div>
 
+<!-- ASSIGNMENTS SEARCH QR MODAL -->
+<div class="modal fade" id="invSearchQrModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-semibold"><i class="bi bi-qr-code-scan"></i>&ensp;Scan QR to Search Assignments</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex gap-2 mb-2">
+                    <select id="invSearchCameraSelect" class="form-select form-select-sm" style="max-width: 260px;">
+                        <option value="">Loading cameras...</option>
+                    </select>
+                    <button type="button" id="invSearchBtnStart" class="btn btn-success btn-sm">Start</button>
+                    <button type="button" id="invSearchBtnStop" class="btn btn-outline-danger btn-sm" disabled>Stop</button>
+                </div>
+                <div style="width:100%;max-width:420px;margin:0 auto;position:relative;background:#000;border-radius:10px;overflow:hidden;aspect-ratio:1;">
+                    <div id="invSearchPreview" style="position:absolute;top:0;left:0;width:100%;height:100%;"></div>
+                    <div id="invSearchScannerLoading" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;font-size:14px;z-index:10;text-align:center;">
+                        <div>Initializing camera...</div>
+                    </div>
+                </div>
+                <div class="mt-2 small">
+                    <span class="text-muted">Last scanned:</span>
+                    <span id="invSearchLastScanned" class="fw-semibold">-</span>
+                </div>
+                <div id="invSearchScanError" class="text-danger small mt-1" style="display:none;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
 </body>
 <?php include_once DOMAIN_PATH . '/global/include_bottom.php'; ?>
 <script src="https://unpkg.com/html5-qrcode"></script>
@@ -308,6 +345,7 @@ let selectedUnit = null;
 let assignmentTable = null;
 let assignItemsCache = [];
 let assignItemSearchMap = {};
+let pendingLocateUnitId = null;
 
 function showPageError(msg){
     const el = $('#pageMsg');
@@ -363,11 +401,12 @@ function normalizeScannedCode(raw){
     return text.replace(/\s+/g, ' ').trim();
 }
 
-function loadFacilities(){
+function loadFacilities(cb){
     $.post(PROCESS_URL, { action: 'list_facilities' }, function(res){
         if (!res.success) { showPageError(res.message || 'Failed to load facilities.'); return; }
         facilityList = res.data || [];
         renderFacilities();
+        if (typeof cb === 'function') cb();
     }, 'json').fail(function(xhr){
         const msg = xhr.responseJSON && xhr.responseJSON.message ? xhr.responseJSON.message : 'Server error loading facilities.';
         showPageError(msg);
@@ -411,13 +450,68 @@ function renderFacilities(){
     });
 }
 
-function loadUnits(){
+function loadUnits(cb){
     if (!selectedFacility) return;
     $.post(PROCESS_URL, { action: 'list_units', facility_id: selectedFacility.facility_id }, function(res){
         if (!res.success) { showPageError(res.message || 'Failed to load units.'); return; }
         unitList = res.data || [];
+        if (pendingLocateUnitId) {
+            selectedUnit = unitList.find(x => String(x.unit_id) === String(pendingLocateUnitId)) || null;
+            pendingLocateUnitId = null;
+        }
         renderUnits();
+        if (selectedUnit) {
+            $('#btnAssignItem').prop('disabled', false);
+            const _facCode = selectedFacility ? (selectedFacility.facility_code || '') : '';
+            $('#selectedUnitInfo').text((_facCode ? _facCode + ' / ' : '') + (selectedUnit.unit_code || '') + ' — ' + (selectedUnit.unit_name || ''));
+            $('#selectedManagedBy').text(selectedUnit.unit_manager_name ? 'Managed By: ' + selectedUnit.unit_manager_name : '');
+            loadAssignments();
+        }
+        if (typeof cb === 'function') cb();
     }, 'json');
+}
+
+function locateAssignmentByCode(raw){
+    const code = normalizeScannedCode(raw);
+    if (!code) return;
+    $.post(PROCESS_URL, { action: 'locate_assignment', item_code: code }, function(res){
+        if (!(res && res.success && res.data)) {
+            notifyError((res && res.message) ? res.message : 'No active assignment found.');
+            return;
+        }
+        const loc = res.data;
+        const facilityId = loc.facility_id;
+        const unitId = loc.unit_id;
+        if (!facilityId) {
+            notifyError('Assignment has no facility information.');
+            return;
+        }
+        const focus = function(){
+            selectedFacility = facilityList.find(x => String(x.facility_id) === String(facilityId)) || null;
+            selectedUnit = null;
+            facilityItems = [];
+            assignmentList = [];
+            currentPage = 1;
+            $('#btnAssignItem').prop('disabled', true);
+            $('#selectedUnitInfo').text(selectedFacility ? (selectedFacility.facility_name || '') + ' (' + (selectedFacility.facility_code || '') + ') — All Units' : '');
+            $('#selectedManagedBy').text('Managed By: Multiple');
+            renderFacilities();
+            pendingLocateUnitId = unitId || null;
+            loadUnits(function(){
+                if (!selectedUnit && selectedFacility) {
+                    loadFacilityItems();
+                }
+                $('#invSearch').val(code).trigger('input');
+            });
+        };
+        if (!facilityList.length) {
+            loadFacilities(focus);
+        } else {
+            focus();
+        }
+    }, 'json').fail(function(){
+        notifyError('Server error while locating item.');
+    });
 }
 
 function formatUserOption(u){
@@ -1024,6 +1118,22 @@ $(document).ready(function(){
             lastScannedId: '#assignSearchLastScanned',
             errorId: '#assignSearchScanError',
             loadingId: '#assignSearchScannerLoading'
+        });
+
+        initQrSearch({
+            modalId: '#invSearchQrModal',
+            openButton: '#openInvSearchScanner',
+            searchInput: '#invSearch',
+            onSearch: function () {
+                locateAssignmentByCode($('#invSearch').val() || '');
+            },
+            cameraSelectId: '#invSearchCameraSelect',
+            startBtnId: '#invSearchBtnStart',
+            stopBtnId: '#invSearchBtnStop',
+            previewId: '#invSearchPreview',
+            lastScannedId: '#invSearchLastScanned',
+            errorId: '#invSearchScanError',
+            loadingId: '#invSearchScannerLoading'
         });
     }
 });
