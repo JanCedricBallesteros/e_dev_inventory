@@ -1,9 +1,12 @@
 <?php
 // csm_category.php
-// UPDATED:
-// - Replaced old CSV bulk upload UI with AST-style dynamic bulk row add
-// - Bulk add now posts to csm_category_process.php using action=bulk_add_categories
-// - Supports per-row: Category Name, optional Code, optional Photo
+// UPDATED (v3): Supports DB codes stored as "CSM" + digits with NO max digit restriction (e.g., CSM0001, CSM10000, CSM123456).
+// - UI display still shows "CSM-" + digits (pads to at least 4 for display).
+// - Input no longer restricts to 4 digits.
+// - Bulk instructions updated accordingly.
+// - JS normalization updated to handle:
+//   - stored values like "CSM0001", "CSM-0001", "0001", "1", "CSM10000"
+//   - keeps longer digits (10000 stays 10000)
 
 require_once dirname(__DIR__, 3) . '/config/config.php';
 require GLOBAL_FUNC;
@@ -84,6 +87,7 @@ $categories = getAllCSMCategoriesWithPrimary();
         }
         .view-img-wrap img{ width:100%; height:auto; display:block; }
 
+        /* Inventory assignment block */
         .inv-assign-table td { vertical-align: middle; }
         .inv-assign-thumb{
             width:56px;height:56px;border:1px solid #dee2e6;border-radius:10px;background:#fff;
@@ -117,7 +121,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                         <i class="bi bi-cloud-arrow-up-fill"></i>&ensp;Category Log
                     </button>
                     <button class="btn btn-outline-light btn-sm" data-bs-toggle="modal" data-bs-target="#bulkModal">
-                        <i class="bi bi-file-earmark-plus-fill"></i>&ensp;Bulk
+                        <i class="bi bi-file-earmark-arrow-up-fill"></i>&ensp;Bulk
                     </button>
                 </div>
             </div>
@@ -184,6 +188,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                 <div id="imgMsg" class="mb-2"></div>
                 <div id="imgGrid" class="img-grid"></div>
 
+                <!-- Inventory assignment block -->
                 <hr class="my-3">
 
                 <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
@@ -374,48 +379,55 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
   </div>
 </div>
 
-<!-- BULK ADD MODAL -->
+<!-- BULK UPLOAD MODAL -->
 <div class="modal fade" id="bulkModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title fw-semibold">
-          <i class="bi bi-file-earmark-plus-fill"></i>&ensp;Bulk Add Categories
+          <i class="bi bi-file-earmark-arrow-up-fill"></i>&ensp;Bulk Upload Categories
         </h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
 
       <div class="modal-body">
         <form id="addBulkCategoryForm" enctype="multipart/form-data">
-          <div class="alert alert-info mb-3">
-            <div class="fw-semibold mb-1"><i class="bi bi-info-circle"></i> Bulk Add Notes</div>
-            <ul class="mb-0 small">
-              <li>Add multiple category rows at once.</li>
-              <li><strong>Category Name</strong> is required.</li>
-              <li><strong>Code</strong> is optional. Digits only. Leave blank to auto-generate.</li>
-              <li><strong>Photo</strong> is optional. If uploaded, it will be saved as the initial category image.</li>
-              <li>Duplicate names or codes will be skipped.</li>
-            </ul>
-          </div>
+          <div class="row g-3">
 
-          <div class="mb-2 d-flex justify-content-between align-items-center">
-            <div class="fw-semibold">Rows</div>
-            <button type="button" class="btn btn-sm btn-outline-secondary" id="bulkAddRow">
-              <i class="bi bi-plus-circle"></i> Add Row
-            </button>
-          </div>
+            <div class="alert alert-info mb-3">
+              <div class="fw-semibold mb-1"><i class="bi bi-info-circle"></i> CSV Upload Instructions</div>
+              <ul class="mb-0 small">
+                  <li>File type: <strong>.csv</strong></li>
+                  <li>Columns (order): <strong>Category Name</strong>, <strong>Code</strong></li>
+                  <li><strong>Code</strong> is optional. If blank, system auto-generates.</li>
+                  <li>If provided, <strong>Code</strong> can be digits (e.g., <strong>1</strong>, <strong>0001</strong>, <strong>10000</strong>). The backend will store as <strong>CSM...</strong>.</li>
+                  <li>Display will show <strong>CSM-</strong> + digits (padded to at least 4 for display).</li>
+              </ul>
+            </div>
 
-          <div id="bulkRows" class="d-flex flex-column gap-2"></div>
+            <div class="col-12 col-md-8">
+              <label class="form-label fw-semibold">Upload CSV File</label>
+              <input type="file" class="form-control" name="file"
+                     id="bulkCategoryFile" accept=".csv" required>
+              <small class="text-muted d-block mt-2">
+                CSV format: Category Name, Code (optional digits). If Code is blank, system auto-generates.
+              </small>
+            </div>
 
-          <div id="bulkMsg" class="mt-3"></div>
+            <div class="col-12 col-md-4 d-flex align-items-end gap-2">
+              <button type="submit" class="btn btn-primary">
+                <i class="bi bi-upload"></i> Upload
+              </button>
+              <button type="button" id="downloadTemplateBtn"
+                      class="btn btn-outline-secondary">
+                <i class="bi bi-download"></i> Template
+              </button>
+            </div>
 
-          <div class="d-flex gap-2 mt-3">
-            <button type="submit" class="btn btn-primary" id="bulkSubmitBtn">
-              <i class="bi bi-save2"></i> Save All
-            </button>
-            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
-              Close
-            </button>
+            <div class="col-12">
+              <div id="bulkMsg"></div>
+            </div>
+
           </div>
         </form>
       </div>
@@ -433,6 +445,7 @@ var categoryData = <?php echo json_encode($categories); ?>;
 
 const BASE_URL = <?php echo json_encode(BASE_URL); ?>;
 const PROCESS_URL = <?php echo json_encode(BASE_URL . 'admin/modules/consumable/process/csm_category_process.php'); ?>;
+const BULK_PROCESS_URL = <?php echo json_encode(BASE_URL . 'admin/modules/consumable/process/csm_category_bulk_process.php'); ?>;
 
 function absUrl(path){
   const base = String(BASE_URL || '');
@@ -474,7 +487,8 @@ function padForDisplay(digits){
 function digitsOnly(el){
   if(!el) return;
   let v = String(el.value ?? '');
-  v = v.replace(/\D/g,'');
+  v = v.replace(/\D/g,'');          // keep digits only
+  // keep user typed zeros as-is (backend will normalize)
   el.value = v;
 }
 
@@ -493,6 +507,7 @@ function getNextCodeDigitsFromData(arr){
     });
 
     const next = String(maxNum + 1);
+    // for input convenience, show padded to 4 if small
     return padForDisplay(next);
 }
 
@@ -625,9 +640,6 @@ $(function(){
   $('#categoryCode').val(getNextCodeDigitsFromData(categoryData));
   digitsOnly(document.getElementById('categoryCode'));
   $('#categoryCode').prop('readonly', false).on('input', function(){ digitsOnly(this); });
-
-  $('#bulkRows').html('');
-  addBulkRow();
 });
 
 /* ===== Add Single ===== */
@@ -664,168 +676,83 @@ $('#addCategoryForm').off('submit').on('submit', function(e){
     });
 });
 
-/* ===== Bulk Add Rows ===== */
-function addBulkRow(name = '', code = '') {
-    const idx = $('#bulkRows .bulk-row').length;
-
-    const row = `
-        <div class="bulk-row border rounded p-2">
-            <div class="row g-2 align-items-center">
-                <div class="col-12 col-md-4">
-                    <label class="form-label fw-semibold small mb-1">Category Name</label>
-                    <input
-                        type="text"
-                        class="form-control form-control-sm"
-                        name="bulk_names[]"
-                        value="${escHtml(name)}"
-                        required
-                        placeholder="e.g., Office Supplies"
-                    >
-                </div>
-
-                <div class="col-12 col-md-3">
-                    <label class="form-label fw-semibold small mb-1">Code (optional)</label>
-                    <div class="input-group input-group-sm">
-                        <span class="input-group-text fw-semibold">CSM-</span>
-                        <input
-                            type="text"
-                            class="form-control bulk-code-input"
-                            name="bulk_codes[]"
-                            value="${escHtml(code)}"
-                            inputmode="numeric"
-                            autocomplete="off"
-                            placeholder="Auto if blank"
-                        >
-                    </div>
-                </div>
-
-                <div class="col-12 col-md-4">
-                    <label class="form-label fw-semibold small mb-1">Photo (optional)</label>
-                    <input
-                        type="file"
-                        class="form-control form-control-sm"
-                        name="bulk_photo_${idx}"
-                        accept="image/*"
-                    >
-                </div>
-
-                <div class="col-12 col-md-1 d-grid">
-                    <label class="form-label fw-semibold small mb-1">&nbsp;</label>
-                    <button type="button" class="btn btn-sm btn-outline-danger btn-bulk-remove" title="Remove row">
-                        <i class="bi bi-x"></i>
-                    </button>
-                </div>
-            </div>
-        </div>
-    `;
-
-    $('#bulkRows').append(row);
-}
-
-$('#bulkAddRow').off('click').on('click', function() {
-    addBulkRow();
-});
-
-$('#bulkRows').off('click', '.btn-bulk-remove').on('click', '.btn-bulk-remove', function() {
-    $(this).closest('.bulk-row').remove();
-
-    $('#bulkRows .bulk-row').each(function(i) {
-        $(this).find('input[type="file"]').attr('name', 'bulk_photo_' + i);
-    });
-});
-
-$('#bulkRows').off('input', '.bulk-code-input').on('input', '.bulk-code-input', function() {
-    digitsOnly(this);
-});
-
-$('#addBulkCategoryForm').off('submit').on('submit', function(e) {
+/* ===== Bulk Upload ===== */
+$('#addBulkCategoryForm').off('submit').on('submit', function(e){
     e.preventDefault();
     $('#bulkMsg').html('');
 
-    $('#bulkRows .bulk-code-input').each(function() {
-        digitsOnly(this);
-    });
+    const fileInput = document.getElementById('bulkCategoryFile');
+    if(!fileInput.files || !fileInput.files[0]){
+        $('#bulkMsg').html('<div class="alert alert-warning">Please select a CSV file.</div>');
+        return;
+    }
 
-    const formData = new FormData(this);
-    formData.append('action', 'bulk_add_categories');
-
-    $('#bulkSubmitBtn')
-        .prop('disabled', true)
-        .html('<span class="spinner-border spinner-border-sm me-1"></span>Processing...');
+    const fd = new FormData(this);
+    fd.append('action', 'bulk_add_category');
 
     $.ajax({
-        url: PROCESS_URL,
+        url: BULK_PROCESS_URL,
         type: 'POST',
-        data: formData,
+        data: fd,
         processData: false,
         contentType: false,
         dataType: 'json',
-        success: function(res) {
-            $('#bulkRows .bulk-row').removeClass('border-danger');
-            $('#bulkRows .duplicate-hint').remove();
+        success: function(res){
+            if(res && res.success){
+                let msg = `<div class="alert alert-success">
+                    Bulk upload complete. Inserted: ${res.inserted || 0}, Skipped: ${res.skipped || 0}.
+                </div>`;
 
-            if (res && res.success) {
-                let msg = `
-                    <div class="alert alert-primary mt-2">
-                        Inserted: ${res.inserted || 0}, Skipped: ${res.skipped || 0}
-                    </div>
-                `;
-
-                if (res.errors && res.errors.length > 0) {
-                    msg += '<div class="alert alert-warning"><strong>Errors:</strong><ul class="mb-0">';
-                    res.errors.forEach(function(err) {
-                        msg += `<li>${escHtml(err)}</li>`;
-                    });
-                    msg += '</ul></div>';
+                if(res.errors && res.errors.length){
+                    msg += `<div class="alert alert-warning mt-2 mb-0">
+                        <div class="fw-semibold mb-1">Warnings / Skipped reasons:</div>
+                        <ul class="mb-0 small">${res.errors.map(e => `<li>${escHtml(e)}</li>`).join('')}</ul>
+                    </div>`;
                 }
 
                 $('#bulkMsg').html(msg);
-
-                if (res.errors && res.errors.length > 0 && res.error_rows && res.error_rows.length > 0) {
-                    $('#bulkRows').html('');
-
-                    res.error_rows.forEach(function(er) {
-                        addBulkRow(er.name || '', er.code || '');
-
-                        const rowEl = $('#bulkRows .bulk-row').last();
-                        rowEl.addClass('border-danger');
-
-                        const nameInput = rowEl.find('input[name="bulk_names[]"]').first();
-
-                        let reasonText = 'Could not save this row';
-                        if (er.reason === 'duplicate') reasonText = 'Duplicate category name';
-                        if (er.reason === 'duplicate_code') reasonText = 'Duplicate category code';
-                        if (er.reason === 'required') reasonText = 'Category name is required';
-                        if (er.reason === 'invalid_code') reasonText = 'Invalid category code';
-
-                        nameInput.after(`<div class="text-danger small duplicate-hint mt-1">${reasonText}</div>`);
-                    });
-                } else {
-                    $('#addBulkCategoryForm')[0].reset();
-                    $('#bulkRows').html('');
-                    addBulkRow();
-                }
-
+                $('#addBulkCategoryForm')[0].reset();
                 refreshCategoryList();
             } else {
-                $('#bulkMsg').html(
-                    '<div class="alert alert-danger">' +
-                    escHtml((res && res.message) ? res.message : 'Bulk add failed.') +
-                    '</div>'
-                );
+                $('#bulkMsg').html('<div class="alert alert-danger">'+ escHtml((res && res.message) ? res.message : 'Bulk upload failed.') +'</div>');
             }
         },
-        error: function(xhr) {
+        error: function(xhr){
             console.error(xhr.responseText);
-            const msg = (xhr.responseJSON && xhr.responseJSON.message)
-                ? xhr.responseJSON.message
-                : 'Error processing bulk category add.';
-            $('#bulkMsg').html('<div class="alert alert-danger">' + escHtml(msg) + '</div>');
+            $('#bulkMsg').html('<div class="alert alert-danger">Bulk upload error.</div>');
         }
-    }).always(function() {
-        $('#bulkSubmitBtn')
-            .prop('disabled', false)
-            .html('<i class="bi bi-save2"></i> Save All');
+    });
+});
+
+/* ===== Template Download ===== */
+$('#downloadTemplateBtn').off('click').on('click', function(){
+    $.ajax({
+        url: BULK_PROCESS_URL,
+        type: 'POST',
+        dataType: 'json',
+        data: { action: 'download_template' },
+        success: function(res){
+            if(!res || !res.success){
+                alert('Failed to get template.');
+                return;
+            }
+            const content = res.content || '';
+            const filename = res.filename || 'csm_category_template.csv';
+
+            const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+        },
+        error: function(xhr){
+            console.error(xhr.responseText);
+            alert('Template download error.');
+        }
     });
 });
 
@@ -962,7 +889,7 @@ function renderImagesGrid(images){
     $grid.html(html);
 }
 
-/* ===== Inventory assignment ===== */
+/* ===== Inventory assignment (NEW) ===== */
 let _categoryImagesCache = [];
 
 function buildCategoryImageOptions(images){
@@ -1074,6 +1001,8 @@ function loadCategoryImages(categoryId){
                 _categoryImagesCache = res.data || [];
                 renderImagesGrid(_categoryImagesCache);
                 refreshCategoryList();
+
+                // load inventory assignment too
                 loadInvAssign(categoryId);
             } else {
                 $('#imgMsg').html('<div class="alert alert-danger">Failed to load images.</div>');
@@ -1136,7 +1065,7 @@ $('#addImagesForm').off('submit').on('submit', function(e){
             if(res && res.success){
                 $('#imgMsg').html('<div class="alert alert-success">Uploaded.</div>');
                 $('#addImagesForm')[0].reset();
-                loadCategoryImages(categoryId);
+                loadCategoryImages(categoryId); // reload both
             } else {
                 $('#imgMsg').html('<div class="alert alert-danger">'+ escHtml(res && res.message ? res.message : 'Upload failed') +'</div>');
             }
@@ -1215,7 +1144,7 @@ $(document)
 
       const inventoryId = $(this).data('inventory-id');
       const $sel = $(`.inv-image-select[data-inventory-id="${inventoryId}"]`);
-      const imageId = $sel.val();
+      const imageId = $sel.val(); // can be ""
 
       $.ajax({
           url: PROCESS_URL,
@@ -1242,13 +1171,6 @@ $(document)
           }
       });
   });
-
-$('#bulkModal').on('hidden.bs.modal', function() {
-    $('#addBulkCategoryForm')[0].reset();
-    $('#bulkMsg').html('');
-    $('#bulkRows').html('');
-    addBulkRow();
-});
 </script>
 </body>
 </html>
