@@ -25,6 +25,12 @@ function _esc($v) {
 }
 function _today() { return date('Y-m-d'); }
 
+function csm_bulk_activity_log_safe($action, $result = "SUCCESS", $details = array()) {
+    if (function_exists('activity_log_new')) {
+        activity_log_new($action, $result, $details);
+    }
+}
+
 /**
  * Accepts:
  * - blank => ''
@@ -367,6 +373,12 @@ if ($action === 'download_template') {
     ]);
 
     fclose($out);
+
+    csm_bulk_activity_log_safe("CSM INVENTORY BULK TEMPLATE DOWNLOAD", "SUCCESS", array(
+        'template' => 'csm_inventory_bulk_template.csv',
+        'example_category_code' => $exampleCat
+    ));
+
     exit();
 }
 
@@ -419,6 +431,8 @@ if ($action === 'export_csv') {
         'allowed_employment_status'
     ]);
 
+    $exported_count = 0;
+
     if ($res) {
         while ($row = call_mysql_fetch_array($res)) {
             $allowed = $row['allowed_employment_status'];
@@ -437,10 +451,18 @@ if ($action === 'export_csv') {
                 (string)($row['status'] ?? '0'),
                 (string)$allowed
             ]);
+            $exported_count++;
         }
     }
 
     fclose($out);
+
+    csm_bulk_activity_log_safe("CSM INVENTORY BULK EXPORT CSV", "SUCCESS", array(
+        'filename' => 'csm_inventory_export.csv',
+        'item_category_code_filter' => $cat !== '' ? $cat : null,
+        'exported_count' => (int)$exported_count
+    ));
+
     exit();
 }
 
@@ -464,6 +486,8 @@ if (!isset($_FILES['csv_file']) || !is_uploaded_file($_FILES['csv_file']['tmp_na
 }
 
 $tmpPath = $_FILES['csv_file']['tmp_name'];
+$uploadedFileName = isset($_FILES['csv_file']['name']) ? trim((string)$_FILES['csv_file']['name']) : '';
+
 list($header, $rows) = _read_csv_rows($tmpPath);
 
 if (!$header || !$rows) {
@@ -497,8 +521,13 @@ $skipped = 0;
 $errors = [];
 $errorsLimit = 20;
 
+$insertedCodesLog = [];
+$updatedCodesLog = [];
+$logCodesLimit = 50;
+
 $rowNum = 1;
 $today = _today();
+$totalRows = count($rows);
 
 foreach ($rows as $r) {
     $rowNum++;
@@ -592,7 +621,10 @@ foreach ($rows as $r) {
     $existing = ($existsRes && ($er = call_mysql_fetch_array($existsRes))) ? $er : null;
 
     if ($existing) {
-        if ($mode === 'insert_only') { $skipped++; continue; }
+        if ($mode === 'insert_only') { 
+            $skipped++; 
+            continue; 
+        }
 
         $inventory_id = (int)$existing['inventory_id'];
 
@@ -615,8 +647,12 @@ foreach ($rows as $r) {
         ";
 
         $ok = call_mysql_query($sql);
-        if ($ok) $updated++;
-        else {
+        if ($ok) {
+            $updated++;
+            if (count($updatedCodesLog) < $logCodesLimit) {
+                $updatedCodesLog[] = $fullCode;
+            }
+        } else {
             if (count($errors) < $errorsLimit) $errors[] = "Row {$rowNum}: Update failed for {$fullCode}";
             $skipped++;
         }
@@ -660,12 +696,29 @@ foreach ($rows as $r) {
     ";
 
     $ok = call_mysql_query($sql);
-    if ($ok) $inserted++;
-    else {
+    if ($ok) {
+        $inserted++;
+        if (count($insertedCodesLog) < $logCodesLimit) {
+            $insertedCodesLog[] = $fullCode;
+        }
+    } else {
         if (count($errors) < $errorsLimit) $errors[] = "Row {$rowNum}: Insert failed for {$fullCode}";
         $skipped++;
     }
 }
+
+csm_bulk_activity_log_safe("CSM INVENTORY BULK IMPORT", "SUCCESS", array(
+    'filename' => $uploadedFileName !== '' ? $uploadedFileName : null,
+    'mode' => $mode,
+    'total_rows' => (int)$totalRows,
+    'inserted' => (int)$inserted,
+    'updated' => (int)$updated,
+    'skipped' => (int)$skipped,
+    'errors_count' => (int)count($errors),
+    'inserted_codes_sample' => $insertedCodesLog,
+    'updated_codes_sample' => $updatedCodesLog,
+    'errors' => $errors
+));
 
 echo json_encode([
     'success' => true,

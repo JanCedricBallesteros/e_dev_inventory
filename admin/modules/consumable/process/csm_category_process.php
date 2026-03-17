@@ -29,6 +29,12 @@ function json_out($arr, $code = 200){
     exit();
 }
 
+function csm_category_activity_log_safe($action, $result = "SUCCESS", $details = array()) {
+    if (function_exists('activity_log_new')) {
+        activity_log_new($action, $result, $details);
+    }
+}
+
 /**
  * Normalize any provided code into DB format:
  * - Always returns "CSM" + digits (variable length)
@@ -46,20 +52,16 @@ function normalize_category_code_db($raw, $minDigits = 4) {
     $raw = strtoupper(trim((string)$raw));
     if ($raw === '') return '';
 
-    // Remove spaces and hyphens
     $raw = preg_replace('/[\s\-]/', '', $raw);
 
-    // Strip prefix if present
     if (strpos($raw, 'CSM') === 0) {
         $raw = substr($raw, 3);
     }
 
-    // Must now be digits only
     if ($raw === '' || !ctype_digit($raw)) return '';
 
-    // Remove leading zeros but keep at least one digit
     $digits = ltrim($raw, '0');
-    if ($digits === '') return ''; // all zeros not allowed
+    if ($digits === '') return '';
 
     $minDigits = max(1, (int)$minDigits);
     if (strlen($digits) < $minDigits) {
@@ -83,7 +85,7 @@ function normalize_catcode_php($code) {
  * Extract numeric part as string (no leading zeros) for numeric comparisons.
  * - "CSM0001" => "1"
  * - "CSM10000" => "10000"
- * - "0001" (legacy) => "1"
+ * - "0001" => "1"
  */
 function code_db_digits($dbCode) {
     $dbCode = normalize_catcode_php($dbCode);
@@ -109,14 +111,7 @@ function acquire_code_lock($timeoutSeconds = 5) {
 }
 function release_code_lock() { @call_mysql_query("SELECT RELEASE_LOCK('csm_inventory_category_code_lock')"); }
 
-/**
- * Must be called only while holding the lock.
- * Finds max across CSM####... / CSM-####... / digits-only legacy.
- * Returns next digits for UI:
- * - padded to at least 4 for display ("0001", "0012")
- * - longer stays longer ("10000")
- */
-function get_next_category_digits_locked() {
+function get_current_max_category_number_locked() {
     $res = call_mysql_query("SELECT item_category_code FROM csm_inventory_category");
     $max = 0;
 
@@ -129,12 +124,20 @@ function get_next_category_digits_locked() {
         }
     }
 
-    $next = $max + 1;
+    return $max;
+}
+
+/**
+ * Must be called only while holding the lock.
+ * Returns next digits for UI:
+ * - padded to at least 4 ("0001")
+ * - longer stays longer ("10000")
+ */
+function get_next_category_digits_locked() {
+    $next = get_current_max_category_number_locked() + 1;
     if ($next <= 0) return '';
 
     $nextStr = (string)$next;
-
-    // UI wants at least 4 digits for "CSM-0001"
     if (strlen($nextStr) < 4) {
         $nextStr = str_pad($nextStr, 4, '0', STR_PAD_LEFT);
     }
@@ -146,10 +149,10 @@ function get_next_category_digits_locked() {
  * Input expects DB-normalized "CSM....".
  */
 function category_code_exists_any_format($dbCode) {
-    $dbCodeNorm = normalize_catcode_php($dbCode); // CSM...
+    $dbCodeNorm = normalize_catcode_php($dbCode);
     if ($dbCodeNorm === '' || strpos($dbCodeNorm, 'CSM') !== 0) return false;
 
-    $digits = code_db_digits($dbCodeNorm); // "1" / "10000"
+    $digits = code_db_digits($dbCodeNorm);
     if ($digits === '') return false;
 
     $dbCodeEsc = _esc($dbCodeNorm);
@@ -169,6 +172,179 @@ function category_code_exists_any_format($dbCode) {
     ";
     $res = call_mysql_query($sql);
     return ($res && call_mysql_fetch_array($res)) ? true : false;
+}
+
+function category_name_exists_ci($name, $excludeId = 0) {
+    $name = preg_replace('/\s+/', ' ', trim((string)$name));
+    if ($name === '') return false;
+
+    $excludeSql = ((int)$excludeId > 0) ? " AND category_id <> " . (int)$excludeId : "";
+
+    $res = call_mysql_query("
+        SELECT category_id
+        FROM csm_inventory_category
+        WHERE LOWER(TRIM(item_category_name)) = LOWER('" . _esc($name) . "')
+        {$excludeSql}
+        LIMIT 1
+    ");
+    return ($res && call_mysql_fetch_array($res)) ? true : false;
+}
+
+function resolve_last_insert_id() {
+    global $conn;
+    if (isset($conn) && $conn instanceof mysqli && $conn->insert_id) {
+        return (int)$conn->insert_id;
+    }
+
+    $rid = call_mysql_query("SELECT LAST_INSERT_ID() AS id");
+    if ($rid && ($row = call_mysql_fetch_array($rid))) {
+        return (int)($row['id'] ?? 0);
+    }
+
+    return 0;
+}
+
+function get_category_snapshot($category_id) {
+    $category_id = (int)$category_id;
+    if ($category_id <= 0) return null;
+
+    $res = call_mysql_query("
+        SELECT
+            c.*,
+            (
+                SELECT COUNT(*)
+                FROM csm_inventory_category_images i
+                WHERE i.category_id = c.category_id
+            ) AS image_count,
+            (
+                SELECT ci.file_url
+                FROM csm_inventory_category_images ci
+                WHERE ci.category_id = c.category_id
+                ORDER BY (CASE WHEN IFNULL(ci.is_primary,0)=1 THEN 0 ELSE 1 END), ci.image_id ASC
+                LIMIT 1
+            ) AS primary_image
+        FROM csm_inventory_category c
+        WHERE c.category_id = {$category_id}
+        LIMIT 1
+    ");
+    return $res ? call_mysql_fetch_array($res) : null;
+}
+
+function get_category_image_snapshot($category_id, $image_id) {
+    $category_id = (int)$category_id;
+    $image_id = (int)$image_id;
+    if ($category_id <= 0 || $image_id <= 0) return null;
+
+    $res = call_mysql_query("
+        SELECT image_id, category_id, file_name, file_url, IFNULL(is_primary,0) AS is_primary
+        FROM csm_inventory_category_images
+        WHERE category_id = {$category_id} AND image_id = {$image_id}
+        LIMIT 1
+    ");
+    return $res ? call_mysql_fetch_array($res) : null;
+}
+
+function get_category_primary_image_snapshot($category_id) {
+    $category_id = (int)$category_id;
+    if ($category_id <= 0) return null;
+
+    $res = call_mysql_query("
+        SELECT image_id, category_id, file_name, file_url, IFNULL(is_primary,0) AS is_primary
+        FROM csm_inventory_category_images
+        WHERE category_id = {$category_id} AND IFNULL(is_primary,0)=1
+        LIMIT 1
+    ");
+    return $res ? call_mysql_fetch_array($res) : null;
+}
+
+function get_inventory_assignment_snapshot($inventory_id) {
+    $inventory_id = (int)$inventory_id;
+    if ($inventory_id <= 0) return null;
+
+    $res = call_mysql_query("
+        SELECT inventory_id, inventory_system_item_code, item_description, item_category_code, item_category_img
+        FROM csm_inventory
+        WHERE inventory_id = {$inventory_id}
+        LIMIT 1
+    ");
+    return $res ? call_mysql_fetch_array($res) : null;
+}
+
+function save_single_category_photo_upload($category_id, $fileKey, $UPLOAD_ABS_DIR, $UPLOAD_REL_DIR, &$message = '') {
+    $message = '';
+
+    if (!isset($_FILES[$fileKey])) {
+        return true;
+    }
+
+    $file = $_FILES[$fileKey];
+    $err  = (int)($file['error'] ?? UPLOAD_ERR_NO_FILE);
+
+    if ($err === UPLOAD_ERR_NO_FILE) {
+        return true;
+    }
+    if ($err !== UPLOAD_ERR_OK) {
+        $message = 'Upload error.';
+        return false;
+    }
+
+    $tmp  = (string)($file['tmp_name'] ?? '');
+    $orig = (string)($file['name'] ?? '');
+    $size = (int)($file['size'] ?? 0);
+
+    if ($tmp === '' || !is_uploaded_file($tmp)) {
+        $message = 'Invalid uploaded photo.';
+        return false;
+    }
+
+    $ext = strtolower(pathinfo($orig, PATHINFO_EXTENSION));
+    $allowedExt = ['jpg','jpeg','png','webp','gif'];
+    if (!in_array($ext, $allowedExt, true)) {
+        $message = 'Invalid photo type.';
+        return false;
+    }
+
+    $maxBytes = 5 * 1024 * 1024;
+    if ($size <= 0 || $size > $maxBytes) {
+        $message = 'Photo exceeds size limit.';
+        return false;
+    }
+
+    $imgInfo = @getimagesize($tmp);
+    if ($imgInfo === false) {
+        $message = 'Uploaded file is not a valid image.';
+        return false;
+    }
+
+    $safeBase = preg_replace('/[^a-zA-Z0-9_\-]/', '_', pathinfo($orig, PATHINFO_FILENAME));
+    try {
+        $rand = bin2hex(random_bytes(6));
+    } catch (Throwable $e) {
+        $rand = uniqid();
+    }
+
+    $newName = 'cat_' . (int)$category_id . '_' . date('YmdHis') . '_' . $rand . '_' . $safeBase . '.' . $ext;
+    $destAbs = $UPLOAD_ABS_DIR . $newName;
+
+    if (!move_uploaded_file($tmp, $destAbs)) {
+        $message = 'Failed to move uploaded photo.';
+        return false;
+    }
+
+    $fileUrl = $UPLOAD_REL_DIR . $newName;
+
+    $ok = call_mysql_query("
+        INSERT INTO csm_inventory_category_images (category_id, file_name, file_url, is_primary)
+        VALUES (" . (int)$category_id . ", '" . _esc($newName) . "', '" . _esc($fileUrl) . "', 1)
+    ");
+
+    if (!$ok) {
+        @unlink($destAbs);
+        $message = 'Failed to save photo record.';
+        return false;
+    }
+
+    return true;
 }
 
 $action = _post('action', '');
@@ -197,7 +373,6 @@ try {
 
             if ($digits === '') json_out(['success'=>false,'message'=>'Unable to generate next code.'], 409);
 
-            // UI shows "CSM-0001" (or "CSM-10000")
             json_out(['success'=>true,'digits'=>$digits,'full'=>'CSM-'.$digits]);
         }
 
@@ -214,11 +389,6 @@ try {
             }
             $item_category_name = preg_replace('/\s+/', ' ', trim($item_category_name));
 
-            /**
-             * UPDATED:
-             * UI can submit digits-only OR full code variants.
-             * Whatever comes in, we store DB-normalized "CSM....".
-             */
             $rawInputCode = _post('item_category_code', '');
             $providedDbCode = ($rawInputCode === '') ? '' : normalize_category_code_db($rawInputCode);
 
@@ -234,7 +404,6 @@ try {
                 exit();
             }
 
-            // Decide final code
             if ($providedDbCode === '') {
                 $finalDigitsUI = get_next_category_digits_locked();
                 if ($finalDigitsUI === '') {
@@ -244,9 +413,6 @@ try {
                     exit();
                 }
 
-                // Convert UI digits to DB "CSM...." (variable length allowed)
-                // If UI digits are "0001" => normalize => CSM0001
-                // If UI digits are "10000" => normalize => CSM10000
                 $finalDbCode = normalize_category_code_db($finalDigitsUI);
                 if ($finalDbCode === '') {
                     release_code_lock();
@@ -265,21 +431,13 @@ try {
                 }
             }
 
-            // Name duplicate (case-insensitive)
-            $chkName = call_mysql_query("
-                SELECT category_id
-                FROM csm_inventory_category
-                WHERE LOWER(TRIM(item_category_name)) = LOWER('"._esc($item_category_name)."')
-                LIMIT 1
-            ");
-            if ($chkName && call_mysql_fetch_array($chkName)) {
+            if (category_name_exists_ci($item_category_name)) {
                 release_code_lock();
                 http_response_code(409);
                 echo "Category Name already exists.";
                 exit();
             }
 
-            // Insert DB code "CSM...."
             $ins = "INSERT INTO csm_inventory_category (item_category_name, item_category_code)
                     VALUES ('"._esc($item_category_name)."','"._esc($finalDbCode)."')";
             $ok = call_mysql_query($ins);
@@ -292,22 +450,15 @@ try {
                 exit();
             }
 
-            // Resolve inserted ID
-            $category_id = 0;
-            global $conn;
-            if (isset($conn) && $conn instanceof mysqli && $conn->insert_id) {
-                $category_id = (int)$conn->insert_id;
-            } else {
-                $rid = call_mysql_query("SELECT LAST_INSERT_ID() AS id");
-                if ($rid && ($row = call_mysql_fetch_array($rid))) $category_id = (int)($row['id'] ?? 0);
-            }
+            $category_id = resolve_last_insert_id();
             if ($category_id <= 0) {
                 http_response_code(500);
                 echo "Failed to resolve new category id.";
                 exit();
             }
 
-            // optional images upload
+            $insertedImg = 0;
+
             if (isset($_FILES['images']) && is_array($_FILES['images']['name'])) {
                 $names = $_FILES['images']['name'];
                 $tmps  = $_FILES['images']['tmp_name'];
@@ -316,8 +467,6 @@ try {
 
                 $allowedExt = ['jpg','jpeg','png','webp','gif'];
                 $maxBytes = 5 * 1024 * 1024;
-
-                $insertedImg = 0;
 
                 for ($i = 0; $i < count($names); $i++) {
                     if (!isset($errs[$i]) || $errs[$i] !== UPLOAD_ERR_OK) continue;
@@ -340,18 +489,241 @@ try {
                     if (!move_uploaded_file($tmps[$i], $UPLOAD_ABS_DIR . $newName)) continue;
 
                     $isPrimary = ($insertedImg === 0) ? 1 : 0;
-                    $fileUrl = $UPLOAD_REL_DIR . $newName; // NOT NULL column
+                    $fileUrl = $UPLOAD_REL_DIR . $newName;
 
                     $insImg = "INSERT INTO csm_inventory_category_images (category_id, file_name, file_url, is_primary)
                                VALUES (".(int)$category_id.", '"._esc($newName)."', '"._esc($fileUrl)."', ".(int)$isPrimary.")";
-                    call_mysql_query($insImg);
+                    $imgOk = call_mysql_query($insImg);
 
-                    $insertedImg++;
+                    if ($imgOk) {
+                        $insertedImg++;
+                    }
                 }
             }
 
+            csm_category_activity_log_safe("CSM CATEGORY CREATE", "SUCCESS", array(
+                'category_id' => (int)$category_id,
+                'item_category_name' => $item_category_name,
+                'item_category_code' => $finalDbCode,
+                'uploaded_images_count' => (int)$insertedImg,
+                'category' => get_category_snapshot($category_id)
+            ));
+
             echo "success";
             exit();
+        }
+
+        case 'bulk_add_categories': {
+            if (!isset($_POST['bulk_names']) || !is_array($_POST['bulk_names'])) {
+                json_out(['success'=>false,'message'=>'No bulk rows submitted.'], 422);
+            }
+
+            $bulkNames = $_POST['bulk_names'];
+            $bulkCodes = (isset($_POST['bulk_codes']) && is_array($_POST['bulk_codes'])) ? $_POST['bulk_codes'] : [];
+
+            if (count($bulkNames) === 0) {
+                json_out(['success'=>false,'message'=>'No bulk rows submitted.'], 422);
+            }
+
+            if (!acquire_code_lock(10)) {
+                json_out(['success'=>false,'message'=>'Code generator busy. Please try again.'], 409);
+            }
+
+            $inserted = 0;
+            $skipped  = 0;
+            $errors   = [];
+            $error_rows = [];
+            $inserted_rows_log = [];
+            $inserted_rows_log_limit = 50;
+
+            $seenNames = [];
+            $seenCodes = [];
+
+            $nextAutoNum = get_current_max_category_number_locked() + 1;
+
+            $rowCount = count($bulkNames);
+
+            for ($i = 0; $i < $rowCount; $i++) {
+                $rowNo = $i + 1;
+
+                $nameRaw = isset($bulkNames[$i]) ? (string)$bulkNames[$i] : '';
+                $name = preg_replace('/\s+/', ' ', trim($nameRaw));
+
+                $codeRaw = isset($bulkCodes[$i]) ? trim((string)$bulkCodes[$i]) : '';
+                $codeForReturn = preg_replace('/\D/', '', $codeRaw);
+
+                if ($name === '') {
+                    $skipped++;
+                    $errors[] = "Row {$rowNo}: Category name is required.";
+                    $error_rows[] = [
+                        'name'   => '',
+                        'code'   => $codeForReturn,
+                        'reason' => 'required'
+                    ];
+                    continue;
+                }
+
+                $nameKey = strtolower($name);
+                if (isset($seenNames[$nameKey])) {
+                    $skipped++;
+                    $errors[] = "Row {$rowNo}: Duplicate category name in submitted rows.";
+                    $error_rows[] = [
+                        'name'   => $name,
+                        'code'   => $codeForReturn,
+                        'reason' => 'duplicate'
+                    ];
+                    continue;
+                }
+
+                if (category_name_exists_ci($name)) {
+                    $skipped++;
+                    $errors[] = "Row {$rowNo}: Category name already exists.";
+                    $error_rows[] = [
+                        'name'   => $name,
+                        'code'   => $codeForReturn,
+                        'reason' => 'duplicate'
+                    ];
+                    continue;
+                }
+
+                $finalDbCode = '';
+
+                if ($codeRaw !== '') {
+                    $normalized = normalize_category_code_db($codeRaw);
+                    if ($normalized === '') {
+                        $skipped++;
+                        $errors[] = "Row {$rowNo}: Invalid category code.";
+                        $error_rows[] = [
+                            'name'   => $name,
+                            'code'   => $codeForReturn,
+                            'reason' => 'invalid_code'
+                        ];
+                        continue;
+                    }
+
+                    $normalizedKey = normalize_catcode_php($normalized);
+                    $digitsOnly = code_db_digits($normalizedKey);
+                    $codeForReturn = $digitsOnly !== '' ? ((strlen($digitsOnly) < 4) ? str_pad($digitsOnly, 4, '0', STR_PAD_LEFT) : $digitsOnly) : $codeForReturn;
+
+                    if (isset($seenCodes[$normalizedKey])) {
+                        $skipped++;
+                        $errors[] = "Row {$rowNo}: Duplicate category code in submitted rows.";
+                        $error_rows[] = [
+                            'name'   => $name,
+                            'code'   => $codeForReturn,
+                            'reason' => 'duplicate_code'
+                        ];
+                        continue;
+                    }
+
+                    if (category_code_exists_any_format($normalizedKey)) {
+                        $skipped++;
+                        $errors[] = "Row {$rowNo}: Category code already exists.";
+                        $error_rows[] = [
+                            'name'   => $name,
+                            'code'   => $codeForReturn,
+                            'reason' => 'duplicate_code'
+                        ];
+                        continue;
+                    }
+
+                    $finalDbCode = $normalizedKey;
+                } else {
+                    do {
+                        $digits = (string)$nextAutoNum;
+                        if (strlen($digits) < 4) {
+                            $digits = str_pad($digits, 4, '0', STR_PAD_LEFT);
+                        }
+
+                        $candidate = normalize_category_code_db($digits);
+                        $candidateKey = normalize_catcode_php($candidate);
+                        $nextAutoNum++;
+                    } while (
+                        $candidateKey === '' ||
+                        isset($seenCodes[$candidateKey]) ||
+                        category_code_exists_any_format($candidateKey)
+                    );
+
+                    $finalDbCode = $candidateKey;
+                    $digitsOnly = code_db_digits($finalDbCode);
+                    $codeForReturn = ($digitsOnly !== '' && strlen($digitsOnly) < 4)
+                        ? str_pad($digitsOnly, 4, '0', STR_PAD_LEFT)
+                        : $digitsOnly;
+                }
+
+                $ok = call_mysql_query("
+                    INSERT INTO csm_inventory_category (item_category_name, item_category_code)
+                    VALUES ('" . _esc($name) . "', '" . _esc($finalDbCode) . "')
+                ");
+
+                if (!$ok) {
+                    $skipped++;
+                    $errors[] = "Row {$rowNo}: Database insert failed.";
+                    $error_rows[] = [
+                        'name'   => $name,
+                        'code'   => $codeForReturn,
+                        'reason' => 'duplicate'
+                    ];
+                    continue;
+                }
+
+                $category_id = resolve_last_insert_id();
+                if ($category_id <= 0) {
+                    $find = call_mysql_query("
+                        SELECT category_id
+                        FROM csm_inventory_category
+                        WHERE REPLACE(REPLACE(UPPER(TRIM(item_category_code)), ' ', ''), '-', '') = '" . _esc($finalDbCode) . "'
+                        LIMIT 1
+                    ");
+                    $frow = $find ? call_mysql_fetch_array($find) : null;
+                    $category_id = (int)($frow['category_id'] ?? 0);
+                }
+
+                if ($category_id <= 0) {
+                    $skipped++;
+                    $errors[] = "Row {$rowNo}: Failed to resolve inserted category id.";
+                    continue;
+                }
+
+                $seenNames[$nameKey] = true;
+                $seenCodes[$finalDbCode] = true;
+                $inserted++;
+
+                if (count($inserted_rows_log) < $inserted_rows_log_limit) {
+                    $inserted_rows_log[] = array(
+                        'category_id' => (int)$category_id,
+                        'item_category_name' => $name,
+                        'item_category_code' => $finalDbCode
+                    );
+                }
+
+                $fileKey = 'bulk_photo_' . $i;
+                $photoMsg = '';
+                $photoOk = save_single_category_photo_upload($category_id, $fileKey, $UPLOAD_ABS_DIR, $UPLOAD_REL_DIR, $photoMsg);
+
+                if (!$photoOk && $photoMsg !== '') {
+                    $errors[] = "Row {$rowNo}: Category added, but photo was not saved ({$photoMsg})";
+                }
+            }
+
+            release_code_lock();
+
+            csm_category_activity_log_safe("CSM CATEGORY BULK CREATE", "SUCCESS", array(
+                'submitted_rows' => (int)$rowCount,
+                'inserted' => (int)$inserted,
+                'skipped' => (int)$skipped,
+                'errors_count' => (int)count($errors),
+                'inserted_rows_sample' => $inserted_rows_log,
+                'errors' => $errors
+            ));
+
+            json_out([
+                'success'    => true,
+                'inserted'   => $inserted,
+                'skipped'    => $skipped,
+                'errors'     => $errors,
+                'error_rows' => $error_rows
+            ]);
         }
 
         case 'list_category': {
@@ -391,18 +763,13 @@ try {
             $category_id = _int(_post('category_id'));
             if ($category_id <= 0) { http_response_code(422); echo "Invalid category_id."; exit(); }
 
+            $before = get_category_snapshot($category_id);
+
             $item_category_name = _post('item_category_name');
             if ($item_category_name === '') { http_response_code(422); echo "Category Name is required."; exit(); }
             $item_category_name = preg_replace('/\s+/', ' ', trim($item_category_name));
 
-            $chkName = call_mysql_query("
-                SELECT category_id
-                FROM csm_inventory_category
-                WHERE LOWER(TRIM(item_category_name)) = LOWER('"._esc($item_category_name)."')
-                  AND category_id <> {$category_id}
-                LIMIT 1
-            ");
-            if ($chkName && call_mysql_fetch_array($chkName)) {
+            if (category_name_exists_ci($item_category_name, $category_id)) {
                 http_response_code(409);
                 echo "Category Name already exists.";
                 exit();
@@ -411,7 +778,18 @@ try {
             $ok = call_mysql_query("UPDATE csm_inventory_category
                                     SET item_category_name='"._esc($item_category_name)."'
                                     WHERE category_id={$category_id} LIMIT 1");
-            if ($ok) { echo "success"; exit(); }
+            if ($ok) {
+                csm_category_activity_log_safe("CSM CATEGORY UPDATE", "SUCCESS", array(
+                    'category_id' => (int)$category_id,
+                    'previous' => $before,
+                    'updated' => array(
+                        'item_category_name' => $item_category_name
+                    ),
+                    'category' => get_category_snapshot($category_id)
+                ));
+                echo "success";
+                exit();
+            }
 
             http_response_code(500);
             echo "Database update failed.";
@@ -424,9 +802,18 @@ try {
             $category_id = _int(_post('category_id'));
             if ($category_id <= 0) { http_response_code(422); echo "Invalid category_id."; exit(); }
 
+            $before = get_category_snapshot($category_id);
+            $deleted_images = [];
+
             $imgRes = call_mysql_query("SELECT image_id, file_name, file_url FROM csm_inventory_category_images WHERE category_id={$category_id}");
             if ($imgRes) {
                 while ($img = call_mysql_fetch_array($imgRes)) {
+                    $deleted_images[] = array(
+                        'image_id' => (int)($img['image_id'] ?? 0),
+                        'file_name' => (string)($img['file_name'] ?? ''),
+                        'file_url' => (string)($img['file_url'] ?? '')
+                    );
+
                     $fn = (string)($img['file_name'] ?? '');
                     if ($fn !== '' && file_exists($UPLOAD_ABS_DIR.$fn)) @unlink($UPLOAD_ABS_DIR.$fn);
                 }
@@ -434,7 +821,16 @@ try {
             call_mysql_query("DELETE FROM csm_inventory_category_images WHERE category_id={$category_id}");
 
             $ok = call_mysql_query("DELETE FROM csm_inventory_category WHERE category_id={$category_id} LIMIT 1");
-            if ($ok) { echo "success"; exit(); }
+            if ($ok) {
+                csm_category_activity_log_safe("CSM CATEGORY DELETE", "SUCCESS", array(
+                    'category_id' => (int)$category_id,
+                    'deleted_category' => $before,
+                    'deleted_images_count' => (int)count($deleted_images),
+                    'deleted_images' => $deleted_images
+                ));
+                echo "success";
+                exit();
+            }
 
             http_response_code(500);
             echo "Database delete failed.";
@@ -476,6 +872,9 @@ try {
                 json_out(['success'=>false,'message'=>'No images provided.'], 422);
             }
 
+            $beforeCategory = get_category_snapshot($category_id);
+            $beforePrimary = get_category_primary_image_snapshot($category_id);
+
             $hasPrimary = false;
             $chk = call_mysql_query("SELECT image_id FROM csm_inventory_category_images WHERE category_id={$category_id} AND IFNULL(is_primary,0)=1 LIMIT 1");
             if ($chk && call_mysql_fetch_array($chk)) $hasPrimary = true;
@@ -485,6 +884,8 @@ try {
             $errs  = $_FILES['images']['error'];
 
             $inserted = 0;
+            $uploaded_files = [];
+
             for ($i=0; $i<count($names); $i++){
                 if (($errs[$i] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) continue;
                 if (!is_uploaded_file($tmps[$i])) continue;
@@ -505,8 +906,25 @@ try {
                     INSERT INTO csm_inventory_category_images (category_id, file_name, file_url, is_primary)
                     VALUES ({$category_id}, '"._esc($newName)."', '"._esc($fileUrl)."', ".(int)$isPrimary.")
                 ");
-                if ($ok) $inserted++;
+                if ($ok) {
+                    $inserted++;
+                    $uploaded_files[] = array(
+                        'file_name' => $newName,
+                        'file_url' => $fileUrl,
+                        'is_primary' => (int)$isPrimary
+                    );
+                }
             }
+
+            csm_category_activity_log_safe("CSM CATEGORY IMAGE UPLOAD", "SUCCESS", array(
+                'category_id' => (int)$category_id,
+                'category' => $beforeCategory,
+                'previous_primary_image' => $beforePrimary,
+                'inserted' => (int)$inserted,
+                'uploaded_files' => $uploaded_files,
+                'current_category' => get_category_snapshot($category_id),
+                'current_primary_image' => get_category_primary_image_snapshot($category_id)
+            ));
 
             json_out(['success'=>true,'inserted'=>$inserted]);
         }
@@ -516,8 +934,20 @@ try {
             $image_id = _int(_post('image_id'));
             if ($category_id <= 0 || $image_id <= 0) json_out(['success'=>false,'message'=>'Invalid ids.'], 422);
 
+            $beforePrimary = get_category_primary_image_snapshot($category_id);
+            $selectedImage = get_category_image_snapshot($category_id, $image_id);
+
             call_mysql_query("UPDATE csm_inventory_category_images SET is_primary=0 WHERE category_id={$category_id}");
             $ok = call_mysql_query("UPDATE csm_inventory_category_images SET is_primary=1 WHERE category_id={$category_id} AND image_id={$image_id} LIMIT 1");
+
+            if ($ok) {
+                csm_category_activity_log_safe("CSM CATEGORY IMAGE PRIMARY SET", "SUCCESS", array(
+                    'category_id' => (int)$category_id,
+                    'previous_primary_image' => $beforePrimary,
+                    'selected_image' => $selectedImage,
+                    'current_primary_image' => get_category_primary_image_snapshot($category_id)
+                ));
+            }
 
             json_out(['success'=> (bool)$ok]);
         }
@@ -527,11 +957,21 @@ try {
             $image_id = _int(_post('image_id'));
             if ($category_id <= 0 || $image_id <= 0) json_out(['success'=>false,'message'=>'Invalid ids.'], 422);
 
+            $beforePrimary = get_category_primary_image_snapshot($category_id);
+
             $res = call_mysql_query("SELECT file_name, file_url, IFNULL(is_primary,0) AS is_primary
                                      FROM csm_inventory_category_images
                                      WHERE category_id={$category_id} AND image_id={$image_id} LIMIT 1");
             $row = $res ? call_mysql_fetch_array($res) : null;
             if (!$row) json_out(['success'=>false,'message'=>'Not found.'], 404);
+
+            $deletedImage = array(
+                'image_id' => (int)$image_id,
+                'category_id' => (int)$category_id,
+                'file_name' => (string)($row['file_name'] ?? ''),
+                'file_url' => (string)($row['file_url'] ?? ''),
+                'is_primary' => (int)($row['is_primary'] ?? 0)
+            );
 
             $file = (string)($row['file_name'] ?? '');
             $wasPrimary = ((int)($row['is_primary'] ?? 0) === 1);
@@ -546,6 +986,14 @@ try {
                     call_mysql_query("UPDATE csm_inventory_category_images SET is_primary=1 WHERE category_id={$category_id} AND image_id={$nid} LIMIT 1");
                 }
             }
+
+            csm_category_activity_log_safe("CSM CATEGORY IMAGE DELETE", "SUCCESS", array(
+                'category_id' => (int)$category_id,
+                'deleted_image' => $deletedImage,
+                'previous_primary_image' => $beforePrimary,
+                'current_primary_image' => get_category_primary_image_snapshot($category_id),
+                'category' => get_category_snapshot($category_id)
+            ));
 
             json_out(['success'=>true]);
         }
@@ -603,19 +1051,43 @@ try {
             $inventory_id = _int(_post('inventory_id'));
             if ($inventory_id <= 0) json_out(['success'=>false,'message'=>'Invalid inventory_id.'], 422);
 
+            $before = get_inventory_assignment_snapshot($inventory_id);
+
             $rawImageId = _post('image_id', '');
             $image_id = ($rawImageId === '') ? 0 : (int)$rawImageId;
 
             if ($image_id <= 0) {
                 $ok = call_mysql_query("UPDATE csm_inventory SET item_category_img=NULL WHERE inventory_id={$inventory_id} LIMIT 1");
+                if ($ok) {
+                    csm_category_activity_log_safe("CSM CATEGORY INVENTORY IMAGE ASSIGN", "SUCCESS", array(
+                        'inventory_id' => (int)$inventory_id,
+                        'previous' => $before,
+                        'updated' => array(
+                            'item_category_img' => null
+                        ),
+                        'selected_image' => null,
+                        'current' => get_inventory_assignment_snapshot($inventory_id)
+                    ));
+                }
                 json_out(['success'=>(bool)$ok]);
             }
 
-            $imgRes = call_mysql_query("SELECT image_id FROM csm_inventory_category_images WHERE image_id={$image_id} LIMIT 1");
+            $imgRes = call_mysql_query("SELECT image_id, category_id, file_name, file_url, IFNULL(is_primary,0) AS is_primary FROM csm_inventory_category_images WHERE image_id={$image_id} LIMIT 1");
             $img = $imgRes ? call_mysql_fetch_array($imgRes) : null;
             if (!$img) json_out(['success'=>false,'message'=>'Image not found.'], 404);
 
             $ok = call_mysql_query("UPDATE csm_inventory SET item_category_img='"._esc((string)$image_id)."' WHERE inventory_id={$inventory_id} LIMIT 1");
+            if ($ok) {
+                csm_category_activity_log_safe("CSM CATEGORY INVENTORY IMAGE ASSIGN", "SUCCESS", array(
+                    'inventory_id' => (int)$inventory_id,
+                    'previous' => $before,
+                    'updated' => array(
+                        'item_category_img' => (string)$image_id
+                    ),
+                    'selected_image' => $img,
+                    'current' => get_inventory_assignment_snapshot($inventory_id)
+                ));
+            }
             json_out(['success'=>(bool)$ok]);
         }
 
