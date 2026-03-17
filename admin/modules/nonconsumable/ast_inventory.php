@@ -97,6 +97,12 @@ if (!(
             line-height: 1.25;
             max-height: 3.75em;
         }
+        .tabulator {
+            font-size: 0.875rem;
+        }
+        .btn-match-input {
+            height: 38px;
+        }
     </style>
 </head>
 
@@ -130,20 +136,13 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                             </button>
                         </div>
                     </div>
-                    <div class="col-md-3">
-                        <div class="filter-label">Date From</div>
-                        <input type="date" id="dateFrom" class="form-control">
+                    <div class="col-md-4">
+                        <div class="filter-label">Date Range</div>
+                        <input type="text" id="dateRange" class="form-control" placeholder="YYYY-MM-DD - YYYY-MM-DD">
                     </div>
-                    <div class="col-md-3">
-                        <div class="filter-label">Date To</div>
-                        <input type="date" id="dateTo" class="form-control">
-                    </div>
-                    <div class="col-md-2">
-                        <button class="btn btn-outline-secondary w-100" id="clearFilters">Clear</button>
-                    </div>
-                    <div class="col-md-2 d-flex gap-2">
-                        <button class="btn btn-outline-secondary w-100" id="exportCsv">Export CSV</button>
-                        <button class="btn btn-outline-primary w-100" id="exportExcel">Export Excel</button>
+                    <div class="col-md-4 d-flex gap-2">
+                        <button class="btn btn-outline-secondary w-100 btn-match-input" id="exportCsv">Export CSV</button>
+                        <button class="btn btn-outline-primary w-100 btn-match-input" id="exportExcel">Export Excel</button>
                     </div>
                 </div>
 
@@ -189,7 +188,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title fw-semibold"><i class="bi bi-sliders"></i>&ensp;Set Item Access Rules</h5>
+                <h5 class="modal-title fw-semibold"><i class="bi bi-sliders"></i>&ensp;Set as Available Item</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
@@ -197,11 +196,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                     <input type="hidden" name="action" value="update_availability_settings">
                     <input type="hidden" name="property_code" id="availPropertyCode">
                     <input type="hidden" name="bulk_codes" id="availBulkCodes">
-                    <div class="mb-3">
-                        <label class="form-label fw-semibold">Property Code</label>
-                        <input type="text" class="form-control" id="availPropertyCodeDisplay" readonly>
-                        <div class="small text-muted" id="availBulkNote" style="display:none;"></div>
-                    </div>
+                    <div class="mb-2 small fw-semibold text-dark" id="availBulkNote" style="display:none;"></div>
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Allowed Employment Status</label>
                         <div class="small text-muted mb-2">Choose allowed status per position. "None" means no one can request.</div>
@@ -394,7 +389,6 @@ function openAvailabilityModal(code) {
     isBulkAvailMode = false;
     $('#availMsg').html('');
     $('#availPropertyCode').val(code);
-    $('#availPropertyCodeDisplay').val(code);
     $('#availBulkCodes').val('');
     $('#availBulkNote').hide().text('');
     if (availTeachingSelect) availTeachingSelect.clear();
@@ -453,7 +447,6 @@ function openAvailabilityModalBulk(codes) {
     isBulkAvailMode = true;
     $('#availMsg').html('');
     $('#availPropertyCode').val('');
-    $('#availPropertyCodeDisplay').val('Multiple items');
     $('#availBulkCodes').val(codes.join(','));
     $('#availBulkNote').show().text(codes.length + ' items selected');
 
@@ -492,6 +485,19 @@ function parseDate(val) {
     return isNaN(date.getTime()) ? null : date;
 }
 
+function parseDateRangeInput(raw) {
+    const text = (raw || '').trim();
+    if (!text) return { from: null, to: null };
+    const parts = text.split(/\s+-\s+|\s+–\s+/).filter(Boolean);
+    if (parts.length === 1) {
+        const d = parseDate(parts[0]);
+        return { from: d, to: d };
+    }
+    const from = parseDate(parts[0]);
+    const to = parseDate(parts[1]);
+    return { from, to };
+}
+
 function escapeHtml(value) {
     return String(value)
         .replace(/&/g, '&amp;')
@@ -526,10 +532,9 @@ function updateSummary(rows) {
 // Apply search and date filters on the client side
 function applyFilters() {
     const search = ($('#invSearch').val() || '').trim().toLowerCase();
-    const fromVal = $('#dateFrom').val();
-    const toVal = $('#dateTo').val();
-    const fromDate = fromVal ? new Date(fromVal) : null;
-    const toDate = toVal ? new Date(toVal) : null;
+    const range = parseDateRangeInput($('#dateRange').val());
+    const fromDate = range.from;
+    const toDate = range.to;
     if (toDate) {
         toDate.setHours(23, 59, 59, 999);
     }
@@ -646,13 +651,6 @@ function initTable() {
                 const v = cell.getValue();
                 return v ? twoLineText(v) : '<span class="text-muted">-</span>';
             }},
-            { title: "Issuance", field: "issued_details", width: 100, formatter: function(){
-                return '<button class="btn btn-sm btn-outline-secondary" disabled>View</button>';
-            }},
-            { title: "Set", field: "property_code", width: 70, hozAlign: "center", formatter: function(cell){
-                const code = cell.getValue();
-                return `<button class="btn btn-sm btn-outline-primary btn-set-availability" data-code="${code}">Set</button>`;
-            }},
             { title: "Date", field: "created_at", width: 130 , formatter: function(cell){
                 const d = parseDate(cell.getValue());
                 return d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '-';
@@ -688,13 +686,29 @@ $(document).ready(function() {
     loadEmploymentStatuses();
 
     $('#invSearch').on('keyup', applyFilters);
-    $('#dateFrom, #dateTo').on('change', applyFilters);
-    $('#clearFilters').on('click', function() {
-        $('#invSearch').val('');
-        $('#dateFrom').val('');
-        $('#dateTo').val('');
-        applyFilters();
-    });
+    $('#dateRange').on('change keyup', applyFilters);
+
+    if (typeof $.fn.daterangepicker === 'function') {
+        $('#dateRange').daterangepicker({
+            autoUpdateInput: false,
+            locale: {
+                format: 'YYYY-MM-DD',
+                cancelLabel: 'Clear'
+            },
+            opens: 'left'
+        });
+
+        $('#dateRange').on('apply.daterangepicker', function(ev, picker) {
+            const value = picker.startDate.format('YYYY-MM-DD') + ' - ' + picker.endDate.format('YYYY-MM-DD');
+            $(this).val(value);
+            applyFilters();
+        });
+
+        $('#dateRange').on('cancel.daterangepicker', function() {
+            $(this).val('');
+            applyFilters();
+        });
+    }
 
     $('#bulkSetAvailability').on('click', function() {
         if (!inventoryTable) return;
@@ -710,11 +724,6 @@ $(document).ready(function() {
     $('#clearSelection').on('click', function() {
         if (!inventoryTable) return;
         inventoryTable.deselectRow();
-    });
-
-    $('#ast-inventory-table').on('click', '.btn-set-availability', function() {
-        const code = $(this).data('code');
-        openAvailabilityModal(code);
     });
 
     // Keep columns fitted when sidebar toggles or window resizes

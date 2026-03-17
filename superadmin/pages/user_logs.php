@@ -216,6 +216,7 @@ $json_table = output($table_array);
         .superadmin-toolbar .toolbar-left { flex: 1 1 260px; min-width: 220px; }
         .superadmin-toolbar .toolbar-right { display: flex; flex-wrap: wrap; gap: 8px; }
         .wrap-text { display: block; white-space: normal; word-break: break-word; line-height: 1.25; }
+        .tabulator { font-size: 0.875rem; }
         @media (max-width: 768px) {
             .superadmin-toolbar { flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 8px; }
             .superadmin-toolbar .toolbar-left { flex: 0 0 auto; }

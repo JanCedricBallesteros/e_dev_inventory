@@ -55,6 +55,9 @@ if (!(
             margin-top: 10px;
         }
         .img-preview { max-width: 100%; max-height: 70vh; border-radius: 8px; }
+        .tabulator {
+            font-size: 0.875rem;
+        }
     </style>
 </head>
 

@@ -280,6 +280,15 @@ if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) {
                             <p>Activity Logs</p>
                         </a>
                     </li>
+
+                    <?php if (role_has("ADMIN")) { ?>
+                        <li class="nav-item <?php echo navigation_active("user_information"); ?>">
+                            <a href="<?php echo BASE_URL . "superadmin/pages/user_information.php"; ?>">
+                                <i class="fas fa-users"></i>
+                                <p>Staff Information</p>
+                            </a>
+                        </li>
+                    <?php } ?>
                 <?php } ?>
 
                 <?php if (role_has("USER") || role_has("USERS")) { ?>

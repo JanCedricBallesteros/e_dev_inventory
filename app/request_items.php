@@ -48,6 +48,7 @@ if (!(role_has("USER") || role_has("USERS"))) {
             word-break: break-word;
             line-height: 1.25;
         }
+        .tabulator { font-size: 0.875rem; }
     </style>
 </head>
 

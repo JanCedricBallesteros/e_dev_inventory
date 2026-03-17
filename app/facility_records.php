@@ -37,6 +37,7 @@ if (!(role_has("USER") || role_has("USERS"))) {
         .item-badge { width: 50px; height: 50px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; background: #1E3A8A; color: #fff; font-weight: 600; font-size: 0.9rem; text-transform: uppercase; border: 1px solid rgba(0,0,0,0.06); cursor: default; }
         .thumb-wrap { display: flex; align-items: center; justify-content: center; }
         .img-preview { max-width: 100%; max-height: 70vh; border-radius: 8px; }
+        .tabulator { font-size: 0.875rem; }
     </style>
 </head>
 

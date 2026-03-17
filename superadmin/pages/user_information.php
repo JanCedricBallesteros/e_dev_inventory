@@ -81,6 +81,20 @@ if ($query = sa_safe_query($select)) {
             $data['role_ids'] = $role_ids;
             $data['is_admin_staff'] = in_array(3, $role_ids, true) || in_array('3', $role_ids, true);
 
+            if (role_has("ADMIN") && !role_has("SUPER_ADMIN")) {
+                $allowedRoles = array('2', '3', 2, 3);
+                $hasAllowed = false;
+                foreach ($role_ids as $rid) {
+                    if (in_array($rid, $allowedRoles, true)) {
+                        $hasAllowed = true;
+                        break;
+                    }
+                }
+                if (!$hasAllowed) {
+                    continue;
+                }
+            }
+
             $data['user_role'] = array();
             foreach ($role_ids as $role) {
                 $data['user_role'][] = SYSTEM_ACCESS['E-INVENTORY']['role'][$role];
@@ -145,6 +159,7 @@ $json_table = output($table_array);
         .superadmin-table-actions { display: flex; gap: 6px; justify-content: center; }
         .btn-label { margin-left: 6px; }
         .wrap-text { display: block; white-space: normal; word-break: break-word; line-height: 1.25; }
+        .tabulator { font-size: 0.875rem; }
         @media (max-width: 768px) {
             .superadmin-toolbar { flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 8px; }
             .superadmin-toolbar .toolbar-left { flex: 0 0 auto; }

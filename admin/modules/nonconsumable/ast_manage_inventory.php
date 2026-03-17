@@ -125,6 +125,9 @@ if (!(
             line-height: 1.25;
             max-height: 2.5em;
         }
+        .tabulator {
+            font-size: 0.875rem;
+        }
     </style>
 </head>
 

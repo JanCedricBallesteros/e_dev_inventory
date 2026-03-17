@@ -163,6 +163,7 @@ $json_table = output($table_array);
         .detail-value { flex: 1; color: #495057; }
         .detail-preview-more { font-size: 0.8rem; color: #6c757d; margin-top: 2px; }
         .detail-cell .detail-view-btn { font-size: 0.8rem; }
+        .tabulator { font-size: 0.875rem; }
     </style>
 </head>
 

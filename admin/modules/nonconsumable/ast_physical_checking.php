@@ -46,6 +46,9 @@ $isAdmin = role_has("ADMIN");
             line-height: 1.25;
             max-height: 3.75em;
         }
+        .tabulator {
+            font-size: 0.875rem;
+        }
     </style>
 </head>
 
