@@ -559,6 +559,14 @@ function applyFilters() {
     updateSummary(activeRows);
 }
 
+function scheduleInventoryRedraw() {
+    if (!inventoryTable) return;
+    // Allow layout to settle (e.g., sidebar animation) before redraw
+    setTimeout(() => {
+        if (inventoryTable) inventoryTable.redraw(true);
+    }, 250);
+}
+
 function initTable() {
     inventoryTable = new Tabulator('#ast-inventory-table', {
         layout: "fitColumns",
@@ -708,6 +716,10 @@ $(document).ready(function() {
         const code = $(this).data('code');
         openAvailabilityModal(code);
     });
+
+    // Keep columns fitted when sidebar toggles or window resizes
+    $(document).on('click', '.toggle-sidebar', scheduleInventoryRedraw);
+    $(window).on('resize', scheduleInventoryRedraw);
 
     $('#availabilityForm').on('submit', function(e) {
         e.preventDefault();

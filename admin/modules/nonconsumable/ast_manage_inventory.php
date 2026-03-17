@@ -103,6 +103,28 @@ if (!(
             border: 1px solid #dee2e6;
             border-radius: 8px;
         }
+        .three-line-cell {
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            white-space: normal;
+            word-break: break-word;
+            line-height: 1.25;
+            max-height: 3.75em;
+        }
+        .two-line-cell {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            white-space: normal;
+            word-break: break-word;
+            line-height: 1.25;
+            max-height: 2.5em;
+        }
     </style>
 </head>
 
@@ -638,6 +660,18 @@ function escapeHtml(str) {
         .replace(/'/g, '&#39;');
 }
 
+function threeLineText(value, fallback = '-') {
+    const raw = (value === null || value === undefined || value === '') ? fallback : String(value);
+    const safe = escapeHtml(raw);
+    return `<span class="three-line-cell" title="${safe}">${safe}</span>`;
+}
+
+function twoLineText(value, fallback = '-') {
+    const raw = (value === null || value === undefined || value === '') ? fallback : String(value);
+    const safe = escapeHtml(raw);
+    return `<span class="two-line-cell" title="${safe}">${safe}</span>`;
+}
+
 function buildPropertyCodeList(propertyNumber, startSeries, units) {
     const normalized = String(propertyNumber || '').toUpperCase();
     const start = parseInt(startSeries, 10) || 1;
@@ -983,12 +1017,12 @@ function initTable() {
         },
         columns: [
             { title: 'Property Code', field: 'property_code', width: 200, headerFilter: 'input', headerFilterPlaceholder: 'Filter...', formatter: function(cell){
-                const val = cell.getValue();
-                const safe = escapeHtml(val || '');
-                return safe || '<span class="text-muted">-</span>';
+                return twoLineText(cell.getValue());
             }},
             { title: 'Category', field: 'item_category_name', width: 170, headerFilter: 'input', headerFilterPlaceholder: 'Filter...' },
-            { title: 'Description', field: 'item_description', widthGrow: 2, headerFilter: 'input', headerFilterPlaceholder: 'Filter...' },
+            { title: 'Description', field: 'item_description', widthGrow: 2, headerFilter: 'input', headerFilterPlaceholder: 'Filter...', formatter: function(cell){
+                return threeLineText(cell.getValue());
+            }},
             { title: 'Serial No.', field: 'serial_number', width: 150, headerFilter: 'input', headerFilterPlaceholder: 'Filter...', formatter: function(cell){
                 const v = cell.getValue();
                 return v && String(v).trim() !== '' ? v : '-';
@@ -999,17 +1033,28 @@ function initTable() {
                 const unit = row.unit ? String(row.unit) : '';
                 return `<div class="text-center">${qty}${unit ? ' <span class="text-muted">' + escapeHtml(unit) + '</span>' : ''}</div>`;
             }},
-            { title: 'Allowed Status', field: 'allowed_status_names', width: 180, headerFilter: 'input', headerFilterPlaceholder: 'Filter...', formatter: function(cell){
+            { title: 'Allowed Status', field: 'allowed_status_names', width: 180, visible: false, headerFilter: 'input', headerFilterPlaceholder: 'Filter...', formatter: function(cell){
                 const v = cell.getValue();
-                if (!v) return '-';
-                const parts = v.split(' | ');
-                const html = parts.map(p => `<div class="text-muted small" style="line-height:1.3;">${p}</div>`).join('');
-                return html;
+                if (!v || v === 'None') return '<span class="text-muted small">None</span>';
+                if (v === 'All') return '<span class="text-success small fw-semibold">All</span>';
+                const parts = v.split('|').map(s => s.trim()).filter(s => {
+                    const colon = s.indexOf(':');
+                    if (colon === -1) return true;
+                    const val = s.slice(colon + 1).trim();
+                    return val.toLowerCase() !== 'none';
+                });
+                const display = parts.length ? parts.join(' | ') : 'None';
+                return threeLineText(display);
             }},
-            { title: 'Source', field: 'source_of_fund', width: 130, headerFilter: 'input', headerFilterPlaceholder: 'Filter...' },
-            { title: 'Cost', field: 'cost_value', width: 110, headerFilter: 'input', headerFilterPlaceholder: 'Filter...', formatter: function(cell){
-                const v = cell.getValue();
-                return v !== null && v !== '' ? parseFloat(v).toFixed(2) : '-';
+            { title: 'Source / Cost', field: 'source_of_fund', width: 150, headerFilter: 'input', headerFilterPlaceholder: 'Filter...', formatter: function(cell){
+                const row = cell.getRow().getData();
+                const src = row.source_of_fund ? escapeHtml(row.source_of_fund) : '';
+                const costRaw = row.cost_value;
+                const cost = (costRaw !== null && costRaw !== '' && !isNaN(costRaw)) ? parseFloat(costRaw).toFixed(2) : '';
+                const parts = [];
+                if (src) parts.push(src);
+                if (cost) parts.push(`₱${cost}`);
+                return parts.length ? `<span class="two-line-cell">${parts.join(' • ')}</span>` : '<span class="text-muted">-</span>';
             }},
             { title: 'Date Modified', field: 'created_at', width: 160, formatter: function(cell){
                 const d = new Date(cell.getValue());

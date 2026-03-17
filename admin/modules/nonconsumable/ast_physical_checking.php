@@ -35,6 +35,17 @@ $isAdmin = role_has("ADMIN");
         .item-thumb { width: 120px; height: 120px; border-radius: 10px; object-fit: cover; border: 1px solid #e5e7eb; background: #f8f9fa; cursor: zoom-in; }
         .info-label { font-size: 12px; color: #6c757d; }
         .info-value { font-weight: 600; }
+        .three-line-cell {
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            white-space: normal;
+            word-break: break-word;
+            line-height: 1.25;
+            max-height: 3.75em;
+        }
     </style>
 </head>
 
@@ -278,6 +289,21 @@ function showMessage(target, type, text) {
     $(target).html(`<div class="alert alert-${type} mb-2">${text}</div>`);
 }
 
+function escapeHtml(str) {
+    return String(str === null || str === undefined ? '' : str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function threeLineText(value, fallback = '-') {
+    const raw = (value === null || value === undefined || value === '') ? fallback : String(value);
+    const safe = escapeHtml(raw);
+    return `<span class="three-line-cell" title="${safe}">${safe}</span>`;
+}
+
 function showErrorToast(msg) {
     if (typeof error_notif === 'function') {
         error_notif(msg);
@@ -355,7 +381,9 @@ function initChecksTable() {
         columns: [
             { title: 'Series', field: 'series_code', width: 140 },
             { title: 'Property Code', field: 'property_code', width: 150 },
-            { title: 'Item Description', field: 'item_description', widthGrow: 2 },
+            { title: 'Item Description', field: 'item_description', widthGrow: 2, formatter: function(cell){
+                return threeLineText(cell.getValue());
+            }},
             { title: 'Serial No.', field: 'serial_number', width: 130 },
             { title: 'Facility', field: 'facility', width: 140 },
             { title: 'Accountable', field: 'accountable', width: 140 },

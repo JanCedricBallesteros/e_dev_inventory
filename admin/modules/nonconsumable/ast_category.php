@@ -229,7 +229,6 @@ function initTable() {
         ajaxParams: { action: "list_categories" },
         ajaxConfig: "POST",
         layout: "fitColumns",
-        // height: "600px", // Removed to prevent fixed height and scrollbar
         responsiveLayout: "collapse",
         placeholder: "No categories found",
         pagination: "local",
