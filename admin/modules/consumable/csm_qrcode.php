@@ -577,7 +577,7 @@ function buildScreenPreviewCard(item, layout) {
   const catCode = item.item_category_code || '';
   const catName = item.item_category_name || '';
   const acq = item.acquisition_date || '';
-  const cost = (item.item_cost != null && item.item_cost !== '') ? String(item.item_cost) : '';
+  const cost = (item.cost_value != null && item.cost_value !== '') ? String(item.cost_value) : '';
   const notes = item.notes || item.note || item.remarks || '';
   const qrUrl = QR_GENERATOR_URL + '?v=' + encodeURIComponent(code);
 
@@ -1030,7 +1030,7 @@ function printSelected() {
     const item = byCode[code] || {};
     const desc = item.item_description || '';
     const acq  = item.acquisition_date || '';
-    const cost = (item.item_cost != null && item.item_cost !== '') ? item.item_cost : '';
+    const cost = (item.cost_value != null && item.cost_value !== '') ? item.cost_value : '';
     const catCode = item.item_category_code || '';
     const catName = item.item_category_name || '';
     const catLine = (catName && catCode) ? `${catName} (${catCode})` : (catName || catCode);
@@ -1105,7 +1105,7 @@ function saveToPdf() {
     const item = byCode[code] || {};
     const desc = item.item_description || '';
     const acq  = item.acquisition_date || '';
-    const cost = (item.item_cost != null && item.item_cost !== '') ? item.item_cost : '';
+    const cost = (item.cost_value != null && item.cost_value !== '') ? item.cost_value : '';
     const catCode = item.item_category_code || '';
     const catName = item.item_category_name || '';
     const catLine = (catName && catCode) ? `${catName} (${catCode})` : (catName || catCode);

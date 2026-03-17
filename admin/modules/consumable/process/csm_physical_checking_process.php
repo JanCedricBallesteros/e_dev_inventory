@@ -71,8 +71,8 @@ function build_thumb_url($pathOrFile) {
 
 function derive_csm_stock_label($row) {
     $status = isset($row['status']) ? (int)$row['status'] : 1;
-    $currentQty = (int)($row['current_unit_quantity'] ?? 0);
-    $critLevel = (int)($row['unit_crit_level'] ?? 0);
+    $currentQty = (int)($row['current_quantity'] ?? 0);
+    $critLevel = (int)($row['qty_crit_level'] ?? 0);
 
     if ($status !== 1) {
         return 'Unavailable';
@@ -394,11 +394,11 @@ try {
             $item_category_code = $item['item_category_code'] ?? '';
             $item_description = $item['item_description'] ?? '';
             $acquisition_date = $item['acquisition_date'] ?? null;
-            $item_cost = isset($item['item_cost']) ? (float)$item['item_cost'] : 0;
+            $cost_value = isset($item['cost_value']) ? (float)$item['cost_value'] : 0;
             $source_of_funds = $item['source_of_funds'] ?? '';
-            $system_unit_quantity = (int)($item['unit_quantity'] ?? 0);
-            $system_current_quantity = (int)($item['current_unit_quantity'] ?? 0);
-            $unit_crit_level = (int)($item['unit_crit_level'] ?? 0);
+            $system_unit_quantity = (int)($item['quantity'] ?? 0);
+            $system_current_quantity = (int)($item['current_quantity'] ?? 0);
+            $qty_crit_level = (int)($item['qty_crit_level'] ?? 0);
             $system_status = isset($item['status']) ? (int)$item['status'] : 1;
             $variance_quantity = $counted_quantity - $system_current_quantity;
             $checked_by = (int)$GLOBALS['s_user_id'];
@@ -431,13 +431,13 @@ try {
                         item_category_code = '" . _esc($item_category_code) . "',
                         item_description = '" . _esc($item_description) . "',
                         acquisition_date = " . ($acquisition_date ? "'" . _esc($acquisition_date) . "'" : "NULL") . ",
-                        item_cost = " . number_format($item_cost, 2, '.', '') . ",
+                        cost_value = " . number_format($cost_value, 2, '.', '') . ",
                         source_of_funds = '" . _esc($source_of_funds) . "',
                         system_unit_quantity = {$system_unit_quantity},
                         system_current_quantity = {$system_current_quantity},
                         counted_quantity = {$counted_quantity},
                         variance_quantity = {$variance_quantity},
-                        unit_crit_level = {$unit_crit_level},
+                        qty_crit_level = {$qty_crit_level},
                         system_status = {$system_status},
                         status_at_check = '" . _esc($status_at_check) . "',
                         `condition` = '" . _esc($condition) . "',
@@ -458,13 +458,13 @@ try {
                         item_category_code,
                         item_description,
                         acquisition_date,
-                        item_cost,
+                        cost_value,
                         source_of_funds,
                         system_unit_quantity,
                         system_current_quantity,
                         counted_quantity,
                         variance_quantity,
-                        unit_crit_level,
+                        qty_crit_level,
                         system_status,
                         status_at_check,
                         `condition`,
@@ -481,13 +481,13 @@ try {
                         '" . _esc($item_category_code) . "',
                         '" . _esc($item_description) . "',
                         " . ($acquisition_date ? "'" . _esc($acquisition_date) . "'" : "NULL") . ",
-                        " . number_format($item_cost, 2, '.', '') . ",
+                        " . number_format($cost_value, 2, '.', '') . ",
                         '" . _esc($source_of_funds) . "',
                         {$system_unit_quantity},
                         {$system_current_quantity},
                         {$counted_quantity},
                         {$variance_quantity},
-                        {$unit_crit_level},
+                        {$qty_crit_level},
                         {$system_status},
                         '" . _esc($status_at_check) . "',
                         '" . _esc($condition) . "',
@@ -513,7 +513,7 @@ try {
                 'system_current_quantity' => $system_current_quantity,
                 'counted_quantity' => $counted_quantity,
                 'variance_quantity' => $variance_quantity,
-                'unit_crit_level' => $unit_crit_level,
+                'qty_crit_level' => $qty_crit_level,
                 'status_at_check' => $status_at_check,
                 'condition' => $condition,
                 'storage_location' => $storage_location,

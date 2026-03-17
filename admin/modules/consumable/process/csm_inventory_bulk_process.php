@@ -344,9 +344,9 @@ if ($action === 'download_template') {
         'item_category_code',
         'cost_value',
         'unit',
-        'unit_quantity',
-        'current_unit_quantity',
-        'unit_crit_level',
+        'quantity',
+        'current_quantity',
+        'qty_crit_level',
         'source_of_funds',
         'status',
         'allowed_employment_status'
@@ -389,9 +389,9 @@ if ($action === 'export_csv') {
             i.item_category_code,
             i.cost_value,
             i.unit,
-            i.unit_quantity,
-            i.current_unit_quantity,
-            i.unit_crit_level,
+            i.quantity,
+            i.current_quantity,
+            i.qty_crit_level,
             i.source_of_funds,
             i.status,
             i.allowed_employment_status
@@ -411,9 +411,9 @@ if ($action === 'export_csv') {
         'item_category_code',
         'cost_value',
         'unit',
-        'unit_quantity',
-        'current_unit_quantity',
-        'unit_crit_level',
+        'quantity',
+        'current_quantity',
+        'qty_crit_level',
         'source_of_funds',
         'status',
         'allowed_employment_status'
@@ -430,9 +430,9 @@ if ($action === 'export_csv') {
                 (string)($row['item_category_code'] ?? ''),
                 (string)($row['cost_value'] ?? '0'),
                 (string)($row['unit'] ?? ''),
-                (string)($row['unit_quantity'] ?? '0'),
-                (string)($row['current_unit_quantity'] ?? '0'),
-                (string)($row['unit_crit_level'] ?? '0'),
+                (string)($row['quantity'] ?? '0'),
+                (string)($row['current_quantity'] ?? '0'),
+                (string)($row['qty_crit_level'] ?? '0'),
                 (string)($row['source_of_funds'] ?? ''),
                 (string)($row['status'] ?? '0'),
                 (string)$allowed
@@ -479,9 +479,9 @@ $required = [
     'item_category_code',
     'cost_value',
     'unit',
-    'unit_quantity',
-    'current_unit_quantity',
-    'unit_crit_level'
+    'quantity',
+    'current_quantity',
+    'qty_crit_level'
 ];
 foreach ($required as $req) {
     if (!in_array($req, $header, true)) {
@@ -510,9 +510,9 @@ foreach ($rows as $r) {
     $cost_value = (float)($r['cost_value'] ?? 0);
     $unit = trim((string)($r['unit'] ?? ''));
 
-    $unit_quantity = (int)($r['unit_quantity'] ?? 0);
-    $current_unit_quantity = (int)($r['current_unit_quantity'] ?? 0);
-    $unit_crit_level = (int)($r['unit_crit_level'] ?? 0);
+    $quantity = (int)($r['quantity'] ?? 0);
+    $current_quantity = (int)($r['current_quantity'] ?? 0);
+    $qty_crit_level = (int)($r['qty_crit_level'] ?? 0);
 
     $source_of_funds = trim((string)($r['source_of_funds'] ?? ''));
     $statusCsvRaw = trim((string)($r['status'] ?? ''));
@@ -530,14 +530,14 @@ foreach ($rows as $r) {
         continue;
     }
 
-    if ($cost_value < 0 || $unit_quantity < 0 || $current_unit_quantity < 0 || $unit_crit_level < 0) {
+    if ($cost_value < 0 || $quantity < 0 || $current_quantity < 0 || $qty_crit_level < 0) {
         if (count($errors) < $errorsLimit) $errors[] = "Row {$rowNum}: Cost, quantities, and critical level cannot be negative.";
         $skipped++;
         continue;
     }
 
-    if ($current_unit_quantity > $unit_quantity) {
-        if (count($errors) < $errorsLimit) $errors[] = "Row {$rowNum}: current_unit_quantity cannot exceed unit_quantity.";
+    if ($current_quantity > $quantity) {
+        if (count($errors) < $errorsLimit) $errors[] = "Row {$rowNum}: current_quantity cannot exceed quantity.";
         $skipped++;
         continue;
     }
@@ -585,7 +585,7 @@ foreach ($rows as $r) {
     }
 
     // Final status is auto-computed from qty + crit + rules
-    $finalStatus = _compute_status_from_state_bulk($current_unit_quantity, $unit_crit_level, $allowed_json);
+    $finalStatus = _compute_status_from_state_bulk($current_quantity, $qty_crit_level, $allowed_json);
 
     $codeEsc = _esc($fullCode);
     $existsRes = call_mysql_query("SELECT inventory_id FROM csm_inventory WHERE inventory_system_item_code='{$codeEsc}' LIMIT 1");
@@ -603,9 +603,9 @@ foreach ($rows as $r) {
                 item_category_code='" . _esc($cat) . "',
                 cost_value=" . (float)$cost_value . ",
                 unit='" . _esc($unit) . "',
-                unit_quantity=" . (int)$unit_quantity . ",
-                current_unit_quantity=" . (int)$current_unit_quantity . ",
-                unit_crit_level=" . (int)$unit_crit_level . ",
+                quantity=" . (int)$quantity . ",
+                current_quantity=" . (int)$current_quantity . ",
+                qty_crit_level=" . (int)$qty_crit_level . ",
                 source_of_funds='" . _esc($source_of_funds) . "',
                 status=" . (int)$finalStatus . ",
                 allowed_employment_status=" . ($allowed_json ? "'" . _esc($allowed_json) . "'" : "NULL") . ",
@@ -635,9 +635,9 @@ foreach ($rows as $r) {
             source_of_funds,
             item_category_code,
             status,
-            unit_quantity,
-            current_unit_quantity,
-            unit_crit_level,
+            quantity,
+            current_quantity,
+            qty_crit_level,
             allowed_employment_status,
             last_updated
         )
@@ -651,9 +651,9 @@ foreach ($rows as $r) {
             '" . _esc($source_of_funds) . "',
             '" . _esc($cat) . "',
             " . (int)$finalStatus . ",
-            " . (int)$unit_quantity . ",
-            " . (int)$current_unit_quantity . ",
-            " . (int)$unit_crit_level . ",
+            " . (int)$quantity . ",
+            " . (int)$current_quantity . ",
+            " . (int)$qty_crit_level . ",
             " . ($allowed_json ? "'" . _esc($allowed_json) . "'" : "NULL") . ",
             '" . _esc($today) . "'
         )

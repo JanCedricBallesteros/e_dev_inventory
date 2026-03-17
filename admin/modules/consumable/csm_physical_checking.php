@@ -565,14 +565,14 @@ function loadItem(code) {
         $('#infoDescription').text(currentItem.item_description || '-');
         $('#infoAcquisitionDate').text(currentItem.acquisition_date || '-');
         $('#infoLastUpdated').text(currentItem.last_updated || currentItem.updated_at || '-');
-        $('#infoItemCost').text(typeof currentItem.item_cost !== 'undefined' ? peso(currentItem.item_cost) : '-');
+        $('#infoItemCost').text(typeof currentItem.cost_value !== 'undefined' ? peso(currentItem.cost_value) : '-');
         $('#infoSourceOfFunds').text(currentItem.source_of_funds || '-');
-        $('#infoUnitQty').text(currentItem.unit_quantity ?? '-');
-        $('#infoCurrentQty').text(currentItem.current_unit_quantity ?? '-');
-        $('#infoCritLevel').text(currentItem.unit_crit_level ?? '-');
+        $('#infoUnitQty').text(currentItem.quantity ?? '-');
+        $('#infoCurrentQty').text(currentItem.current_quantity ?? '-');
+        $('#infoCritLevel').text(currentItem.qty_crit_level ?? '-');
         $('#infoStockStatus').html(stockBadge(currentItem.system_stock_label || 'Available'));
 
-        $('#countedQuantity').val(Number(currentItem.current_unit_quantity || 0));
+        $('#countedQuantity').val(Number(currentItem.current_quantity || 0));
         $('#statusAtCheck').val(currentItem.system_stock_label || '');
         $('#condition').val('');
         $('#storageLocation').val('');

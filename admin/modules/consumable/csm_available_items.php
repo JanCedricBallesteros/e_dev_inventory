@@ -293,22 +293,22 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 
                                 <div class="col-md-3">
                                     <label class="form-label fw-semibold">Actual Qty</label>
-                                    <input type="number" min="0" class="form-control" name="unit_quantity" id="unitQuantity" value="0" required>
+                                    <input type="number" min="0" class="form-control" name="quantity" id="unitQuantity" value="0" required>
                                 </div>
 
                                 <div class="col-md-3">
                                     <label class="form-label fw-semibold">Available to Issue</label>
-                                    <input type="number" min="0" class="form-control" name="current_unit_quantity" id="currentUnitQuantity" value="0" required>
+                                    <input type="number" min="0" class="form-control" name="current_quantity" id="currentUnitQuantity" value="0" required>
                                 </div>
 
                                 <div class="col-md-3">
                                     <label class="form-label fw-semibold">Critical Level</label>
-                                    <input type="number" min="0" class="form-control" name="unit_crit_level" id="unitCritLevel" value="0" required>
+                                    <input type="number" min="0" class="form-control" name="qty_crit_level" id="unitCritLevel" value="0" required>
                                 </div>
 
                                 <div class="col-md-3">
                                     <label class="form-label fw-semibold">Item Cost</label>
-                                    <input type="number" step="0.01" min="0" class="form-control" name="item_cost" id="itemCost" value="0.00" required>
+                                    <input type="number" step="0.01" min="0" class="form-control" name="cost_value" id="itemCost" value="0.00" required>
                                 </div>
 
                                 <div class="col-12">
@@ -381,7 +381,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                 </div>
                                 <div class="col-6">
                                     <label class="form-label fw-semibold">Item Cost</label>
-                                    <input type="number" step="0.01" min="0" class="form-control" name="item_cost" id="addQtyCost">
+                                    <input type="number" step="0.01" min="0" class="form-control" name="cost_value" id="addQtyCost">
                                 </div>
                             </div>
 
@@ -625,17 +625,17 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 
                         <div class="col-md-3">
                             <label class="form-label fw-semibold">Actual Qty</label>
-                            <input type="number" name="unit_quantity" id="edit_unit_quantity" class="form-control" required min="0">
+                            <input type="number" name="quantity" id="edit_unit_quantity" class="form-control" required min="0">
                         </div>
 
                         <div class="col-md-3">
                             <label class="form-label fw-semibold">Critical Level</label>
-                            <input type="number" name="unit_crit_level" id="edit_unit_crit_level" class="form-control" required min="0">
+                            <input type="number" name="qty_crit_level" id="edit_unit_crit_level" class="form-control" required min="0">
                         </div>
 
                         <div class="col-md-3">
                             <label class="form-label fw-semibold">Item Cost</label>
-                            <input type="number" step="0.01" name="item_cost" id="edit_item_cost" class="form-control" required min="0">
+                            <input type="number" step="0.01" name="cost_value" id="edit_item_cost" class="form-control" required min="0">
                         </div>
 
                         <div class="col-md-3">
@@ -676,7 +676,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                     </div>
 
                     <label class="form-label">Available to Issue</label>
-                    <input type="number" class="form-control" name="current_unit_quantity" id="avail_current_unit_quantity" min="0" required>
+                    <input type="number" class="form-control" name="current_quantity" id="avail_current_unit_quantity" min="0" required>
 
                     <div class="form-text">Cannot be lower than Critical Level and cannot exceed Actual Qty.</div>
 
@@ -904,10 +904,10 @@ function collectAddItemDraft() {
         category_label: categoryLabel && categoryLabel !== 'Select category' ? categoryLabel : '',
         item_description: ($('#itemDescription').val() || '').trim(),
         source_of_funds: ($('#sourceOfFunds').val() || '').trim(),
-        unit_quantity: ($('#unitQuantity').val() || '').trim(),
-        current_unit_quantity: ($('#currentUnitQuantity').val() || '').trim(),
-        unit_crit_level: ($('#unitCritLevel').val() || '').trim(),
-        item_cost: ($('#itemCost').val() || '').trim()
+        quantity: ($('#unitQuantity').val() || '').trim(),
+        current_quantity: ($('#currentUnitQuantity').val() || '').trim(),
+        qty_crit_level: ($('#unitCritLevel').val() || '').trim(),
+        cost_value: ($('#itemCost').val() || '').trim()
     };
 }
 
@@ -915,12 +915,12 @@ function validateAddItemDraft(draft) {
     if (!draft.item_category_code) return 'Category is required.';
     if (!draft.item_description) return 'Itemized description is required.';
     if (draft.inventory_system_item_code && !/^\d+$/.test(draft.inventory_system_item_code)) return 'Item code number must contain digits only.';
-    if (draft.unit_quantity === '' || parseInt(draft.unit_quantity, 10) < 0) return 'Actual Qty must be 0 or higher.';
-    if (draft.current_unit_quantity === '' || parseInt(draft.current_unit_quantity, 10) < 0) return 'Available to Issue must be 0 or higher.';
-    if (draft.unit_crit_level === '' || parseInt(draft.unit_crit_level, 10) < 0) return 'Critical Level must be 0 or higher.';
-    if (draft.item_cost === '' || parseFloat(draft.item_cost) < 0) return 'Item Cost must be 0 or higher.';
-    if (parseInt(draft.current_unit_quantity, 10) > parseInt(draft.unit_quantity, 10)) return 'Available to Issue cannot exceed Actual Qty.';
-    if (parseInt(draft.current_unit_quantity, 10) < parseInt(draft.unit_crit_level, 10)) return 'Available to Issue cannot be lower than Critical Level.';
+    if (draft.quantity === '' || parseInt(draft.quantity, 10) < 0) return 'Actual Qty must be 0 or higher.';
+    if (draft.current_quantity === '' || parseInt(draft.current_quantity, 10) < 0) return 'Available to Issue must be 0 or higher.';
+    if (draft.qty_crit_level === '' || parseInt(draft.qty_crit_level, 10) < 0) return 'Critical Level must be 0 or higher.';
+    if (draft.cost_value === '' || parseFloat(draft.cost_value) < 0) return 'Item Cost must be 0 or higher.';
+    if (parseInt(draft.current_quantity, 10) > parseInt(draft.quantity, 10)) return 'Available to Issue cannot exceed Actual Qty.';
+    if (parseInt(draft.current_quantity, 10) < parseInt(draft.qty_crit_level, 10)) return 'Available to Issue cannot be lower than Critical Level.';
     return '';
 }
 
@@ -929,18 +929,18 @@ function populateReviewModal(draft) {
     $('#reviewItemCode').text(draft.full_item_code_preview || '(Auto-generated)');
     $('#reviewDescription').text(draft.item_description || '-');
     $('#reviewSource').text(draft.source_of_funds || '-');
-    $('#reviewUnitQty').text(draft.unit_quantity);
-    $('#reviewCurrentQty').text(draft.current_unit_quantity);
-    $('#reviewCritLevel').text(draft.unit_crit_level);
-    $('#reviewCost').text(draft.item_cost !== '' ? parseFloat(draft.item_cost).toFixed(2) : '0.00');
+    $('#reviewUnitQty').text(draft.quantity);
+    $('#reviewCurrentQty').text(draft.current_quantity);
+    $('#reviewCritLevel').text(draft.qty_crit_level);
+    $('#reviewCost').text(draft.cost_value !== '' ? parseFloat(draft.cost_value).toFixed(2) : '0.00');
     $('#reviewQrValue').text(draft.full_item_code_preview || '(Auto-generated after save)');
     $('#reviewRuleCheck').html(`
-        Available (${escHtml(draft.current_unit_quantity)}) is
-        ${parseInt(draft.current_unit_quantity, 10) >= parseInt(draft.unit_crit_level, 10) ? '<span class="text-success fw-semibold">not below</span>' : '<span class="text-danger fw-semibold">below</span>'}
-        Critical Level (${escHtml(draft.unit_crit_level)}),
+        Available (${escHtml(draft.current_quantity)}) is
+        ${parseInt(draft.current_quantity, 10) >= parseInt(draft.qty_crit_level, 10) ? '<span class="text-success fw-semibold">not below</span>' : '<span class="text-danger fw-semibold">below</span>'}
+        Critical Level (${escHtml(draft.qty_crit_level)}),
         and
-        ${parseInt(draft.current_unit_quantity, 10) <= parseInt(draft.unit_quantity, 10) ? '<span class="text-success fw-semibold">not above</span>' : '<span class="text-danger fw-semibold">above</span>'}
-        Actual Qty (${escHtml(draft.unit_quantity)}).
+        ${parseInt(draft.current_quantity, 10) <= parseInt(draft.quantity, 10) ? '<span class="text-success fw-semibold">not above</span>' : '<span class="text-danger fw-semibold">above</span>'}
+        Actual Qty (${escHtml(draft.quantity)}).
     `);
 }
 
@@ -950,10 +950,10 @@ function buildAddItemPayload(draft) {
         inventory_system_item_code: draft.inventory_system_item_code,
         item_description: draft.item_description,
         item_category_code: draft.item_category_code,
-        unit_quantity: draft.unit_quantity,
-        current_unit_quantity: draft.current_unit_quantity,
-        unit_crit_level: draft.unit_crit_level,
-        item_cost: draft.item_cost,
+        quantity: draft.quantity,
+        current_quantity: draft.current_quantity,
+        qty_crit_level: draft.qty_crit_level,
+        cost_value: draft.cost_value,
         source_of_funds: draft.source_of_funds
     };
 }
@@ -1100,12 +1100,12 @@ function initTable() {
                     return escHtml(groupLabel(d.item_category_code, d.item_category_name));
                 }
             },
-            { title: 'Actual Qty', field: 'unit_quantity', width: 100, hozAlign: 'center' },
-            { title: 'Available', field: 'current_unit_quantity', width: 100, hozAlign: 'center' },
-            { title: 'Critical', field: 'unit_crit_level', width: 95, hozAlign: 'center' },
+            { title: 'Actual Qty', field: 'quantity', width: 100, hozAlign: 'center' },
+            { title: 'Available', field: 'current_quantity', width: 100, hozAlign: 'center' },
+            { title: 'Critical', field: 'qty_crit_level', width: 95, hozAlign: 'center' },
             {
                 title: 'Cost',
-                field: 'item_cost',
+                field: 'cost_value',
                 width: 110,
                 hozAlign: 'right',
                 formatter: function(cell){
@@ -1237,7 +1237,7 @@ function loadItemByCode(code) {
             const d = res.data;
             $('#addQtyInventoryId').val(d.inventory_id);
             $('#addQtySource').val(d.source_of_funds || '');
-            $('#addQtyCost').val(d.item_cost || '');
+            $('#addQtyCost').val(d.cost_value || '');
 
             $('#itemInfo').html(`
                 <div class="d-flex flex-column gap-2">
@@ -1251,14 +1251,14 @@ function loadItemByCode(code) {
                         <div>${escHtml(d.item_description || '-')}</div>
                     </div>
                     <div class="small text-muted">
-                        Actual Qty: <span class="fw-semibold">${escHtml(d.unit_quantity || '0')}</span>
+                        Actual Qty: <span class="fw-semibold">${escHtml(d.quantity || '0')}</span>
                         &nbsp;|&nbsp;
-                        Available: <span class="fw-semibold">${escHtml(d.current_unit_quantity || '0')}</span>
+                        Available: <span class="fw-semibold">${escHtml(d.current_quantity || '0')}</span>
                     </div>
                     <div class="small text-muted">
-                        Critical: <span class="fw-semibold">${escHtml(d.unit_crit_level || '0')}</span>
+                        Critical: <span class="fw-semibold">${escHtml(d.qty_crit_level || '0')}</span>
                         ${d.source_of_funds ? ` | Source: ${escHtml(d.source_of_funds)}` : ''}
-                        ${d.item_cost ? ` | Cost: ${escHtml(d.item_cost)}` : ''}
+                        ${d.cost_value ? ` | Cost: ${escHtml(d.cost_value)}` : ''}
                     </div>
                 </div>
             `);
@@ -1294,11 +1294,11 @@ function openEditModal(id){
             $('#edit_inventory_system_item_code').val(extractNumericSuffix(d.inventory_system_item_code));
             $('#edit_item_description').val(d.item_description || '');
             $('#edit_item_category_code').val(d.item_category_code || '').trigger('change');
-            $('#edit_unit_quantity').val(d.unit_quantity || 0);
-            $('#edit_unit_crit_level').val(d.unit_crit_level || 0);
-            $('#edit_item_cost').val(d.item_cost || 0);
+            $('#edit_unit_quantity').val(d.quantity || 0);
+            $('#edit_unit_crit_level').val(d.qty_crit_level || 0);
+            $('#edit_item_cost').val(d.cost_value || 0);
             $('#edit_source_of_funds').val(d.source_of_funds || '');
-            $('#edit_current_unit_quantity_display').val(d.current_unit_quantity || 0);
+            $('#edit_current_unit_quantity_display').val(d.current_quantity || 0);
 
             updateEditCodePreview();
             $('#editRecordModal').modal('show');
@@ -1323,7 +1323,7 @@ function openAvailableModal(id){
             if (res && res.success) {
                 const d = res.data;
                 $('#avail_item_label').text(`${d.inventory_system_item_code || ''} — ${String(d.item_description || '').slice(0, 60)}`);
-                $('#avail_current_unit_quantity').val(d.current_unit_quantity || 0);
+                $('#avail_current_unit_quantity').val(d.current_quantity || 0);
             } else {
                 $('#avail_item_label').text(`ID #${id}`);
                 $('#avail_current_unit_quantity').val(0);
