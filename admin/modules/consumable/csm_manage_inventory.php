@@ -384,17 +384,17 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 
             <div class="col-md-2">
               <label class="form-label">Total Quantity</label>
-              <input type="number" name="unit_quantity" class="form-control" placeholder="0" required min="0">
+              <input type="number" name="quantity" class="form-control" placeholder="0" required min="0">
             </div>
 
             <div class="col-md-2">
               <label class="form-label">Available Qty</label>
-              <input type="number" name="current_unit_quantity" class="form-control" placeholder="0" required min="0">
+              <input type="number" name="current_quantity" class="form-control" placeholder="0" required min="0">
             </div>
 
             <div class="col-md-2">
               <label class="form-label">Critical Level</label>
-              <input type="number" name="unit_crit_level" class="form-control" placeholder="0" required min="0">
+              <input type="number" name="qty_crit_level" class="form-control" placeholder="0" required min="0">
             </div>
 
             <div class="col-md-12">
@@ -476,12 +476,12 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 
             <div class="col-md-2">
               <label class="form-label">Total Quantity</label>
-              <input type="number" name="unit_quantity" id="edit_unit_quantity" class="form-control" required min="0">
+              <input type="number" name="quantity" id="edit_unit_quantity" class="form-control" required min="0">
             </div>
 
             <div class="col-md-2">
               <label class="form-label">Critical Level</label>
-              <input type="number" name="unit_crit_level" id="edit_unit_crit_level" class="form-control" required min="0">
+              <input type="number" name="qty_crit_level" id="edit_unit_crit_level" class="form-control" required min="0">
             </div>
 
             <div class="col-md-2">
@@ -528,7 +528,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
           </div>
 
           <label class="form-label">Available Quantity</label>
-          <input type="number" class="form-control" name="current_unit_quantity" id="avail_current_unit_quantity" min="0" required>
+          <input type="number" class="form-control" name="current_quantity" id="avail_current_unit_quantity" min="0" required>
 
           <div class="form-text">This updates only the available quantity value.</div>
 
@@ -567,7 +567,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 
           <div class="ast-rule-group">
             <label class="ast-rule-label">Available for Requisition (Qty)</label>
-            <input type="number" class="form-control" name="current_unit_quantity" id="rules_current_unit_quantity" min="0">
+            <input type="number" class="form-control" name="current_quantity" id="rules_current_unit_quantity" min="0">
             <div class="ast-rule-help">
               <div>Must be between 0 and total quantity.</div>
               <div>Single set: quantity will update this item's available quantity.</div>
@@ -847,7 +847,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
         <div class="mt-3">
           <details>
             <summary class="small text-muted">Show expected CSV columns</summary>
-            <pre class="small mb-0 mt-2">inventory_system_item_code,item_description,item_category_code,cost_value,unit,unit_quantity,current_unit_quantity,unit_crit_level,source_of_funds,status,allowed_employment_status</pre>
+            <pre class="small mb-0 mt-2">inventory_system_item_code,item_description,item_category_code,cost_value,unit,quantity,current_quantity,qty_crit_level,source_of_funds,status,allowed_employment_status</pre>
           </details>
           <div class="small text-muted mt-2">
             <b>inventory_system_item_code</b>: numbers only (or blank).
@@ -1116,10 +1116,10 @@ function openAvailabilityRulesModal(id){
       $('#rules_inventory_id').val(d.inventory_id || id);
       $('#rules_item_code').val(d.inventory_system_item_code || '');
       $('#rules_item_count').text('1 item selected');
-      $('#rules_current_unit_quantity').val(d.current_unit_quantity ?? 0);
-      $('#rules_total_qty_text').text(d.unit_quantity ?? '-');
+      $('#rules_current_unit_quantity').val(d.current_quantity ?? 0);
+      $('#rules_total_qty_text').text(d.quantity ?? '-');
       $('#rules_unit_text').text(d.unit || '-');
-      $('#rules_crit_level_text').text(d.unit_crit_level ?? 0);
+      $('#rules_crit_level_text').text(d.qty_crit_level ?? 0);
       $('#rules_status_text').html(badgeStatusHtml(d.status));
 
       const mode = d.allowed_employment_status?.mode || 'all';
@@ -1198,8 +1198,8 @@ var columns = [
     }
   },
   {title:"Unit", field:"unit", minWidth:110, hozAlign:"center"},
-  {title:"Total Qty", field:"unit_quantity", align:"right", minWidth:100},
-  {title:"Available Qty", field:"current_unit_quantity", align:"right", minWidth:120},
+  {title:"Total Qty", field:"quantity", align:"right", minWidth:100},
+  {title:"Available Qty", field:"current_quantity", align:"right", minWidth:120},
 
   {
     title:"Status",
@@ -1211,7 +1211,7 @@ var columns = [
     }
   },
 
-  {title:"Critical Level", field:"unit_crit_level", align:"right", minWidth:130},
+  {title:"Critical Level", field:"qty_crit_level", align:"right", minWidth:130},
 
   {
     title:"Allowed Status",
@@ -1293,7 +1293,7 @@ var table = new Tabulator("#consumeable-table", {
     return groupLabel(data.item_category_code, data.item_category_name);
   },
   groupHeader: function(value, count, data){
-    const qty = data.reduce((sum, r) => sum + (parseInt(r.unit_quantity, 10) || 0), 0);
+    const qty = data.reduce((sum, r) => sum + (parseInt(r.quantity, 10) || 0), 0);
     return `${escHtml(value)} <span class="text-muted small">(${count} items, Qty ${qty})</span>`;
   },
   groupStartOpen: true
@@ -1421,8 +1421,8 @@ function openEditModal(id){
       $('#edit_item_category_code').val(d.item_category_code || '');
       $('#edit_cost_value').val(d.cost_value ?? 0);
       $('#edit_unit').val(d.unit || '');
-      $('#edit_unit_quantity').val(d.unit_quantity ?? 0);
-      $('#edit_unit_crit_level').val(d.unit_crit_level ?? 0);
+      $('#edit_unit_quantity').val(d.quantity ?? 0);
+      $('#edit_unit_crit_level').val(d.qty_crit_level ?? 0);
       $('#edit_source_of_funds').val(d.source_of_funds || '');
 
       $('#editRecordModal').modal('show');
@@ -1472,7 +1472,7 @@ function openAvailableModal(id){
       if(res && res.success){
         const d = res.data || {};
         $('#avail_item_label').text(`${d.inventory_system_item_code || ''} — ${String(d.item_description || '').slice(0, 60)} (${d.unit || '-'})`);
-        $('#avail_current_unit_quantity').val(d.current_unit_quantity ?? 0);
+        $('#avail_current_unit_quantity').val(d.current_quantity ?? 0);
       }else{
         $('#avail_item_label').text(`ID #${id}`);
         $('#avail_current_unit_quantity').val(0);
@@ -1526,7 +1526,7 @@ $('#availabilityRulesForm').off('submit').on('submit', function(e){
     data: {
       action: 'update_availability_settings',
       inventory_id: $('#rules_inventory_id').val(),
-      current_unit_quantity: $('#rules_current_unit_quantity').val(),
+      current_quantity: $('#rules_current_unit_quantity').val(),
       allowed_status: getAllowedStatusPayloadFromModal()
     },
     success: function(res){

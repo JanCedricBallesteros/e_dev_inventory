@@ -450,9 +450,9 @@ try {
 
             $cost_value            = _float(_post('cost_value'));
             $unit                  = _post('unit');
-            $unit_quantity         = _int(_post('unit_quantity'));
-            $current_unit_quantity = _int(_post('current_unit_quantity'));
-            $unit_crit_level       = _int(_post('unit_crit_level'));
+            $quantity         = _int(_post('quantity'));
+            $current_quantity = _int(_post('current_quantity'));
+            $qty_crit_level       = _int(_post('qty_crit_level'));
 
             $source_of_funds = _post('source_of_funds');
             $allowed_norm = normalize_allowed_payload_csm(_post('allowed_status', 'ALL'));
@@ -467,12 +467,12 @@ try {
                 echo "Unknown Category Code: " . $item_category_code;
                 exit();
             }
-            if ($unit_quantity < 0 || $current_unit_quantity < 0 || $unit_crit_level < 0 || $cost_value < 0) {
+            if ($quantity < 0 || $current_quantity < 0 || $qty_crit_level < 0 || $cost_value < 0) {
                 http_response_code(422);
                 echo "Cost, quantity, and critical level cannot be negative.";
                 exit();
             }
-            if ($current_unit_quantity > $unit_quantity) {
+            if ($current_quantity > $quantity) {
                 http_response_code(422);
                 echo "Available quantity cannot exceed Total Quantity.";
                 exit();
@@ -515,7 +515,7 @@ try {
 
             $today = _today();
             $allowed_json = $allowed_norm['json'];
-            $status = _compute_status_from_state($current_unit_quantity, $unit_crit_level, $allowed_json);
+            $status = _compute_status_from_state($current_quantity, $qty_crit_level, $allowed_json);
 
             $sql = "
                 INSERT INTO csm_inventory
@@ -528,9 +528,9 @@ try {
                     source_of_funds,
                     item_category_code,
                     status,
-                    unit_quantity,
-                    current_unit_quantity,
-                    unit_crit_level,
+                    quantity,
+                    current_quantity,
+                    qty_crit_level,
                     allowed_employment_status,
                     last_updated
                 )
@@ -544,9 +544,9 @@ try {
                     '" . _esc($source_of_funds) . "',
                     '" . _esc($item_category_code) . "',
                     " . (int)$status . ",
-                    " . (int)$unit_quantity . ",
-                    " . (int)$current_unit_quantity . ",
-                    " . (int)$unit_crit_level . ",
+                    " . (int)$quantity . ",
+                    " . (int)$current_quantity . ",
+                    " . (int)$qty_crit_level . ",
                     " . ($allowed_json ? "'" . _esc($allowed_json) . "'" : "NULL") . ",
                     '" . _esc($today) . "'
                 )
@@ -683,7 +683,7 @@ try {
                 exit();
             }
 
-            $sql = "SELECT inventory_id, inventory_system_item_code, item_description, unit, unit_quantity, current_unit_quantity, unit_crit_level, status, allowed_employment_status
+            $sql = "SELECT inventory_id, inventory_system_item_code, item_description, unit, quantity, current_quantity, qty_crit_level, status, allowed_employment_status
                     FROM csm_inventory
                     WHERE inventory_id = {$inventory_id}
                     LIMIT 1";
@@ -714,7 +714,7 @@ try {
             header('Content-Type: application/json; charset=utf-8');
 
             $inventory_id = _int(_post('inventory_id'));
-            $current_unit_quantity = _int(_post('current_unit_quantity'));
+            $current_quantity = _int(_post('current_quantity'));
             $allowed_norm = normalize_allowed_payload_csm(_post('allowed_status', 'ALL'));
 
             if ($inventory_id <= 0) {
@@ -722,13 +722,13 @@ try {
                 echo json_encode(['success' => false, 'message' => 'Invalid inventory_id.']);
                 exit();
             }
-            if ($current_unit_quantity < 0) {
+            if ($current_quantity < 0) {
                 http_response_code(422);
                 echo json_encode(['success' => false, 'message' => 'Available quantity cannot be negative.']);
                 exit();
             }
 
-            $chk = call_mysql_query("SELECT inventory_id, unit_crit_level, unit_quantity FROM csm_inventory WHERE inventory_id={$inventory_id} LIMIT 1");
+            $chk = call_mysql_query("SELECT inventory_id, qty_crit_level, quantity FROM csm_inventory WHERE inventory_id={$inventory_id} LIMIT 1");
             $r = $chk ? call_mysql_fetch_array($chk) : null;
             if (!$r) {
                 http_response_code(404);
@@ -736,23 +736,23 @@ try {
                 exit();
             }
 
-            $unitQty = (int)$r['unit_quantity'];
-            $critLevel = (int)$r['unit_crit_level'];
+            $unitQty = (int)$r['quantity'];
+            $critLevel = (int)$r['qty_crit_level'];
 
-            if ($current_unit_quantity > $unitQty) {
+            if ($current_quantity > $unitQty) {
                 http_response_code(422);
                 echo json_encode(['success' => false, 'message' => "Available quantity cannot exceed total quantity ({$unitQty})."]);
                 exit();
             }
 
             $allowed_json = $allowed_norm['json'];
-            $status = _compute_status_from_state($current_unit_quantity, $critLevel, $allowed_json);
+            $status = _compute_status_from_state($current_quantity, $critLevel, $allowed_json);
             $today = _today();
 
             $sql = "
                 UPDATE csm_inventory
                 SET
-                    current_unit_quantity = " . (int)$current_unit_quantity . ",
+                    current_quantity = " . (int)$current_quantity . ",
                     allowed_employment_status = " . ($allowed_json ? "'" . _esc($allowed_json) . "'" : "NULL") . ",
                     status = " . (int)$status . ",
                     last_updated = '" . _esc($today) . "'
@@ -771,7 +771,7 @@ try {
             exit();
         }
 
-        // ============ UPDATE (MAIN RECORD, does NOT touch current_unit_quantity except clamp) ============
+        // ============ UPDATE (MAIN RECORD, does NOT touch current_quantity except clamp) ============
         case 'update_inventory': {
             $inventory_id = _int(_post('inventory_id'));
             if ($inventory_id <= 0) {
@@ -786,8 +786,8 @@ try {
 
             $cost_value      = _float(_post('cost_value'));
             $unit            = _post('unit');
-            $unit_quantity   = _int(_post('unit_quantity'));
-            $unit_crit_level = _int(_post('unit_crit_level'));
+            $quantity   = _int(_post('quantity'));
+            $qty_crit_level = _int(_post('qty_crit_level'));
 
             $source_of_funds = _post('source_of_funds');
 
@@ -801,7 +801,7 @@ try {
                 echo "Unknown Category Code: " . $item_category_code;
                 exit();
             }
-            if ($cost_value < 0 || $unit_quantity < 0 || $unit_crit_level < 0) {
+            if ($cost_value < 0 || $quantity < 0 || $qty_crit_level < 0) {
                 http_response_code(422);
                 echo "Cost, quantity, and critical level cannot be negative.";
                 exit();
@@ -844,12 +844,12 @@ try {
                 exit();
             }
 
-            $oldRes = call_mysql_query("SELECT current_unit_quantity, allowed_employment_status FROM csm_inventory WHERE inventory_id={$inventory_id} LIMIT 1");
+            $oldRes = call_mysql_query("SELECT current_quantity, allowed_employment_status FROM csm_inventory WHERE inventory_id={$inventory_id} LIMIT 1");
             $oldRow = $oldRes ? call_mysql_fetch_array($oldRes) : null;
-            $currentQty = $oldRow ? (int)$oldRow['current_unit_quantity'] : 0;
-            if ($currentQty > $unit_quantity) $currentQty = $unit_quantity;
+            $currentQty = $oldRow ? (int)$oldRow['current_quantity'] : 0;
+            if ($currentQty > $quantity) $currentQty = $quantity;
 
-            $status = _compute_status_from_state($currentQty, $unit_crit_level, $oldRow['allowed_employment_status'] ?? null);
+            $status = _compute_status_from_state($currentQty, $qty_crit_level, $oldRow['allowed_employment_status'] ?? null);
             $today = _today();
 
             $sql = "
@@ -860,9 +860,9 @@ try {
                     item_category_code = '" . _esc($item_category_code) . "',
                     cost_value = " . (float)$cost_value . ",
                     unit = '" . _esc($unit) . "',
-                    unit_quantity = " . (int)$unit_quantity . ",
-                    current_unit_quantity = " . (int)$currentQty . ",
-                    unit_crit_level = " . (int)$unit_crit_level . ",
+                    quantity = " . (int)$quantity . ",
+                    current_quantity = " . (int)$currentQty . ",
+                    qty_crit_level = " . (int)$qty_crit_level . ",
                     source_of_funds = '" . _esc($source_of_funds) . "',
                     status = " . (int)$status . ",
                     last_updated = '" . _esc($today) . "'
@@ -899,7 +899,7 @@ try {
                 exit();
             }
 
-            $q = call_mysql_query("SELECT unit_quantity, current_unit_quantity, unit_crit_level, source_of_funds, cost_value, allowed_employment_status FROM csm_inventory WHERE inventory_id={$inventory_id} LIMIT 1");
+            $q = call_mysql_query("SELECT quantity, current_quantity, qty_crit_level, source_of_funds, cost_value, allowed_employment_status FROM csm_inventory WHERE inventory_id={$inventory_id} LIMIT 1");
             $row = $q ? call_mysql_fetch_array($q) : null;
             if (!$row) {
                 http_response_code(404);
@@ -907,9 +907,9 @@ try {
                 exit();
             }
 
-            $new_unit_qty = (int)$row['unit_quantity'] + $add_qty;
-            $new_cur_qty  = (int)$row['current_unit_quantity'] + $add_qty;
-            $critLevel    = (int)$row['unit_crit_level'];
+            $new_unit_qty = (int)$row['quantity'] + $add_qty;
+            $new_cur_qty  = (int)$row['current_quantity'] + $add_qty;
+            $critLevel    = (int)$row['qty_crit_level'];
 
             $final_source = ($source_of_funds === '') ? (string)$row['source_of_funds'] : $source_of_funds;
             $final_cost = (trim($cost_value_raw) !== '') ? (string)_float($cost_value_raw) : (string)$row['cost_value'];
@@ -920,8 +920,8 @@ try {
             $sql = "
                 UPDATE csm_inventory
                 SET
-                    unit_quantity = {$new_unit_qty},
-                    current_unit_quantity = {$new_cur_qty},
+                    quantity = {$new_unit_qty},
+                    current_quantity = {$new_cur_qty},
                     source_of_funds = '" . _esc($final_source) . "',
                     cost_value = " . (float)$final_cost . ",
                     status = " . (int)$status . ",
@@ -944,20 +944,20 @@ try {
         // ============ UPDATE AVAILABLE ONLY ============
         case 'update_available_qty': {
             $inventory_id = _int(_post('inventory_id'));
-            $current_unit_quantity = _int(_post('current_unit_quantity'));
+            $current_quantity = _int(_post('current_quantity'));
 
             if ($inventory_id <= 0) {
                 http_response_code(422);
                 echo "Invalid inventory_id.";
                 exit();
             }
-            if ($current_unit_quantity < 0) {
+            if ($current_quantity < 0) {
                 http_response_code(422);
                 echo "Available quantity cannot be negative.";
                 exit();
             }
 
-            $chk = call_mysql_query("SELECT unit_quantity, unit_crit_level, allowed_employment_status FROM csm_inventory WHERE inventory_id={$inventory_id} LIMIT 1");
+            $chk = call_mysql_query("SELECT quantity, qty_crit_level, allowed_employment_status FROM csm_inventory WHERE inventory_id={$inventory_id} LIMIT 1");
             $r = $chk ? call_mysql_fetch_array($chk) : null;
             if (!$r) {
                 http_response_code(404);
@@ -965,22 +965,22 @@ try {
                 exit();
             }
 
-            $unitQty = (int)$r['unit_quantity'];
-            $critLevel = (int)$r['unit_crit_level'];
+            $unitQty = (int)$r['quantity'];
+            $critLevel = (int)$r['qty_crit_level'];
 
-            if ($current_unit_quantity > $unitQty) {
+            if ($current_quantity > $unitQty) {
                 http_response_code(422);
                 echo "Available quantity cannot exceed Total Quantity ({$unitQty}).";
                 exit();
             }
 
             $today = _today();
-            $status = _compute_status_from_state($current_unit_quantity, $critLevel, $r['allowed_employment_status'] ?? null);
+            $status = _compute_status_from_state($current_quantity, $critLevel, $r['allowed_employment_status'] ?? null);
 
             $sql = "
                 UPDATE csm_inventory
                 SET
-                    current_unit_quantity = " . (int)$current_unit_quantity . ",
+                    current_quantity = " . (int)$current_quantity . ",
                     status = " . (int)$status . ",
                     last_updated = '" . _esc($today) . "'
                 WHERE inventory_id = {$inventory_id}
