@@ -25,6 +25,21 @@ function _esc($v) {
 }
 function _today() { return date('Y-m-d'); }
 
+/**
+ * Accepts:
+ * - blank => ''
+ * - numbers only => '1'
+ * - full code => 'CSM-0002-0001' or 'CSM-CSM0002-0001' (we normalize cat part)
+ *
+ * Returns array:
+ *  [
+ *    'ok' => bool,
+ *    'type' => 'blank'|'digits'|'full',
+ *    'digits' => ''|'1',
+ *    'cat_from_code' => ''|'0002',
+ *    'error' => ''|string
+ *  ]
+ */
 function _parse_item_code_input($raw) {
     $s = trim((string)$raw);
     if ($s === '') return ['ok'=>true, 'type'=>'blank', 'digits'=>'', 'cat_from_code'=>'', 'error'=>''];
@@ -143,8 +158,7 @@ function _read_csv_rows($tmpPath) {
     return [$header, $rows];
 }
 
-/* -------------------- EMPLOYMENT STATUS / STATUS HELPERS -------------------- */
-
+// -------------------- RULE / STATUS HELPERS --------------------
 function normalize_allowed_payload_csm_bulk($raw) {
     if ($raw === null || $raw === '') {
         return [
@@ -328,10 +342,11 @@ if ($action === 'download_template') {
         'inventory_system_item_code',
         'item_description',
         'item_category_code',
+        'cost_value',
+        'unit',
         'unit_quantity',
         'current_unit_quantity',
         'unit_crit_level',
-        'item_cost',
         'source_of_funds',
         'status',
         'allowed_employment_status'
@@ -341,10 +356,11 @@ if ($action === 'download_template') {
         '1',
         'Example itemized description (details/specs/notes)',
         $exampleCat,
+        '25.50',
+        'pcs',
         '100',
         '80',
         '10',
-        '25.50',
         'General Fund',
         '1',
         'ALL'
@@ -354,6 +370,10 @@ if ($action === 'download_template') {
     exit();
 }
 
+/**
+ * EXPORT CSV (SERVER)
+ * Optional filter: item_category_code
+ */
 if ($action === 'export_csv') {
     $cat = isset($_GET['item_category_code']) ? trim((string)$_GET['item_category_code']) : '';
 
@@ -367,10 +387,11 @@ if ($action === 'export_csv') {
             i.inventory_system_item_code,
             i.item_description,
             i.item_category_code,
+            i.cost_value,
+            i.unit,
             i.unit_quantity,
             i.current_unit_quantity,
             i.unit_crit_level,
-            i.item_cost,
             i.source_of_funds,
             i.status,
             i.allowed_employment_status
@@ -388,10 +409,11 @@ if ($action === 'export_csv') {
         'inventory_system_item_code',
         'item_description',
         'item_category_code',
+        'cost_value',
+        'unit',
         'unit_quantity',
         'current_unit_quantity',
         'unit_crit_level',
-        'item_cost',
         'source_of_funds',
         'status',
         'allowed_employment_status'
@@ -406,13 +428,14 @@ if ($action === 'export_csv') {
                 (string)($row['inventory_system_item_code'] ?? ''),
                 (string)($row['item_description'] ?? ''),
                 (string)($row['item_category_code'] ?? ''),
+                (string)($row['cost_value'] ?? '0'),
+                (string)($row['unit'] ?? ''),
                 (string)($row['unit_quantity'] ?? '0'),
                 (string)($row['current_unit_quantity'] ?? '0'),
                 (string)($row['unit_crit_level'] ?? '0'),
-                (string)($row['item_cost'] ?? '0'),
                 (string)($row['source_of_funds'] ?? ''),
                 (string)($row['status'] ?? '0'),
-                (string)$allowed,
+                (string)$allowed
             ]);
         }
     }
@@ -428,6 +451,7 @@ if ($action !== 'bulk_import') {
     exit();
 }
 
+// -------------------- BULK IMPORT --------------------
 header('Content-Type: application/json; charset=utf-8');
 
 $mode = isset($_POST['mode']) ? trim((string)$_POST['mode']) : 'upsert';
@@ -448,14 +472,16 @@ if (!$header || !$rows) {
     exit();
 }
 
+// required columns
 $required = [
     'inventory_system_item_code',
     'item_description',
     'item_category_code',
+    'cost_value',
+    'unit',
     'unit_quantity',
     'current_unit_quantity',
-    'unit_crit_level',
-    'item_cost'
+    'unit_crit_level'
 ];
 foreach ($required as $req) {
     if (!in_array($req, $header, true)) {
@@ -481,18 +507,19 @@ foreach ($rows as $r) {
     $item_description = trim((string)($r['item_description'] ?? ''));
     $cat = trim((string)($r['item_category_code'] ?? ''));
 
+    $cost_value = (float)($r['cost_value'] ?? 0);
+    $unit = trim((string)($r['unit'] ?? ''));
+
     $unit_quantity = (int)($r['unit_quantity'] ?? 0);
     $current_unit_quantity = (int)($r['current_unit_quantity'] ?? 0);
     $unit_crit_level = (int)($r['unit_crit_level'] ?? 0);
 
-    $item_cost = (float)($r['item_cost'] ?? 0);
     $source_of_funds = trim((string)($r['source_of_funds'] ?? ''));
-
     $statusCsvRaw = trim((string)($r['status'] ?? ''));
     $allowedRaw = trim((string)($r['allowed_employment_status'] ?? ''));
 
-    if ($item_description === '' || $cat === '') {
-        if (count($errors) < $errorsLimit) $errors[] = "Row {$rowNum}: Required fields missing (item_description / item_category_code).";
+    if ($item_description === '' || $cat === '' || $unit === '') {
+        if (count($errors) < $errorsLimit) $errors[] = "Row {$rowNum}: Required fields missing (item_description / item_category_code / unit).";
         $skipped++;
         continue;
     }
@@ -503,8 +530,8 @@ foreach ($rows as $r) {
         continue;
     }
 
-    if ($unit_quantity < 0 || $current_unit_quantity < 0 || $unit_crit_level < 0) {
-        if (count($errors) < $errorsLimit) $errors[] = "Row {$rowNum}: Quantities and critical level cannot be negative.";
+    if ($cost_value < 0 || $unit_quantity < 0 || $current_unit_quantity < 0 || $unit_crit_level < 0) {
+        if (count($errors) < $errorsLimit) $errors[] = "Row {$rowNum}: Cost, quantities, and critical level cannot be negative.";
         $skipped++;
         continue;
     }
@@ -522,6 +549,7 @@ foreach ($rows as $r) {
         continue;
     }
 
+    // If user provided FULL code, enforce category match
     if ($parsed['type'] === 'full') {
         $catFromCode = $parsed['cat_from_code'];
         $catNorm = _normalize_category_code_for_itemcode($cat);
@@ -534,6 +562,7 @@ foreach ($rows as $r) {
         }
     }
 
+    // Build FULL code EXACTLY
     if ($parsed['type'] === 'blank') {
         $fullCode = _generate_item_code_auto($cat);
     } else {
@@ -555,6 +584,7 @@ foreach ($rows as $r) {
         continue;
     }
 
+    // Final status is auto-computed from qty + crit + rules
     $finalStatus = _compute_status_from_state_bulk($current_unit_quantity, $unit_crit_level, $allowed_json);
 
     $codeEsc = _esc($fullCode);
@@ -571,10 +601,11 @@ foreach ($rows as $r) {
             SET
                 item_description='" . _esc($item_description) . "',
                 item_category_code='" . _esc($cat) . "',
+                cost_value=" . (float)$cost_value . ",
+                unit='" . _esc($unit) . "',
                 unit_quantity=" . (int)$unit_quantity . ",
                 current_unit_quantity=" . (int)$current_unit_quantity . ",
                 unit_crit_level=" . (int)$unit_crit_level . ",
-                item_cost=" . (float)$item_cost . ",
                 source_of_funds='" . _esc($source_of_funds) . "',
                 status=" . (int)$finalStatus . ",
                 allowed_employment_status=" . ($allowed_json ? "'" . _esc($allowed_json) . "'" : "NULL") . ",
@@ -592,13 +623,15 @@ foreach ($rows as $r) {
         continue;
     }
 
+    // insert
     $sql = "
         INSERT INTO csm_inventory
         (
             inventory_system_item_code,
             item_description,
             acquisition_date,
-            item_cost,
+            cost_value,
+            unit,
             source_of_funds,
             item_category_code,
             status,
@@ -613,7 +646,8 @@ foreach ($rows as $r) {
             '" . _esc($fullCode) . "',
             '" . _esc($item_description) . "',
             '" . _esc($today) . "',
-            " . (float)$item_cost . ",
+            " . (float)$cost_value . ",
+            '" . _esc($unit) . "',
             '" . _esc($source_of_funds) . "',
             '" . _esc($cat) . "',
             " . (int)$finalStatus . ",
