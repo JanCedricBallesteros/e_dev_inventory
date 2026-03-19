@@ -370,6 +370,36 @@ function enrich_csm_row($row, $statusMap) {
     return $row;
 }
 
+// -------------------- ACTIVITY LOG HELPERS --------------------
+function csm_activity_log_safe($action, $result = "SUCCESS", $details = array()) {
+    if (function_exists('activity_log_new')) {
+        activity_log_new($action, $result, $details);
+    }
+}
+
+function csm_allowed_status_label_from_raw($raw) {
+    static $statusMap = null;
+    if ($statusMap === null) {
+        $statusMap = get_employment_status_map_csm();
+    }
+    $norm = normalize_allowed_employment_csm($raw);
+    return build_allowed_status_label_csm($norm, $statusMap);
+}
+
+function csm_inventory_snapshot_by_id($inventory_id) {
+    $inventory_id = (int)$inventory_id;
+    if ($inventory_id <= 0) return null;
+
+    $res = call_mysql_query("SELECT * FROM csm_inventory WHERE inventory_id = {$inventory_id} LIMIT 1");
+    $row = $res ? call_mysql_fetch_array($res) : null;
+    if (!$row) return null;
+
+    $row['status'] = (int)($row['status'] ?? 0);
+    $row['allowed_status_names'] = csm_allowed_status_label_from_raw($row['allowed_employment_status'] ?? null);
+
+    return $row;
+}
+
 /**
  * Resolve display_image and include new unit/cost_value fields
  */
@@ -448,11 +478,11 @@ try {
             $item_description   = _post('item_description');
             $item_category_code = _post('item_category_code');
 
-            $cost_value            = _float(_post('cost_value'));
-            $unit                  = _post('unit');
+            $cost_value       = _float(_post('cost_value'));
+            $unit             = _post('unit');
             $quantity         = _int(_post('quantity'));
             $current_quantity = _int(_post('current_quantity'));
-            $qty_crit_level       = _int(_post('qty_crit_level'));
+            $qty_crit_level   = _int(_post('qty_crit_level'));
 
             $source_of_funds = _post('source_of_funds');
             $allowed_norm = normalize_allowed_payload_csm(_post('allowed_status', 'ALL'));
@@ -553,7 +583,30 @@ try {
             ";
 
             $res = call_mysql_query($sql);
-            if ($res) { echo "success"; exit(); }
+            if ($res) {
+                $newRes = call_mysql_query("SELECT inventory_id FROM csm_inventory WHERE inventory_system_item_code = '{$codeEsc}' LIMIT 1");
+                $newRow = $newRes ? call_mysql_fetch_array($newRes) : null;
+
+                csm_activity_log_safe("CSM INVENTORY CREATE", "SUCCESS", array(
+                    'inventory_id' => isset($newRow['inventory_id']) ? (int)$newRow['inventory_id'] : null,
+                    'inventory_system_item_code' => $inventory_system_item_code,
+                    'item_description' => $item_description,
+                    'item_category_code' => $item_category_code,
+                    'acquisition_date' => $today,
+                    'cost_value' => (float)$cost_value,
+                    'unit' => $unit,
+                    'source_of_funds' => $source_of_funds,
+                    'status' => (int)$status,
+                    'quantity' => (int)$quantity,
+                    'current_quantity' => (int)$current_quantity,
+                    'qty_crit_level' => (int)$qty_crit_level,
+                    'allowed_employment_status' => $allowed_json,
+                    'allowed_status_names' => csm_allowed_status_label_from_raw($allowed_json)
+                ));
+
+                echo "success";
+                exit();
+            }
 
             http_response_code(500);
             echo "Database insert failed.";
@@ -728,16 +781,15 @@ try {
                 exit();
             }
 
-            $chk = call_mysql_query("SELECT inventory_id, qty_crit_level, quantity FROM csm_inventory WHERE inventory_id={$inventory_id} LIMIT 1");
-            $r = $chk ? call_mysql_fetch_array($chk) : null;
-            if (!$r) {
+            $before = csm_inventory_snapshot_by_id($inventory_id);
+            if (!$before) {
                 http_response_code(404);
                 echo json_encode(['success' => false, 'message' => 'Record not found.']);
                 exit();
             }
 
-            $unitQty = (int)$r['quantity'];
-            $critLevel = (int)$r['qty_crit_level'];
+            $unitQty = (int)$before['quantity'];
+            $critLevel = (int)$before['qty_crit_level'];
 
             if ($current_quantity > $unitQty) {
                 http_response_code(422);
@@ -762,6 +814,20 @@ try {
 
             $res = call_mysql_query($sql);
             if ($res) {
+                csm_activity_log_safe("CSM INVENTORY AVAILABILITY UPDATE", "SUCCESS", array(
+                    'inventory_id' => $inventory_id,
+                    'inventory_system_item_code' => $before['inventory_system_item_code'] ?? null,
+                    'item_description' => $before['item_description'] ?? null,
+                    'previous' => $before,
+                    'updated' => array(
+                        'current_quantity' => (int)$current_quantity,
+                        'allowed_employment_status' => $allowed_json,
+                        'allowed_status_names' => csm_allowed_status_label_from_raw($allowed_json),
+                        'status' => (int)$status,
+                        'last_updated' => $today
+                    )
+                ));
+
                 echo json_encode(['success' => true, 'message' => 'Availability rules updated.']);
                 exit();
             }
@@ -786,8 +852,8 @@ try {
 
             $cost_value      = _float(_post('cost_value'));
             $unit            = _post('unit');
-            $quantity   = _int(_post('quantity'));
-            $qty_crit_level = _int(_post('qty_crit_level'));
+            $quantity        = _int(_post('quantity'));
+            $qty_crit_level  = _int(_post('qty_crit_level'));
 
             $source_of_funds = _post('source_of_funds');
 
@@ -844,12 +910,17 @@ try {
                 exit();
             }
 
-            $oldRes = call_mysql_query("SELECT current_quantity, allowed_employment_status FROM csm_inventory WHERE inventory_id={$inventory_id} LIMIT 1");
-            $oldRow = $oldRes ? call_mysql_fetch_array($oldRes) : null;
-            $currentQty = $oldRow ? (int)$oldRow['current_quantity'] : 0;
+            $before = csm_inventory_snapshot_by_id($inventory_id);
+            if (!$before) {
+                http_response_code(404);
+                echo "Record not found.";
+                exit();
+            }
+
+            $currentQty = (int)$before['current_quantity'];
             if ($currentQty > $quantity) $currentQty = $quantity;
 
-            $status = _compute_status_from_state($currentQty, $qty_crit_level, $oldRow['allowed_employment_status'] ?? null);
+            $status = _compute_status_from_state($currentQty, $qty_crit_level, $before['allowed_employment_status'] ?? null);
             $today = _today();
 
             $sql = "
@@ -871,7 +942,31 @@ try {
             ";
 
             $res = call_mysql_query($sql);
-            if ($res) { echo "success"; exit(); }
+            if ($res) {
+                csm_activity_log_safe("CSM INVENTORY UPDATE", "SUCCESS", array(
+                    'inventory_id' => $inventory_id,
+                    'inventory_system_item_code' => $inventory_system_item_code,
+                    'item_description' => $item_description,
+                    'item_category_code' => $item_category_code,
+                    'previous' => $before,
+                    'updated' => array(
+                        'inventory_system_item_code' => $inventory_system_item_code,
+                        'item_description' => $item_description,
+                        'item_category_code' => $item_category_code,
+                        'cost_value' => (float)$cost_value,
+                        'unit' => $unit,
+                        'quantity' => (int)$quantity,
+                        'current_quantity' => (int)$currentQty,
+                        'qty_crit_level' => (int)$qty_crit_level,
+                        'source_of_funds' => $source_of_funds,
+                        'status' => (int)$status,
+                        'last_updated' => $today
+                    )
+                ));
+
+                echo "success";
+                exit();
+            }
 
             http_response_code(500);
             echo "Database update failed.";
@@ -899,22 +994,21 @@ try {
                 exit();
             }
 
-            $q = call_mysql_query("SELECT quantity, current_quantity, qty_crit_level, source_of_funds, cost_value, allowed_employment_status FROM csm_inventory WHERE inventory_id={$inventory_id} LIMIT 1");
-            $row = $q ? call_mysql_fetch_array($q) : null;
-            if (!$row) {
+            $before = csm_inventory_snapshot_by_id($inventory_id);
+            if (!$before) {
                 http_response_code(404);
                 echo json_encode(['success' => false, 'message' => 'Item not found.']);
                 exit();
             }
 
-            $new_unit_qty = (int)$row['quantity'] + $add_qty;
-            $new_cur_qty  = (int)$row['current_quantity'] + $add_qty;
-            $critLevel    = (int)$row['qty_crit_level'];
+            $new_unit_qty = (int)$before['quantity'] + $add_qty;
+            $new_cur_qty  = (int)$before['current_quantity'] + $add_qty;
+            $critLevel    = (int)$before['qty_crit_level'];
 
-            $final_source = ($source_of_funds === '') ? (string)$row['source_of_funds'] : $source_of_funds;
-            $final_cost = (trim($cost_value_raw) !== '') ? (string)_float($cost_value_raw) : (string)$row['cost_value'];
+            $final_source = ($source_of_funds === '') ? (string)$before['source_of_funds'] : $source_of_funds;
+            $final_cost = (trim($cost_value_raw) !== '') ? (string)_float($cost_value_raw) : (string)$before['cost_value'];
 
-            $status = _compute_status_from_state($new_cur_qty, $critLevel, $row['allowed_employment_status'] ?? null);
+            $status = _compute_status_from_state($new_cur_qty, $critLevel, $before['allowed_employment_status'] ?? null);
             $today = _today();
 
             $sql = "
@@ -937,6 +1031,22 @@ try {
                 exit();
             }
 
+            csm_activity_log_safe("CSM INVENTORY ADD QUANTITY", "SUCCESS", array(
+                'inventory_id' => $inventory_id,
+                'inventory_system_item_code' => $before['inventory_system_item_code'] ?? null,
+                'item_description' => $before['item_description'] ?? null,
+                'add_quantity' => (int)$add_qty,
+                'previous' => $before,
+                'updated' => array(
+                    'quantity' => (int)$new_unit_qty,
+                    'current_quantity' => (int)$new_cur_qty,
+                    'source_of_funds' => $final_source,
+                    'cost_value' => (float)$final_cost,
+                    'status' => (int)$status,
+                    'last_updated' => $today
+                )
+            ));
+
             echo json_encode(['success' => true]);
             exit();
         }
@@ -957,16 +1067,15 @@ try {
                 exit();
             }
 
-            $chk = call_mysql_query("SELECT quantity, qty_crit_level, allowed_employment_status FROM csm_inventory WHERE inventory_id={$inventory_id} LIMIT 1");
-            $r = $chk ? call_mysql_fetch_array($chk) : null;
-            if (!$r) {
+            $before = csm_inventory_snapshot_by_id($inventory_id);
+            if (!$before) {
                 http_response_code(404);
                 echo "Record not found.";
                 exit();
             }
 
-            $unitQty = (int)$r['quantity'];
-            $critLevel = (int)$r['qty_crit_level'];
+            $unitQty = (int)$before['quantity'];
+            $critLevel = (int)$before['qty_crit_level'];
 
             if ($current_quantity > $unitQty) {
                 http_response_code(422);
@@ -975,7 +1084,7 @@ try {
             }
 
             $today = _today();
-            $status = _compute_status_from_state($current_quantity, $critLevel, $r['allowed_employment_status'] ?? null);
+            $status = _compute_status_from_state($current_quantity, $critLevel, $before['allowed_employment_status'] ?? null);
 
             $sql = "
                 UPDATE csm_inventory
@@ -988,7 +1097,22 @@ try {
             ";
 
             $res = call_mysql_query($sql);
-            if ($res) { echo "success"; exit(); }
+            if ($res) {
+                csm_activity_log_safe("CSM INVENTORY AVAILABLE QTY UPDATE", "SUCCESS", array(
+                    'inventory_id' => $inventory_id,
+                    'inventory_system_item_code' => $before['inventory_system_item_code'] ?? null,
+                    'item_description' => $before['item_description'] ?? null,
+                    'previous' => $before,
+                    'updated' => array(
+                        'current_quantity' => (int)$current_quantity,
+                        'status' => (int)$status,
+                        'last_updated' => $today
+                    )
+                ));
+
+                echo "success";
+                exit();
+            }
 
             http_response_code(500);
             echo "Database update failed.";
