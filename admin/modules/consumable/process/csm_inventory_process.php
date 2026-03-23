@@ -448,11 +448,11 @@ try {
             $item_description   = _post('item_description');
             $item_category_code = _post('item_category_code');
 
-            $cost_value            = _float(_post('cost_value'));
-            $unit                  = _post('unit');
-            $quantity         = _int(_post('quantity'));
-            $current_quantity = _int(_post('current_quantity'));
-            $qty_crit_level       = _int(_post('qty_crit_level'));
+            $cost_value         = _float(_post('cost_value'));
+            $unit               = _post('unit');
+            $quantity           = _int(_post('quantity'));
+            $current_quantity   = _int(_post('current_quantity'));
+            $qty_crit_level     = _int(_post('qty_crit_level'));
 
             $source_of_funds = _post('source_of_funds');
             $allowed_norm = normalize_allowed_payload_csm(_post('allowed_status', 'ALL'));
@@ -771,6 +771,62 @@ try {
             exit();
         }
 
+        // ============ BULK UPDATE RULES / AVAILABILITY ============
+        case 'update_availability_settings_bulk': {
+            header('Content-Type: application/json; charset=utf-8');
+
+            $idsRaw = _post('inventory_ids');
+            $allowed_norm = normalize_allowed_payload_csm(_post('allowed_status', 'ALL'));
+
+            $idParts = preg_split('/\s*,\s*/', $idsRaw);
+            $inventoryIds = array_values(array_unique(array_filter(array_map('intval', $idParts))));
+
+            if (empty($inventoryIds)) {
+                http_response_code(422);
+                echo json_encode(['success' => false, 'message' => 'No inventory IDs selected.']);
+                exit();
+            }
+
+            $allowed_json = $allowed_norm['json'];
+            $today = _today();
+            $updated = 0;
+
+            foreach ($inventoryIds as $inventory_id) {
+                $chk = call_mysql_query("
+                    SELECT inventory_id, current_quantity, qty_crit_level
+                    FROM csm_inventory
+                    WHERE inventory_id = {$inventory_id}
+                    LIMIT 1
+                ");
+                $row = $chk ? call_mysql_fetch_array($chk) : null;
+                if (!$row) continue;
+
+                $currentQty = (int)$row['current_quantity'];
+                $critLevel = (int)$row['qty_crit_level'];
+                $status = _compute_status_from_state($currentQty, $critLevel, $allowed_json);
+
+                $sql = "
+                    UPDATE csm_inventory
+                    SET
+                        allowed_employment_status = " . ($allowed_json ? "'" . _esc($allowed_json) . "'" : "NULL") . ",
+                        status = " . (int)$status . ",
+                        last_updated = '" . _esc($today) . "'
+                    WHERE inventory_id = {$inventory_id}
+                    LIMIT 1
+                ";
+
+                $res = call_mysql_query($sql);
+                if ($res) $updated++;
+            }
+
+            echo json_encode([
+                'success' => true,
+                'message' => "Bulk availability rules updated for {$updated} item(s).",
+                'updated' => $updated
+            ]);
+            exit();
+        }
+
         // ============ UPDATE (MAIN RECORD, does NOT touch current_quantity except clamp) ============
         case 'update_inventory': {
             $inventory_id = _int(_post('inventory_id'));
@@ -786,8 +842,8 @@ try {
 
             $cost_value      = _float(_post('cost_value'));
             $unit            = _post('unit');
-            $quantity   = _int(_post('quantity'));
-            $qty_crit_level = _int(_post('qty_crit_level'));
+            $quantity        = _int(_post('quantity'));
+            $qty_crit_level  = _int(_post('qty_crit_level'));
 
             $source_of_funds = _post('source_of_funds');
 
