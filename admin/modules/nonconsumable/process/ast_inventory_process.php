@@ -466,40 +466,54 @@ try {
                 $where = "WHERE (" . implode(' OR ', $parts) . ")";
             }
 
-                $sql = "SELECT 
-                    i.*, 
-                    c.item_category_name, 
-                    c.category_photo,
-                    (SELECT CONCAT(COALESCE(u.f_name,''), ' ', COALESCE(u.l_name,''))
-                     FROM facility_records_assignments a
-                     LEFT JOIN users u ON u.user_id = a.issued_to_user_id
-                     WHERE a.module_type = 'AST' AND a.item_code = i.property_code
-                     ORDER BY a.issued_at DESC, a.assignment_id DESC
-                     LIMIT 1) AS issued_to_name,
-                    (SELECT COUNT(*)
-                     FROM facility_records_assignments a
-                     WHERE a.module_type = 'AST'
-                       AND a.item_code = i.property_code
-                       AND a.status <> 'RETURNED') AS issued_count,
-                    (SELECT CONCAT(
-                            COALESCE(f.facility_name, ''),
-                            CASE
-                                WHEN f.facility_name IS NOT NULL AND f.facility_name <> '' AND u.unit_name IS NOT NULL AND u.unit_name <> '' THEN ' / '
-                                ELSE ''
-                            END,
-                            COALESCE(u.unit_name, '')
-                        )
-                     FROM facility_records_assignments a
-                     LEFT JOIN facility_records_facilities f ON f.facility_id = a.facility_id
-                     LEFT JOIN facility_records_units u ON u.unit_id = a.unit_id
-                     WHERE a.module_type = 'AST' AND a.item_code = i.property_code
-                     ORDER BY a.issued_at DESC, a.assignment_id DESC
-                     LIMIT 1) AS location_label
-                    FROM ast_inventory i
-                    LEFT JOIN ast_inventory_category c ON c.category_id = i.category_id
-                    {$where}
-                    ORDER BY i.created_at DESC
-                    LIMIT {$limit}";
+                                $sql = "SELECT 
+                                        i.*, 
+                                        c.item_category_name, 
+                                        c.category_photo,
+                                        (SELECT CONCAT(COALESCE(u.f_name,''), ' ', COALESCE(u.l_name,''))
+                                         FROM facility_records_assignments a
+                                         LEFT JOIN users u ON u.user_id = a.issued_to_user_id
+                                         WHERE a.module_type = 'AST' AND a.item_code = i.property_code
+                                         ORDER BY a.issued_at DESC, a.assignment_id DESC
+                                         LIMIT 1) AS issued_to_name,
+                                        (SELECT COUNT(*)
+                                         FROM facility_records_assignments a
+                                         WHERE a.module_type = 'AST'
+                                             AND a.item_code = i.property_code
+                                             AND a.status <> 'RETURNED') AS issued_count,
+                                        (SELECT a.facility_id
+                                         FROM facility_records_assignments a
+                                         WHERE a.module_type = 'AST'
+                                             AND a.item_code = i.property_code
+                                             AND a.status <> 'RETURNED'
+                                         ORDER BY a.issued_at DESC, a.assignment_id DESC
+                                         LIMIT 1) AS location_facility_id,
+                                        (SELECT a.unit_id
+                                         FROM facility_records_assignments a
+                                         WHERE a.module_type = 'AST'
+                                             AND a.item_code = i.property_code
+                                             AND a.status <> 'RETURNED'
+                                         ORDER BY a.issued_at DESC, a.assignment_id DESC
+                                         LIMIT 1) AS location_unit_id,
+                                        (SELECT CONCAT(
+                                                        COALESCE(f.facility_name, ''),
+                                                        CASE
+                                                                WHEN f.facility_name IS NOT NULL AND f.facility_name <> '' AND u.unit_name IS NOT NULL AND u.unit_name <> '' THEN ' / '
+                                                                ELSE ''
+                                                        END,
+                                                        COALESCE(u.unit_name, '')
+                                                )
+                                         FROM facility_records_assignments a
+                                         LEFT JOIN facility_records_facilities f ON f.facility_id = a.facility_id
+                                         LEFT JOIN facility_records_units u ON u.unit_id = a.unit_id
+                                         WHERE a.module_type = 'AST' AND a.item_code = i.property_code AND a.status <> 'RETURNED'
+                                         ORDER BY a.issued_at DESC, a.assignment_id DESC
+                                         LIMIT 1) AS location_label
+                                        FROM ast_inventory i
+                                        LEFT JOIN ast_inventory_category c ON c.category_id = i.category_id
+                                        {$where}
+                                        ORDER BY i.created_at DESC
+                                        LIMIT {$limit}";
 
             $res = call_mysql_query($sql);
             $items = [];

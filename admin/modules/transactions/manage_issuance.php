@@ -513,6 +513,13 @@ function renderAssignments(){
     }
 }
 
+function scheduleAssignmentRedraw(){
+    if (!assignmentTable) return;
+    setTimeout(function(){
+        if (assignmentTable) assignmentTable.redraw(true);
+    }, 250);
+}
+
 function initUserSelect2(){
     if (!$.fn.select2) return;
     if ($('#assignIssuedToUserId').hasClass('select2-hidden-accessible')) {
@@ -794,6 +801,10 @@ $(document).ready(function(){
         else loadAssignments();
     });
 
+    // Keep table fitted when sidebar toggles or window resizes.
+    $(document).on('click', '.toggle-sidebar', scheduleAssignmentRedraw);
+    $(window).on('resize', scheduleAssignmentRedraw);
+
     $('#btnAssignItem').on('click', function(){
         if (!selectedFacility || !selectedUnit) return;
         $('#assignSelected').val('');
@@ -926,14 +937,3 @@ $(document).ready(function(){
 });
 </script>
 </html>
-
-
-
-
-
-
-
-
-
-
-

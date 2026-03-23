@@ -280,6 +280,10 @@ let selectedUnit = null;
 let assignmentTable = null;
 let assignmentTableReady = false;
 let pendingLocateUnitId = null;
+let currentPage = 1;
+const urlParams = new URLSearchParams(window.location.search);
+const initialFacilityId = urlParams.get('facility_id');
+const initialUnitId = urlParams.get('unit_id');
 
 function showPageError(msg){
     const el = $('#pageMsg');
@@ -345,6 +349,31 @@ function loadFacilities(cb){
         const msg = xhr.responseJSON && xhr.responseJSON.message ? xhr.responseJSON.message : 'Server error loading facilities.';
         showPageError(msg);
     });
+}
+
+function applyInitialSelectionFromQuery(){
+    if (!initialFacilityId) return;
+    const matchFacility = facilityList.find(x => String(x.facility_id) === String(initialFacilityId));
+    if (!matchFacility) return;
+    selectedFacility = matchFacility;
+    selectedUnit = null;
+    pendingLocateUnitId = initialUnitId || null;
+    facilityItems = [];
+    assignmentList = [];
+    currentPage = 1;
+    $('#selectedUnitInfo').text((selectedFacility.facility_name || '') + ' (' + (selectedFacility.facility_code || '') + ') — All Units');
+    $('#selectedManagedBy').text('Managed By: Multiple');
+    renderFacilities();
+    loadUnits(function(){
+        if (!selectedUnit) {
+            loadFacilityItems();
+            loadAssignments();
+        }
+    });
+    if (!initialUnitId) {
+        loadFacilityItems();
+        loadAssignments();
+    }
 }
 
 function renderFacilities(){
@@ -581,6 +610,14 @@ function renderAssignments(){
     }
 }
 
+function scheduleAssignmentRedraw(){
+    if (!assignmentTable) return;
+    // Delay slightly to let the layout settle after sidebar animation.
+    setTimeout(function(){
+        if (assignmentTable) assignmentTable.redraw(true);
+    }, 250);
+}
+
 
 function initAssignmentTable(){
     assignmentTable = new Tabulator('#assignmentTable', {
@@ -646,7 +683,7 @@ function initAssignmentTable(){
 $(document).ready(function(){
     initAssignmentTable();
     initUserSelect2();
-    loadFacilities();
+    loadFacilities(applyInitialSelectionFromQuery);
 
     $('#facilityList').on('click', '.facility-header', function(e){
         if ($(e.target).closest('.btn-edit-facility, .btn-add-unit').length) return;
@@ -824,6 +861,10 @@ $(document).ready(function(){
         if (selectedFacility && !selectedUnit) loadFacilityItems();
         else loadAssignments();
     });
+
+    // Keep table fitted when sidebar toggles or window resizes.
+    $(document).on('click', '.toggle-sidebar', scheduleAssignmentRedraw);
+    $(window).on('resize', scheduleAssignmentRedraw);
 
     $('#assignmentTable').on('click', '.js-thumb-preview', function(){
         const full = $(this).data('full') || $(this).attr('src') || '';

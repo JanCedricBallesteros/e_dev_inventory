@@ -276,6 +276,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 <script>
 const BASE_URL = <?php echo json_encode(BASE_URL); ?>;
 const PROCESS_URL = BASE_URL + 'admin/modules/nonconsumable/process/ast_inventory_process.php';
+const FACILITY_RECORDS_URL = BASE_URL + 'admin/modules/transactions/facility_inventory_records.php';
 
 let inventoryTable = null;
 let rawRows = [];
@@ -287,6 +288,32 @@ const NONE_STATUS_VALUE = 'NONE';
 let availStatusLock = false;
 let isBulkAvailMode = false;
 let showIssuedOnly = false;
+let lastPageSize = null;
+
+function refreshGroupSelectStates() {
+    if (!inventoryTable) return;
+    const groups = inventoryTable.getGroups() || [];
+    groups.forEach(function(g){
+        const rows = g.getRows ? g.getRows() : [];
+        const selected = rows.filter(r => r.isSelected && r.isSelected());
+        const checkbox = $(g.getElement()).find('.js-group-select').get(0);
+        if (!checkbox) return;
+        if (!rows.length) {
+            checkbox.checked = false;
+            checkbox.indeterminate = false;
+            return;
+        }
+        checkbox.indeterminate = selected.length > 0 && selected.length < rows.length;
+        checkbox.checked = selected.length === rows.length;
+    });
+}
+
+function showFloatingError(message) {
+    if (!message) return;
+    if (typeof error_notif === 'function') return error_notif(message);
+    if ($.notify) return $.notify({ message: message }, { type: 'danger', delay: 3000, placement: { from: 'top', align: 'right' } });
+    alert(message);
+}
 
 function setSelectizeValues(selectize, values) {
     if (!selectize) return;
@@ -577,6 +604,7 @@ function applyFilters() {
     // Update summary based on filtered rows
     const activeRows = inventoryTable.getData("active") || [];
     updateSummary(activeRows);
+    refreshGroupSelectStates();
 }
 
 function scheduleInventoryRedraw() {
@@ -585,6 +613,30 @@ function scheduleInventoryRedraw() {
     setTimeout(() => {
         if (inventoryTable) inventoryTable.redraw(true);
     }, 250);
+}
+
+function toggleGroupSelection(groupKey, isChecked) {
+    if (!inventoryTable) return;
+    const groups = inventoryTable.getGroups() || [];
+    const match = groups.find(g => String(g.getKey() || '') === String(groupKey || ''));
+    if (!match) return;
+    const rows = match.getRows ? match.getRows() : [];
+    if (!rows.length) return;
+    if (isChecked) {
+        const currentSize = inventoryTable.getPageSize();
+        if (currentSize !== true) {
+            lastPageSize = currentSize;
+            inventoryTable.setPageSize(true);
+            showInvMessage('Showing all rows so you can see the full group selection.');
+        }
+        inventoryTable.scrollToRow(rows[0]);
+    }
+    if (isChecked) {
+        inventoryTable.selectRow(rows);
+    } else {
+        rows.forEach(r => r.deselect && r.deselect());
+    }
+    refreshGroupSelectStates();
 }
 
 function initTable() {
@@ -603,7 +655,13 @@ function initTable() {
         groupHeader: function(value, count, data) {
             const qty = data.reduce((sum, r) => sum + (parseInt(r.quantity, 10) || 0), 0);
             const name = value || "Uncategorized";
-            return `${name} <span class="text-muted small">(${count} items, Qty ${qty})</span>`;
+            const rawKey = value || '';
+            const encodedKey = encodeURIComponent(rawKey);
+            const safeName = escapeHtml(name);
+            return `<div class="d-flex align-items-center gap-2">
+                        <input type="checkbox" class="form-check-input js-group-select" data-group="${encodedKey}" aria-label="Select group ${safeName || 'Uncategorized'}">
+                        <span>${safeName} <span class="text-muted small">(${count} items, Qty ${qty})</span></span>
+                    </div>`;
         },
         columns: [
             { formatter: "rowSelection", titleFormatter: "rowSelection", hozAlign: "center", headerSort: false, width: 40 },
@@ -641,8 +699,14 @@ function initTable() {
             }},
             { title: "Allowed Status", field: "allowed_status_names", width: 180, headerFilter: "input", headerFilterPlaceholder: "Filter...", formatter: function(cell){
                 const v = cell.getValue();
-                if (!v || v === 'None') return '<span class="text-muted small">None</span>';
-                if (v === 'All') return '<span class="text-success small fw-semibold">All</span>';
+                const row = cell.getRow().getData();
+                const code = row.property_code || '';
+                if (!v || v === 'None') {
+                    return `<a href="#" class="text-primary small js-open-availability" data-code="${escapeHtml(code)}">None</a>`;
+                }
+                if (v === 'All') {
+                    return `<a href="#" class="text-primary small fw-semibold js-open-availability" data-code="${escapeHtml(code)}">All</a>`;
+                }
                 // Format: "Teaching: A, B | Non-Teaching: None"
                 // Strip sections where the value is "None"
                 const parts = v.split('|').map(s => s.trim()).filter(s => {
@@ -653,7 +717,9 @@ function initTable() {
                 });
                 const display = parts.length ? parts.join(' | ') : 'None';
                 const full = v; // keep original for tooltip
-                return `<span class="three-line-cell text-muted small" title="${escapeHtml(full)}">${escapeHtml(display)}</span>`;
+                const safeDisplay = escapeHtml(display);
+                const safeFull = escapeHtml(full);
+                return `<a href="#" class="three-line-cell text-primary small js-open-availability" data-code="${escapeHtml(code)}" title="${safeFull}">${safeDisplay}</a>`;
             }},
             { title: "Source / Cost", field: "source_of_fund", width: 150, headerFilter: "input", headerFilterPlaceholder: "Filter...", formatter: function(cell){
                 const row = cell.getRow().getData();
@@ -671,13 +737,26 @@ function initTable() {
             }},
             { title: "Location", field: "location_label", width: 200, headerFilter: "input", headerFilterPlaceholder: "Filter...", formatter: function(cell){
                 const v = cell.getValue();
-                return v ? threeLineText(v) : '<span class="text-muted">-</span>';
+                const row = cell.getRow().getData();
+                const facId = row.location_facility_id;
+                const unitId = row.location_unit_id;
+                if (!v) return '<span class="text-muted">-</span>';
+                if (!facId && !unitId) return threeLineText(v);
+                const params = new URLSearchParams();
+                if (facId) params.set('facility_id', facId);
+                if (unitId) params.set('unit_id', unitId);
+                const url = FACILITY_RECORDS_URL + '?' + params.toString();
+                const safe = escapeHtml(v);
+                return `<a href="${url}" class="three-line-cell" title="${safe}" target="_blank" rel="noopener">${safe}</a>`;
             }},
             { title: "Date", field: "created_at", width: 130 , formatter: function(cell){
                 const d = parseDate(cell.getValue());
                 return d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '-';
             }}
-        ]
+        ],
+        rowSelectionChanged: function(){
+            refreshGroupSelectStates();
+        }
     });
 }
 
@@ -737,7 +816,7 @@ $(document).ready(function() {
         const rows = inventoryTable.getSelectedData() || [];
         const codes = rows.map(r => r.property_code).filter(Boolean);
         if (codes.length === 0) {
-            showInvMessage('Please select at least one item from the table first.');
+            showFloatingError('Please select at least one item from the table first.');
             return;
         }
         openAvailabilityModalBulk(codes);
@@ -871,6 +950,20 @@ $(document).ready(function() {
         if (!full) return; // badge without full image does nothing
         $('#imagePreviewImg').attr('src', full);
         $('#imagePreviewModal').modal('show');
+    });
+
+    $('#ast-inventory-table').on('click', '.js-open-availability', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const code = $(this).data('code');
+        if (!code) return;
+        openAvailabilityModal(code);
+    });
+
+    $('#ast-inventory-table').on('change', '.js-group-select', function() {
+        const encoded = $(this).data('group');
+        const key = decodeURIComponent(String(encoded || ''));
+        toggleGroupSelection(key, this.checked);
     });
 });
 </script>
