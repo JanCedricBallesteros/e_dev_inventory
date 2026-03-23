@@ -666,7 +666,8 @@ function initAssignmentTable(){
                 }
                 return `<div style="line-height:1.2;white-space:normal;">${escapeHtml(v)}</div>`;
             } },
-            { title: "Actions", field: "assignment_id", width: 175, headerSort: false, formatter: function(cell){
+            // Temporarily hidden per request; keep config for quick restore.
+            { title: "Actions", field: "assignment_id", width: 175, headerSort: false, visible: false, formatter: function(cell){
                 const id = cell.getValue();
                 const row = cell.getRow().getData();
                 const isReturned = String(row.status || '').toUpperCase() === 'RETURNED';
