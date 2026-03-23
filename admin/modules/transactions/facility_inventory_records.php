@@ -37,9 +37,6 @@ if (!(role_has("ADMIN") || $staffAccess)) {
         .unit-card:hover { border-color: #a5b4fc; background: #f8faff; transform: translateX(4px); }
         .unit-card.active { border-color: #0d6efd; background: #eef5ff; box-shadow: 0 2px 6px rgba(13,110,253,0.2); }
         .select2-container { width: 100% !important; }
-        .assign-search-wrap { display: flex; align-items: stretch; gap: .5rem; }
-        .assign-search-wrap .search-select-holder { flex: 1 1 auto; min-width: 0; }
-        .assign-search-wrap .btn { flex: 0 0 auto; }
         .facility-items { border: 1px dashed #d0d7de; border-radius: 8px; padding: 10px 12px; background: #f8fafc; }
         .facility-item-row { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; padding: 6px 0; border-bottom: 1px solid #e5e7eb; }
         .facility-item-row:last-child { border-bottom: none; }
@@ -51,6 +48,44 @@ if (!(role_has("ADMIN") || $staffAccess)) {
         .thumb-wrap { display: flex; align-items: center; justify-content: center; }
         .img-preview { max-width: 100%; max-height: 70vh; border-radius: 8px; }
         .tabulator { font-size: 0.875rem; }
+        .select2-container--default .select2-selection--single {
+            height: 38px;
+            border: 1px solid #ced4da;
+            border-radius: 0.375rem;
+        }
+        .select2-container--default .select2-selection--single .select2-selection__rendered {
+            line-height: 36px;
+            padding-left: 12px;
+            color: #212529;
+        }
+        .select2-container--default .select2-selection--single .select2-selection__arrow {
+            height: 36px;
+        }
+        .select2-container--default .select2-selection--multiple {
+            min-height: 38px;
+            border: 1px solid #ced4da;
+            border-radius: 0.375rem;
+            height: auto;
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .select2-container--default .select2-selection--multiple .select2-selection__rendered {
+            color: #212529;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            padding: 2px 6px;
+        }
+        .select2-container--default .select2-selection--multiple .select2-search__field {
+            color: #212529 !important;
+            background: transparent !important;
+            min-width: 80px;
+        }
+        .select2-container--default .select2-search--dropdown .select2-search__field {
+            color: #212529;
+            background: #fff;
+        }
     </style>
 </head>
 
@@ -87,11 +122,15 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                 <div class="card section-card">
                     <div class="card-header bg-eclearance text-white fw-semibold d-flex justify-content-between align-items-center">
                         <span><i class="bi bi-box-seam"></i>&ensp;Unit Inventory Assignments</span>
-                        <button class="btn btn-light btn-sm" id="btnAssignItem" disabled><i class="bi bi-plus-lg"></i> Assign Item</button>
                     </div>
                     <div class="card-body mt-3 bg-white">
                         <div class="d-flex gap-2 mb-3">
-                            <input type="text" class="form-control" id="invSearch" placeholder="Search code/description/status...">
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="invSearch" placeholder="Search code/description/status...">
+                                <button class="btn btn-outline-secondary" type="button" id="openInvSearchScanner" title="Scan QR">
+                                    <i class="bi bi-qr-code-scan"></i>
+                                </button>
+                            </div>
                             <button class="btn btn-outline-secondary" id="btnRefreshAssignments">Refresh</button>
                         </div>
                         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
@@ -164,81 +203,14 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                     <input type="text" id="unitName" class="form-control" placeholder="e.g., Room 101">
                 </div>
                 <div class="mt-2">
-                    <label class="form-label fw-semibold">Facility Unit Manager</label>
-                    <select id="unitManagerUserId" class="form-select"></select>
+                    <label class="form-label fw-semibold">Facility Unit Managers</label>
+                    <select id="unitManagerUserId" class="form-select" multiple></select>
                 </div>
                 <div id="unitMsg" class="mt-2"></div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
                 <button class="btn btn-primary btn-sm" id="saveUnitBtn">Save</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Assign Modal -->
-<div class="modal fade" id="assignModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Assign Item to Unit</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <div class="row g-2">
-                    <div class="col-md-4">
-                        <label class="form-label fw-semibold">Module</label>
-                        <select id="assignModule" class="form-select">
-                            <option value="AST">AST</option>
-                            <option value="CSM">CSM</option>
-                        </select>
-                    </div>
-                    <div class="col-md-8">
-                        <label class="form-label fw-semibold">Search</label>
-                        <div class="assign-search-wrap">
-                            <div class="search-select-holder">
-                                <select id="assignSearchSelect" class="form-select"></select>
-                            </div>
-                            <button class="btn btn-outline-secondary" type="button" id="openAssignSearchScanner" title="Scan QR">
-                                <i class="bi bi-qr-code-scan"></i>
-                            </button>
-                        </div>
-                        <input type="hidden" id="assignSearch">
-                    </div>
-                </div>
-                <div class="row g-2 mt-2">
-                    <div class="col-md-6">
-                        <label class="form-label fw-semibold">Selected Item</label>
-                        <input type="text" id="assignSelected" class="form-control" readonly>
-                        <input type="hidden" id="assignSourceItemId">
-                        <input type="hidden" id="assignItemCode">
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label fw-semibold">Qty</label>
-                        <input type="number" id="assignQty" class="form-control" value="1" min="1">
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label fw-semibold">Remarks</label>
-                        <input type="text" id="assignRemarks" class="form-control">
-                    </div>
-                </div>
-                <div class="row g-2 mt-2">
-                    <div class="col-md-6">
-                        <label class="form-label fw-semibold">Issued To</label>
-                        <select id="assignIssuedToUserId" class="form-select"></select>
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label fw-semibold">Managed By (Facility Unit Manager)</label>
-                        <input type="text" id="assignManagedByName" class="form-control" readonly>
-                        <input type="hidden" id="assignManagedByUserId">
-                    </div>
-                </div>
-                <div id="assignMsg" class="mt-2"></div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
-                <button class="btn btn-primary btn-sm" id="confirmAssignBtn">Assign</button>
             </div>
         </div>
     </div>
@@ -259,33 +231,33 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
     </div>
 </div>
 
-<!-- SEARCH QR MODAL -->
-<div class="modal fade" id="assignSearchQrModal" tabindex="-1" aria-hidden="true">
+<!-- ASSIGNMENTS SEARCH QR MODAL -->
+<div class="modal fade" id="invSearchQrModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title fw-semibold"><i class="bi bi-qr-code-scan"></i>&ensp;Scan QR to Search Item</h5>
+                <h5 class="modal-title fw-semibold"><i class="bi bi-qr-code-scan"></i>&ensp;Scan QR to Search Assignments</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <div class="d-flex gap-2 mb-2">
-                    <select id="assignSearchCameraSelect" class="form-select form-select-sm" style="max-width: 260px;">
+                    <select id="invSearchCameraSelect" class="form-select form-select-sm" style="max-width: 260px;">
                         <option value="">Loading cameras...</option>
                     </select>
-                    <button type="button" id="assignSearchBtnStart" class="btn btn-success btn-sm">Start</button>
-                    <button type="button" id="assignSearchBtnStop" class="btn btn-outline-danger btn-sm" disabled>Stop</button>
+                    <button type="button" id="invSearchBtnStart" class="btn btn-success btn-sm">Start</button>
+                    <button type="button" id="invSearchBtnStop" class="btn btn-outline-danger btn-sm" disabled>Stop</button>
                 </div>
                 <div style="width:100%;max-width:420px;margin:0 auto;position:relative;background:#000;border-radius:10px;overflow:hidden;aspect-ratio:1;">
-                    <div id="assignSearchPreview" style="position:absolute;top:0;left:0;width:100%;height:100%;"></div>
-                    <div id="assignSearchScannerLoading" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;font-size:14px;z-index:10;text-align:center;">
+                    <div id="invSearchPreview" style="position:absolute;top:0;left:0;width:100%;height:100%;"></div>
+                    <div id="invSearchScannerLoading" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;font-size:14px;z-index:10;text-align:center;">
                         <div>Initializing camera...</div>
                     </div>
                 </div>
                 <div class="mt-2 small">
                     <span class="text-muted">Last scanned:</span>
-                    <span id="assignSearchLastScanned" class="fw-semibold">-</span>
+                    <span id="invSearchLastScanned" class="fw-semibold">-</span>
                 </div>
-                <div id="assignSearchScanError" class="text-danger small mt-1" style="display:none;"></div>
+                <div id="invSearchScanError" class="text-danger small mt-1" style="display:none;"></div>
             </div>
         </div>
     </div>
@@ -306,8 +278,8 @@ let facilityItems = [];
 let selectedFacility = null;
 let selectedUnit = null;
 let assignmentTable = null;
-let assignItemsCache = [];
-let assignItemSearchMap = {};
+let assignmentTableReady = false;
+let pendingLocateUnitId = null;
 
 function showPageError(msg){
     const el = $('#pageMsg');
@@ -363,11 +335,12 @@ function normalizeScannedCode(raw){
     return text.replace(/\s+/g, ' ').trim();
 }
 
-function loadFacilities(){
+function loadFacilities(cb){
     $.post(PROCESS_URL, { action: 'list_facilities' }, function(res){
         if (!res.success) { showPageError(res.message || 'Failed to load facilities.'); return; }
         facilityList = res.data || [];
         renderFacilities();
+        if (typeof cb === 'function') cb();
     }, 'json').fail(function(xhr){
         const msg = xhr.responseJSON && xhr.responseJSON.message ? xhr.responseJSON.message : 'Server error loading facilities.';
         showPageError(msg);
@@ -411,13 +384,66 @@ function renderFacilities(){
     });
 }
 
-function loadUnits(){
+function loadUnits(cb){
     if (!selectedFacility) return;
     $.post(PROCESS_URL, { action: 'list_units', facility_id: selectedFacility.facility_id }, function(res){
         if (!res.success) { showPageError(res.message || 'Failed to load units.'); return; }
         unitList = res.data || [];
+        if (pendingLocateUnitId) {
+            selectedUnit = unitList.find(x => String(x.unit_id) === String(pendingLocateUnitId)) || null;
+            pendingLocateUnitId = null;
+        }
         renderUnits();
+        if (selectedUnit) {
+            const _facCode = selectedFacility ? (selectedFacility.facility_code || '') : '';
+            $('#selectedUnitInfo').text((_facCode ? _facCode + ' / ' : '') + (selectedUnit.unit_code || '') + ' — ' + (selectedUnit.unit_name || ''));
+            $('#selectedManagedBy').text(selectedUnit.unit_manager_name ? 'Managed By: ' + selectedUnit.unit_manager_name : '');
+            loadAssignments();
+        }
+        if (typeof cb === 'function') cb();
     }, 'json');
+}
+
+function locateAssignmentByCode(raw){
+    const code = normalizeScannedCode(raw);
+    if (!code) return;
+    $.post(PROCESS_URL, { action: 'locate_assignment', item_code: code }, function(res){
+        if (!(res && res.success && res.data)) {
+            notifyError((res && res.message) ? res.message : 'No active assignment found.');
+            return;
+        }
+        const loc = res.data;
+        const facilityId = loc.facility_id;
+        const unitId = loc.unit_id;
+        if (!facilityId) {
+            notifyError('Assignment has no facility information.');
+            return;
+        }
+        const focus = function(){
+            selectedFacility = facilityList.find(x => String(x.facility_id) === String(facilityId)) || null;
+            selectedUnit = null;
+            facilityItems = [];
+            assignmentList = [];
+            currentPage = 1;
+            $('#selectedUnitInfo').text(selectedFacility ? (selectedFacility.facility_name || '') + ' (' + (selectedFacility.facility_code || '') + ') — All Units' : '');
+            $('#selectedManagedBy').text('Managed By: Multiple');
+            renderFacilities();
+            pendingLocateUnitId = unitId || null;
+            loadUnits(function(){
+                if (!selectedUnit && selectedFacility) {
+                    loadFacilityItems();
+                }
+                $('#invSearch').val(code).trigger('input');
+            });
+        };
+        if (!facilityList.length) {
+            loadFacilities(focus);
+        } else {
+            focus();
+        }
+    }, 'json').fail(function(){
+        notifyError('Server error while locating item.');
+    });
 }
 
 function formatUserOption(u){
@@ -460,23 +486,23 @@ function initUserSelect2(){
         $('#unitManagerUserId').select2('destroy');
     }
     $('#unitManagerUserId').select2({
-        placeholder: 'Select facility unit manager',
+        placeholder: 'Select facility unit managers',
         allowClear: true,
+        closeOnSelect: false,
+        multiple: true,
         width: '100%',
         dropdownParent: $('#unitModal'),
+        tags: false,
         ajax: commonAjax(true)
     });
 
-    if ($('#assignIssuedToUserId').hasClass('select2-hidden-accessible')) {
-        $('#assignIssuedToUserId').select2('destroy');
-    }
-    $('#assignIssuedToUserId').select2({
-        placeholder: 'Search user',
-        allowClear: true,
-        width: '100%',
-        dropdownParent: $('#assignModal'),
-        ajax: commonAjax(false)
+    $('#unitManagerUserId').off('select2:open').on('select2:open', function(){
+        const inst = $(this).data('select2');
+        if (inst) {
+            inst.trigger('query', { term: '' });
+        }
     });
+
 }
 
 function renderUnits(){
@@ -541,7 +567,7 @@ function loadAssignments(){
 }
 
 function renderAssignments(){
-    if (!assignmentTable) return;
+    if (!assignmentTable || !assignmentTableReady) return;
     const sourceRows = selectedUnit ? assignmentList : (selectedFacility ? facilityItems : []);
     const q = ($('#invSearch').val() || '').toLowerCase().trim();
     assignmentTable.setData(sourceRows);
@@ -555,135 +581,6 @@ function renderAssignments(){
     }
 }
 
-function loadAssignableItems(){
-    const search = ($('#assignSearch').val() || '').trim();
-    if (!search) return;
-    pickAssignableItemByCode(search);
-}
-
-function applyPickedItem(item){
-    if (!item) return;
-    $('#assignSourceItemId').val(item.source_item_id || '');
-    $('#assignItemCode').val(item.item_code || '');
-    $('#assignSelected').val((item.item_code || '') + ' - ' + (item.item_description || ''));
-    if ($('#assignModule').val() === 'AST') {
-        $('#assignQty').val(1).prop('readonly', true);
-    } else {
-        $('#assignQty').prop('readonly', false);
-    }
-    $('#assignMsg').html('');
-}
-
-function initAssignableItemSelect2(){
-    if (!$.fn.select2) return;
-    const $sel = $('#assignSearchSelect');
-    if ($sel.hasClass('select2-hidden-accessible')) {
-        $sel.select2('destroy');
-    }
-    assignItemSearchMap = {};
-    $sel.empty();
-    $sel.select2({
-        placeholder: 'Search item code/description',
-        allowClear: true,
-        width: '100%',
-        dropdownParent: $('#assignModal'),
-        ajax: {
-            url: PROCESS_URL,
-            type: 'POST',
-            dataType: 'json',
-            delay: 250,
-            data: function(params){
-                return {
-                    action: 'list_available_items',
-                    module_type: $('#assignModule').val(),
-                    search: params.term || ''
-                };
-            },
-            processResults: function(res){
-                if (!(res && res.success)) return { results: [] };
-                const results = (res.data || []).map(function(it){
-                    const key = String(it.source_item_id) + '::' + String(it.item_code || '');
-                    assignItemSearchMap[key] = it;
-                    return { id: key, text: `${it.item_code || ''} - ${it.item_description || ''}` };
-                });
-                return { results: results };
-            }
-        }
-    });
-
-    $sel.off('select2:select').on('select2:select', function(e){
-        const id = e.params && e.params.data ? e.params.data.id : '';
-        const item = assignItemSearchMap[id] || null;
-        applyPickedItem(item);
-    });
-    $sel.off('select2:clear').on('select2:clear', function(){
-        $('#assignSourceItemId').val('');
-        $('#assignItemCode').val('');
-        $('#assignSelected').val('');
-    });
-}
-
-function pickAssignableItemByCode(code){
-    const q = normalizeScannedCode(code);
-    if (!q) return;
-    const selectedModule = $('#assignModule').val();
-    let moduleType = selectedModule;
-    const qUpper = q.toUpperCase();
-    let forcedByPrefix = false;
-    if (qUpper.startsWith('AST-')) { moduleType = 'AST'; forcedByPrefix = true; }
-    if (qUpper.startsWith('CSM-')) { moduleType = 'CSM'; forcedByPrefix = true; }
-    if ($('#assignModule').val() !== moduleType) {
-        $('#assignModule').val(moduleType);
-        initAssignableItemSelect2();
-    }
-
-    const runSearch = function(mod){
-        $.post(PROCESS_URL, {
-            action: 'list_available_items',
-            module_type: mod,
-            search: q
-        }, function(res){
-            if (!(res && res.success)) {
-                $('#assignMsg').html('<div class="alert alert-danger mb-0">' + ((res && res.message) || 'Failed to search item.') + '</div>');
-                return;
-            }
-            const rows = res.data || [];
-            if (!rows.length) {
-                return $.post(PROCESS_URL, {
-                    action: 'diagnose_item_search',
-                    module_type: mod,
-                    search: q
-                }, function(diag){
-                    const msg = (diag && diag.message) ? diag.message : 'No matching item found for the selected module.';
-                    $('#assignMsg').html('<div class="alert alert-warning mb-0">' + msg + '</div>');
-                }, 'json').fail(function(){
-                    $('#assignMsg').html('<div class="alert alert-warning mb-0">No matching item found for the selected module.</div>');
-                });
-            }
-            const exact = rows.find(function(it){
-                return String(it.item_code || '').toLowerCase() === q.toLowerCase();
-            });
-            const picked = exact || rows[0];
-            const key = String(picked.source_item_id) + '::' + String(picked.item_code || '');
-            assignItemSearchMap[key] = picked;
-            const opt = new Option(`${picked.item_code || ''} - ${picked.item_description || ''}`, key, true, true);
-            $('#assignSearchSelect').append(opt).trigger('change');
-            applyPickedItem(picked);
-            if (!exact && rows.length > 1) {
-                $('#assignMsg').html('<div class="alert alert-warning mb-0">Multiple matches found. Picked first match. Refine search if needed.</div>');
-            }
-        }, 'json').fail(function(){
-            $('#assignMsg').html('<div class="alert alert-danger mb-0">Server error while searching item.</div>');
-        });
-    };
-
-    // Keep diagnostics aligned with the user's chosen module.
-    // Only prefix-based module override is allowed to prevent misleading messages.
-    if (!forcedByPrefix && selectedModule !== moduleType) {
-        moduleType = selectedModule;
-    }
-    runSearch(moduleType);
-}
 
 function initAssignmentTable(){
     assignmentTable = new Tabulator('#assignmentTable', {
@@ -740,14 +637,16 @@ function initAssignmentTable(){
             }}
         ]
     });
+    assignmentTable.on('tableBuilt', function(){
+        assignmentTableReady = true;
+        renderAssignments();
+    });
 }
 
 $(document).ready(function(){
     initAssignmentTable();
     initUserSelect2();
-    initAssignableItemSelect2();
     loadFacilities();
-    renderAssignments();
 
     $('#facilityList').on('click', '.facility-header', function(e){
         if ($(e.target).closest('.btn-edit-facility, .btn-add-unit').length) return;
@@ -759,7 +658,6 @@ $(document).ready(function(){
             assignmentList = [];
             unitList = [];
             currentPage = 1;
-            $('#btnAssignItem').prop('disabled', true);
             $('#selectedUnitInfo').text('Select a facility or unit to view items.');
             $('#selectedManagedBy').text('');
             renderFacilities();
@@ -771,7 +669,6 @@ $(document).ready(function(){
         assignmentList = [];
         selectedUnit = null;
         currentPage = 1;
-        $('#btnAssignItem').prop('disabled', true);
         $('#selectedUnitInfo').text(selectedFacility ? (selectedFacility.facility_name || '') + ' (' + (selectedFacility.facility_code || '') + ') — All Units' : '');
         $('#selectedManagedBy').text('Managed By: Multiple');
         renderFacilities();
@@ -827,7 +724,6 @@ $(document).ready(function(){
         renderFacilities();
         loadUnits();
         loadFacilityItems();
-        $('#btnAssignItem').prop('disabled', true);
         if (!selectedFacility) return;
         $('#unitId').val('');
         $('#unitType').val('ROOM');
@@ -843,7 +739,6 @@ $(document).ready(function(){
         const id = $(this).data('id');
         selectedUnit = unitList.find(x => String(x.unit_id) === String(id)) || null;
         currentPage = 1;
-        $('#btnAssignItem').prop('disabled', !selectedUnit);
         if (selectedUnit) {
             const _facCode = selectedFacility ? (selectedFacility.facility_code || '') : '';
             $('#selectedUnitInfo').text((_facCode ? _facCode + ' / ' : '') + (selectedUnit.unit_code || '') + ' — ' + (selectedUnit.unit_name || ''));
@@ -863,11 +758,20 @@ $(document).ready(function(){
         $('#unitType').val(u.unit_type || 'ROOM');
         $('#unitCode').val(u.unit_code || '');
         $('#unitName').val(u.unit_name || '');
-        const managerId = u.facility_unit_manager_user_id ? String(u.facility_unit_manager_user_id) : '';
-        const managerName = u.unit_manager_name ? String(u.unit_manager_name) : '';
-        if (managerId) {
-            const opt = new Option(managerName || ('User #' + managerId), managerId, true, true);
-            $('#unitManagerUserId').append(opt).trigger('change');
+        let managerIds = String(u.facility_unit_manager_user_ids || '').split(',').filter(Boolean);
+        let managerNames = String(u.unit_manager_names || '').split('||');
+        if (!managerIds.length && u.facility_unit_manager_user_id) {
+            managerIds = [String(u.facility_unit_manager_user_id)];
+            managerNames = [String(u.unit_manager_name || ('User #' + u.facility_unit_manager_user_id))];
+        }
+        $('#unitManagerUserId').empty();
+        if (managerIds.length) {
+            managerIds.forEach(function(id, idx){
+                const name = managerNames[idx] || ('User #' + id);
+                const opt = new Option(name, String(id), true, true);
+                $('#unitManagerUserId').append(opt);
+            });
+            $('#unitManagerUserId').val(managerIds).trigger('change');
         } else {
             $('#unitManagerUserId').val(null).trigger('change');
         }
@@ -887,7 +791,7 @@ $(document).ready(function(){
             unit_type: $('#unitType').val(),
             unit_code: $('#unitCode').val().trim(),
             unit_name: $('#unitName').val().trim(),
-            facility_unit_manager_user_id: $('#unitManagerUserId').val()
+            facility_unit_manager_user_ids: $('#unitManagerUserId').val() || []
         };
         $.post(PROCESS_URL, payload, function(res){
             if (!res.success){
@@ -897,7 +801,10 @@ $(document).ready(function(){
             $('#unitModal').modal('hide');
             loadUnits();
             notifySuccess(res.message || 'Saved');
-        }, 'json');
+        }, 'json').fail(function(xhr){
+            const msg = xhr.responseJSON && xhr.responseJSON.message ? xhr.responseJSON.message : 'Server error saving unit.';
+            $('#unitMsg').html('<div class="alert alert-danger mb-0">' + msg + '</div>');
+        });
     });
 
     $('#invSearch').on('input', function(){
@@ -916,66 +823,6 @@ $(document).ready(function(){
     $('#btnRefreshAssignments').on('click', function(){
         if (selectedFacility && !selectedUnit) loadFacilityItems();
         else loadAssignments();
-    });
-
-    $('#btnAssignItem').on('click', function(){
-        if (!selectedFacility || !selectedUnit) return;
-        $('#assignSelected').val('');
-        $('#assignSourceItemId').val('');
-        $('#assignItemCode').val('');
-        $('#assignSearch').val('');
-        $('#assignSearchSelect').val(null).trigger('change');
-        $('#assignQty').val(1);
-        $('#assignRemarks').val('');
-        $('#assignIssuedToUserId').val(null).trigger('change');
-        $('#assignManagedByUserId').val(selectedUnit && selectedUnit.facility_unit_manager_user_id ? String(selectedUnit.facility_unit_manager_user_id) : '');
-        $('#assignManagedByName').val(selectedUnit && selectedUnit.unit_manager_name ? String(selectedUnit.unit_manager_name) : '');
-        $('#assignMsg').html('<div class="alert alert-info mb-0">Search item code/description or scan QR.</div>');
-        $('#assignModal').modal('show');
-    });
-
-    $('#assignModule').on('change', function(){
-        $('#assignSelected').val('');
-        $('#assignSourceItemId').val('');
-        $('#assignItemCode').val('');
-        $('#assignSearch').val('');
-        $('#assignSearchSelect').val(null).trigger('change');
-        $('#assignQty').val(1);
-        initAssignableItemSelect2();
-    });
-    $('#confirmAssignBtn').on('click', function(){
-        if (!selectedFacility || !selectedUnit){
-            $('#assignMsg').html('<div class="alert alert-danger mb-0">Select facility and unit first.</div>');
-            return;
-        }
-        if (!$('#assignSourceItemId').val() || !$('#assignItemCode').val()) {
-            $('#assignMsg').html('<div class="alert alert-danger mb-0">No item selected. Search or scan QR first.</div>');
-            return;
-        }
-        const payload = {
-            action: 'assign_item',
-            facility_id: selectedFacility.facility_id,
-            unit_id: selectedUnit.unit_id,
-            module_type: $('#assignModule').val(),
-            source_item_id: $('#assignSourceItemId').val(),
-            item_code: $('#assignItemCode').val(),
-            qty: $('#assignQty').val(),
-            remarks: $('#assignRemarks').val().trim(),
-            issued_to_user_id: $('#assignIssuedToUserId').val(),
-            accountable_user_id: $('#assignIssuedToUserId').val(),
-            managed_by_user_id: $('#assignManagedByUserId').val()
-        };
-        $.post(PROCESS_URL, payload, function(res){
-            if (!res.success){
-                $('#assignMsg').html('<div class="alert alert-danger mb-0">' + (res.message || 'Assign failed.') + '</div>');
-                return;
-            }
-            $('#assignModal').modal('hide');
-            loadAssignments();
-            loadUnits();
-            loadFacilities();
-            notifySuccess(res.message || 'Assigned');
-        }, 'json');
     });
 
     $('#assignmentTable').on('click', '.js-thumb-preview', function(){
@@ -1011,21 +858,24 @@ $(document).ready(function(){
 
     if (typeof initQrSearch === 'function') {
         initQrSearch({
-            modalId: '#assignSearchQrModal',
-            openButton: '#openAssignSearchScanner',
-            searchInput: '#assignSearch',
+            modalId: '#invSearchQrModal',
+            openButton: '#openInvSearchScanner',
+            searchInput: '#invSearch',
             onSearch: function () {
-                pickAssignableItemByCode($('#assignSearch').val() || '');
+                locateAssignmentByCode($('#invSearch').val() || '');
             },
-            cameraSelectId: '#assignSearchCameraSelect',
-            startBtnId: '#assignSearchBtnStart',
-            stopBtnId: '#assignSearchBtnStop',
-            previewId: '#assignSearchPreview',
-            lastScannedId: '#assignSearchLastScanned',
-            errorId: '#assignSearchScanError',
-            loadingId: '#assignSearchScannerLoading'
+            cameraSelectId: '#invSearchCameraSelect',
+            startBtnId: '#invSearchBtnStart',
+            stopBtnId: '#invSearchBtnStop',
+            previewId: '#invSearchPreview',
+            lastScannedId: '#invSearchLastScanned',
+            errorId: '#invSearchScanError',
+            loadingId: '#invSearchScannerLoading'
         });
     }
 });
 </script>
 </html>
+
+
+

@@ -193,7 +193,10 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                 </div>
                                 <div class="col-md-4">
                                     <label class="form-label fw-semibold">Cost Value (optional)</label>
-                                    <input type="number" step="0.01" min="0" class="form-control" name="cost_value" id="costValue" placeholder="0.00">
+                                    <div class="input-group">
+                                        <span class="input-group-text">₱</span>
+                                        <input type="number" step="0.01" min="0" class="form-control" name="cost_value" id="costValue" placeholder="0.00" inputmode="decimal" oninput="this.value=this.value.replace(/[^0-9.]/g,'').replace(/(\\..*)\\./g,'$1');">
+                                    </div>
                                 </div>
 
                                 <div class="col-12">
@@ -264,7 +267,10 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                 </div>
                                 <div class="col-6">
                                     <label class="form-label fw-semibold">Cost Value</label>
-                                    <input type="number" step="0.01" min="0" class="form-control" name="cost_value" id="addQtyCost">
+                                    <div class="input-group">
+                                        <span class="input-group-text">₱</span>
+                                        <input type="number" step="0.01" min="0" class="form-control" name="cost_value" id="addQtyCost" inputmode="decimal" oninput="this.value=this.value.replace(/[^0-9.]/g,'').replace(/(\\..*)\\./g,'$1');">
+                                    </div>
                                 </div>
                             </div>
                             <div class="mt-3">
@@ -663,6 +669,13 @@ function escapeHtml(str) {
         .replace(/'/g, '&#39;');
 }
 
+function formatPeso(value) {
+    if (value === null || value === undefined || value === '') return '';
+    const num = Number(value);
+    if (!isFinite(num)) return '';
+    return '₱' + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 function threeLineText(value, fallback = '-') {
     const raw = (value === null || value === undefined || value === '') ? fallback : String(value);
     const safe = escapeHtml(raw);
@@ -750,8 +763,8 @@ function populateReviewModal(draft) {
     $('#reviewUnit').text(draft.unit_label || draft.unit || '-');
     $('#reviewSource').text(draft.source_of_fund || '-');
     if (draft.cost_value !== '') {
-        const parsed = parseFloat(draft.cost_value);
-        $('#reviewCost').text(!isNaN(parsed) ? parsed.toFixed(2) : draft.cost_value);
+        const formatted = formatPeso(draft.cost_value);
+        $('#reviewCost').text(formatted !== '' ? formatted : draft.cost_value);
     } else {
         $('#reviewCost').text('-');
     }
@@ -1022,13 +1035,16 @@ function initTable() {
             { title: 'Property Code', field: 'property_code', width: 200, headerFilter: 'input', headerFilterPlaceholder: 'Filter...', formatter: function(cell){
                 return twoLineText(cell.getValue());
             }},
-            { title: 'Category', field: 'item_category_name', width: 170, headerFilter: 'input', headerFilterPlaceholder: 'Filter...' },
-            { title: 'Description', field: 'item_description', widthGrow: 2, headerFilter: 'input', headerFilterPlaceholder: 'Filter...', formatter: function(cell){
-                return threeLineText(cell.getValue());
+            { title: 'Property No.', field: 'property_number', width: 140, headerFilter: 'input', headerFilterPlaceholder: 'Filter...', formatter: function(cell){
+                return twoLineText(cell.getValue());
             }},
             { title: 'Serial No.', field: 'serial_number', width: 150, headerFilter: 'input', headerFilterPlaceholder: 'Filter...', formatter: function(cell){
                 const v = cell.getValue();
                 return v && String(v).trim() !== '' ? v : '-';
+            }},
+            { title: 'Category', field: 'item_category_name', width: 170, headerFilter: 'input', headerFilterPlaceholder: 'Filter...' },
+            { title: 'Description', field: 'item_description', widthGrow: 2, headerFilter: 'input', headerFilterPlaceholder: 'Filter...', formatter: function(cell){
+                return threeLineText(cell.getValue());
             }},
             { title: 'Qty / Unit', field: 'quantity', width: 110, hozAlign: 'center', headerFilter: 'number', headerFilterPlaceholder: '<= qty', headerFilterFunc: '<=', formatter: function(cell){
                 const row = cell.getRow().getData();
@@ -1056,7 +1072,7 @@ function initTable() {
                 const cost = (costRaw !== null && costRaw !== '' && !isNaN(costRaw)) ? parseFloat(costRaw).toFixed(2) : '';
                 const parts = [];
                 if (src) parts.push(src);
-                if (cost) parts.push(`₱${cost}`);
+                if (cost) parts.push(formatPeso(cost));
                 return parts.length ? `<span class="two-line-cell">${parts.join(' • ')}</span>` : '<span class="text-muted">-</span>';
             }},
             { title: 'Date Modified', field: 'created_at', width: 160, formatter: function(cell){
@@ -1121,7 +1137,7 @@ function loadItemByCode(code) {
                     <div class="small text-muted">
                         Current Qty: <span class="fw-semibold">${d.quantity}</span> ${d.unit || ''}
                         ${d.source_of_fund ? ` | Source: ${d.source_of_fund}` : ''}
-                        ${d.cost_value ? ` | Cost: ${d.cost_value}` : ''}
+                        ${d.cost_value ? ` | Cost: ${formatPeso(d.cost_value)}` : ''}
                     </div>
                 </div>
             `);

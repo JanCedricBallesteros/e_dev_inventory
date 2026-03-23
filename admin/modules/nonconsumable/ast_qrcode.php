@@ -75,6 +75,14 @@ if (!(
             overflow: hidden;
             text-overflow: ellipsis;
         }
+        .ast-preview-prop {
+            font-size: 11px;
+            font-weight: 700;
+            color: #222;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
         .ast-preview-desc {
             font-size: 12px;
             font-weight: 600;
@@ -239,6 +247,13 @@ function escHtml(s) {
     return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 }
 
+function formatPeso(value) {
+    if (value === null || value === undefined || value === '') return '';
+    const num = Number(value);
+    if (!isFinite(num)) return '';
+    return '₱' + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 // Render cards (latest first). Filter by property code, serial, description, or category.
 function renderList(filter = '', resetPage = false) {
     if (resetPage) currentPage = 1;
@@ -276,6 +291,7 @@ function renderList(filter = '', resetPage = false) {
         const code        = item.property_code || '';
         const desc        = item.item_description || '';
         const cat         = item.item_category_name || '';
+        const propNum     = item.property_number || '';
         const serial      = item.serial_number || '';
         const cost        = (item.cost_value != null && item.cost_value !== '') ? String(item.cost_value) : '';
         const acqDate     = item.acquisition_date || '';
@@ -288,7 +304,7 @@ function renderList(filter = '', resetPage = false) {
         const metaLines = [
             serial      ? `S/N: ${escHtml(serial)}`     : '',
             acqDate     ? `Acq: ${escHtml(acqDate)}`    : '',
-            cost        ? `Cost: ${escHtml(cost)}`       : '',
+            cost        ? `Cost: ${escHtml(formatPeso(cost))}`       : '',
             issued      ? `Issued: ${escHtml(issued)}`  : '',
             acctOfficer ? `AO: ${escHtml(acctOfficer)}` : ''
         ].filter(Boolean);
@@ -310,6 +326,7 @@ function renderList(filter = '', resetPage = false) {
                         <div class="ast-preview-details">
                             <div class="ast-preview-cat">${escHtml(cat)}</div>
                             <div class="ast-preview-code">${escHtml(code)}</div>
+                            ${propNum ? `<div class="ast-preview-prop">Property No.: ${escHtml(propNum)}</div>` : ''}
                             <div class="ast-preview-desc">${escHtml(shortDesc)}</div>
                             ${metaHtml}
                         </div>
@@ -450,6 +467,10 @@ const AST_TAG_CSS = `
         font-size: 7pt;
         font-weight: 800;
     }
+    .ast-tag-line.tl-prop {
+        font-size: 6.4pt;
+        font-weight: 700;
+    }
     .ast-tag-line.tl-cat {
         font-size: 5.5pt;
         font-weight: 400;
@@ -522,13 +543,13 @@ const AST_TAG_CSS = `
     }
 `;
 
-function buildAstTag({ code, serial, category, desc, acqDate, cost, issued, acctOfficer, remarks, qrUrl }) {
+function buildAstTag({ code, propNum, serial, category, desc, acqDate, cost, issued, acctOfficer, remarks, qrUrl }) {
     const shortDesc = desc.length > 65 ? desc.slice(0, 63) + '\u2026' : desc;
     // Build optional meta lines — only include if value exists
     const metaLines = [
         serial     ? `S/N: ${escHtml(serial)}`       : '',
         acqDate    ? `Acq: ${escHtml(acqDate)}`      : '',
-        cost       ? `Cost: ${escHtml(cost)}`         : '',
+        cost       ? `Cost: ${escHtml(formatPeso(cost))}`         : '',
         issued     ? `Issued: ${escHtml(issued)}`     : '',
         acctOfficer? `AO: ${escHtml(acctOfficer)}`   : ''
     ].filter(Boolean);
@@ -540,6 +561,7 @@ function buildAstTag({ code, serial, category, desc, acqDate, cost, issued, acct
                 <div class="ast-tag-details">
                     <div class="ast-tag-line tl-cat">${escHtml(category)}</div>
                     <div class="ast-tag-line tl-code">${escHtml(code)}</div>
+                    ${propNum ? `<div class="ast-tag-line tl-prop">Property No.: ${escHtml(propNum)}</div>` : ''}
                     <div class="ast-tag-line tl-desc">${escHtml(shortDesc)}</div>
                     ${metaLines.length ? '<hr class="ast-tag-divider">' + metaLines.map(l => `<div class="ast-tag-line tl-meta">${l}</div>`).join('') : ''}
                 </div>
@@ -562,6 +584,7 @@ function getTagData(code) {
     const item = byCode[code] || {};
     return {
         code,
+        propNum:     item.property_number || '',
         serial:      item.serial_number || '',
         category:    item.item_category_name || '',
         desc:        item.item_description || '',

@@ -30,6 +30,8 @@ if (!(
         .summary-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px 14px; }
         .summary-label { font-size: 12px; color: #6c757d; text-transform: uppercase; letter-spacing: .5px; }
         .summary-value { font-size: 18px; font-weight: 700; }
+        .summary-card.is-clickable { cursor: pointer; }
+        .summary-card.is-active { border-color: #0d6efd; box-shadow: 0 0 0 2px rgba(13,110,253,0.15); }
         .filter-label { font-size: 12px; color: #6c757d; margin-bottom: 4px; }
         .item-thumb { width: 46px; height: 46px; border-radius: 6px; object-fit: cover; border: 1px solid #e5e7eb; background: #f8f9fa; cursor: zoom-in; }
         .item-badge {
@@ -161,7 +163,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                         </div>
                     </div>
                     <div class="col-sm-4">
-                        <div class="summary-card">
+                        <div class="summary-card is-clickable" id="issuedSummaryCard" role="button">
                             <div class="summary-label">Total Issued</div>
                             <div class="summary-value" id="sumIssued">-</div>
                         </div>
@@ -171,7 +173,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                 <!-- Inventory Table -->
                 <div class="d-flex justify-content-end gap-2 mb-2">
                     <button class="btn btn-outline-primary btn-sm" id="bulkSetAvailability">
-                        <i class="bi bi-sliders"></i> Bulk Set Rules
+                        <i class="bi bi-sliders"></i> Set Rules
                     </button>
                     <button class="btn btn-outline-secondary btn-sm" id="clearSelection">Clear Selection</button>
                 </div>
@@ -284,6 +286,7 @@ let availNonTeachingSelect = null;
 const NONE_STATUS_VALUE = 'NONE';
 let availStatusLock = false;
 let isBulkAvailMode = false;
+let showIssuedOnly = false;
 
 function setSelectizeValues(selectize, values) {
     if (!selectize) return;
@@ -507,6 +510,13 @@ function escapeHtml(value) {
         .replace(/'/g, '&#39;');
 }
 
+function formatPeso(value) {
+    if (value === null || value === undefined || value === '') return '';
+    const num = Number(value);
+    if (!isFinite(num)) return '';
+    return '₱' + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 function twoLineText(value, fallback = '-') {
     const raw = (value === null || value === undefined || value === '') ? fallback : String(value);
     const safe = escapeHtml(raw);
@@ -523,10 +533,11 @@ function threeLineText(value, fallback = '-') {
 function updateSummary(rows) {
     const totalItems = rows.length;
     const totalQty = rows.reduce((sum, r) => sum + (parseInt(r.quantity, 10) || 0), 0);
-    // Issued totals are not available yet; keep placeholder for now
+    const totalIssued = rows.reduce((sum, r) => sum + ((parseInt(r.issued_count, 10) || 0) > 0 ? 1 : 0), 0);
     $('#sumItems').text(totalItems);
     $('#sumQty').text(totalQty);
-    $('#sumIssued').text('-');
+    $('#sumIssued').text(totalIssued);
+    $('#issuedSummaryCard').toggleClass('is-active', showIssuedOnly);
 }
 
 // Apply search and date filters on the client side
@@ -543,7 +554,7 @@ function applyFilters() {
     inventoryTable.setFilter(function(data) {
         // Text search across key fields
         if (search) {
-            const hay = `${data.property_code || ''} ${data.property_number || ''} ${data.serial_number || ''} ${data.item_description || ''} ${data.item_category_name || ''}`.toLowerCase();
+            const hay = `${data.property_code || ''} ${data.property_number || ''} ${data.serial_number || ''} ${data.item_description || ''} ${data.item_category_name || ''} ${data.location_label || ''}`.toLowerCase();
             if (!hay.includes(search)) return false;
         }
 
@@ -553,6 +564,10 @@ function applyFilters() {
             if (!d) return false;
             if (fromDate && d < fromDate) return false;
             if (toDate && d > toDate) return false;
+        }
+        if (showIssuedOnly) {
+            const issuedCount = parseInt(data.issued_count, 10) || 0;
+            if (issuedCount <= 0) return false;
         }
         return true;
     });
@@ -609,6 +624,9 @@ function initTable() {
             { title: "Property Code", field: "property_code", width: 170, headerFilter: "input", headerFilterPlaceholder: "Filter...", formatter: function(cell){
                 return twoLineText(cell.getValue());
             }},
+            { title: "Property No.", field: "property_number", width: 120, headerFilter: "input", headerFilterPlaceholder: "Filter...", formatter: function(cell){
+                return twoLineText(cell.getValue());
+            }},
             { title: "Serial No.", field: "serial_number", width: 140, headerFilter: "input", headerFilterPlaceholder: "Filter...", formatter: function(cell){
                 return twoLineText(cell.getValue(), '-');
             }},
@@ -641,15 +659,19 @@ function initTable() {
                 const row = cell.getRow().getData();
                 const src = row.source_of_fund ? escapeHtml(row.source_of_fund) : '';
                 const costRaw = row.cost_value;
-                const cost = (costRaw !== null && costRaw !== '' && !isNaN(costRaw)) ? parseFloat(costRaw).toFixed(2) : '';
+                const cost = (costRaw !== null && costRaw !== '' && !isNaN(costRaw)) ? costRaw : '';
                 const parts = [];
                 if (src) parts.push(src);
-                if (cost) parts.push(`₱${cost}`);
+                if (cost) parts.push(formatPeso(cost));
                 return parts.length ? `<span class="two-line-cell">${parts.join(' • ')}</span>` : '<span class="text-muted">-</span>';
             }},
             { title: "Issued To", field: "issued_to_name", width: 160, headerFilter: "input", headerFilterPlaceholder: "Filter...", formatter: function(cell){
                 const v = cell.getValue();
                 return v ? twoLineText(v) : '<span class="text-muted">-</span>';
+            }},
+            { title: "Location", field: "location_label", width: 200, headerFilter: "input", headerFilterPlaceholder: "Filter...", formatter: function(cell){
+                const v = cell.getValue();
+                return v ? threeLineText(v) : '<span class="text-muted">-</span>';
             }},
             { title: "Date", field: "created_at", width: 130 , formatter: function(cell){
                 const d = parseDate(cell.getValue());
@@ -724,6 +746,11 @@ $(document).ready(function() {
     $('#clearSelection').on('click', function() {
         if (!inventoryTable) return;
         inventoryTable.deselectRow();
+    });
+
+    $('#issuedSummaryCard').on('click', function() {
+        showIssuedOnly = !showIssuedOnly;
+        applyFilters();
     });
 
     // Keep columns fitted when sidebar toggles or window resizes
@@ -807,8 +834,9 @@ $(document).ready(function() {
             "Description": r.item_description || '',
             "Qty / Unit": `${r.quantity ?? ''}${r.unit ? ' ' + r.unit : ''}`,
             "Allowed Status": r.allowed_status_names || '',
-            "Source / Cost": `${r.source_of_fund || ''}${(r.cost_value !== null && r.cost_value !== undefined && r.cost_value !== '') ? ' • ₱' + parseFloat(r.cost_value).toFixed(2) : ''}`,
+            "Source / Cost": `${r.source_of_fund || ''}${(r.cost_value !== null && r.cost_value !== undefined && r.cost_value !== '') ? ' • ' + formatPeso(r.cost_value) : ''}`,
             "Issued To": r.issued_to_name || '',
+            "Location": r.location_label || '',
             "Date Modified": r.created_at || ''
         }));
 
@@ -822,6 +850,7 @@ $(document).ready(function() {
             { wch: 28 }, // Allowed Status
             { wch: 22 }, // Source / Cost
             { wch: 20 }, // Issued To
+            { wch: 24 }, // Location
             { wch: 18 }  // Date Modified
         ];
         const wb = XLSX.utils.book_new();

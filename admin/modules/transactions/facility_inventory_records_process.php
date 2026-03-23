@@ -127,6 +127,43 @@ if (!fr_required_tables_ready()) {
 
 try {
     switch ($action) {
+        case 'locate_assignment':
+            $item_code = trim((string)_post('item_code'));
+            if ($item_code === '') {
+                json_response(array('success' => false, 'message' => 'Item code is required.'), 422);
+            }
+            $module_type = '';
+            $upper = strtoupper($item_code);
+            if (strpos($upper, 'AST-') === 0) $module_type = 'AST';
+            if (strpos($upper, 'CSM-') === 0) $module_type = 'CSM';
+            $whereModule = $module_type !== '' ? "AND a.module_type = '" . _esc($module_type) . "'" : "";
+
+            $sql = "SELECT
+                        a.assignment_id,
+                        a.module_type,
+                        a.item_code,
+                        a.status,
+                        a.facility_id,
+                        a.unit_id,
+                        f.facility_name,
+                        f.facility_code,
+                        u.unit_name,
+                        u.unit_code
+                    FROM facility_records_assignments a
+                    LEFT JOIN facility_records_facilities f ON f.facility_id = a.facility_id
+                    LEFT JOIN facility_records_units u ON u.unit_id = a.unit_id
+                    WHERE a.item_code = '" . _esc($item_code) . "'
+                      {$whereModule}
+                      AND a.status <> 'RETURNED'
+                    ORDER BY a.issued_at DESC, a.assignment_id DESC
+                    LIMIT 1";
+            $res = call_mysql_query($sql);
+            $row = $res ? call_mysql_fetch_array($res) : null;
+            if (!$row) {
+                json_response(array('success' => false, 'message' => 'No active assignment found for this item.'));
+            }
+            json_response(array('success' => true, 'data' => $row));
+            break;
         case 'list_facilities':
             $sql = "SELECT
                         f.facility_id,
@@ -197,25 +234,53 @@ try {
             $hasUnitManager = fr_column_exists('facility_records_units', 'facility_unit_manager_user_id');
             $hasUnitManagerLegacy = fr_column_exists('facility_records_units', 'accountable_user_id');
             $unitManagerCol = $hasUnitManager ? 'facility_unit_manager_user_id' : ($hasUnitManagerLegacy ? 'accountable_user_id' : '');
+            $hasUnitManagersTable = fr_table_exists('facility_records_unit_managers');
 
-            $sql = "SELECT
-                        u.unit_id,
-                        u.facility_id,
-                        u.unit_type,
-                        u.unit_code,
-                        u.unit_name,
-                        u.status,
-                        " . ($unitManagerCol !== '' ? "u.{$unitManagerCol} AS facility_unit_manager_user_id," : "NULL AS facility_unit_manager_user_id,") . "
-                        CONCAT(COALESCE(ua.f_name,''), ' ', COALESCE(ua.l_name,'')) AS unit_manager_name,
-                        (
-                            SELECT COUNT(*)
-                            FROM facility_records_assignments a
-                            WHERE a.unit_id = u.unit_id AND a.status = 'ACTIVE'
-                        ) AS active_item_count
-                    FROM facility_records_units u
-                    LEFT JOIN users ua ON ua.user_id = " . ($unitManagerCol !== '' ? "u.{$unitManagerCol}" : "0") . "
-                    WHERE u.facility_id = {$facility_id}
-                    ORDER BY u.unit_name ASC";
+            if ($hasUnitManagersTable) {
+                $sql = "SELECT
+                            u.unit_id,
+                            u.facility_id,
+                            u.unit_type,
+                            u.unit_code,
+                            u.unit_name,
+                            u.status,
+                            MIN(um.user_id) AS facility_unit_manager_user_id,
+                            GROUP_CONCAT(DISTINCT um.user_id ORDER BY ua.l_name SEPARATOR ',') AS facility_unit_manager_user_ids,
+                            GROUP_CONCAT(DISTINCT CONCAT(COALESCE(ua.f_name,''), ' ', COALESCE(ua.l_name,'')) ORDER BY ua.l_name SEPARATOR '||') AS unit_manager_names,
+                            GROUP_CONCAT(DISTINCT CONCAT(COALESCE(ua.f_name,''), ' ', COALESCE(ua.l_name,'')) ORDER BY ua.l_name SEPARATOR ', ') AS unit_manager_name,
+                            (
+                                SELECT COUNT(*)
+                                FROM facility_records_assignments a
+                                WHERE a.unit_id = u.unit_id AND a.status = 'ACTIVE'
+                            ) AS active_item_count
+                        FROM facility_records_units u
+                        LEFT JOIN facility_records_unit_managers um ON um.unit_id = u.unit_id
+                        LEFT JOIN users ua ON ua.user_id = um.user_id
+                        WHERE u.facility_id = {$facility_id}
+                        GROUP BY u.unit_id
+                        ORDER BY u.unit_name ASC";
+            } else {
+                $sql = "SELECT
+                            u.unit_id,
+                            u.facility_id,
+                            u.unit_type,
+                            u.unit_code,
+                            u.unit_name,
+                            u.status,
+                            " . ($unitManagerCol !== '' ? "u.{$unitManagerCol} AS facility_unit_manager_user_id," : "NULL AS facility_unit_manager_user_id,") . "
+                            CONCAT(COALESCE(ua.f_name,''), ' ', COALESCE(ua.l_name,'')) AS unit_manager_name,
+                            NULL AS facility_unit_manager_user_ids,
+                            NULL AS unit_manager_names,
+                            (
+                                SELECT COUNT(*)
+                                FROM facility_records_assignments a
+                                WHERE a.unit_id = u.unit_id AND a.status = 'ACTIVE'
+                            ) AS active_item_count
+                        FROM facility_records_units u
+                        LEFT JOIN users ua ON ua.user_id = " . ($unitManagerCol !== '' ? "u.{$unitManagerCol}" : "0") . "
+                        WHERE u.facility_id = {$facility_id}
+                        ORDER BY u.unit_name ASC";
+            }
             $res = call_mysql_query($sql);
             $rows = array();
             if ($res) {
@@ -233,7 +298,14 @@ try {
             $unit_type = strtoupper(_post('unit_type'));
             $unit_code = strtoupper(_post('unit_code'));
             $unit_name = _post('unit_name');
-            $facility_unit_manager_user_id = _int(_post('facility_unit_manager_user_id'), 0);
+            $managerIdsRaw = $_POST['facility_unit_manager_user_ids'] ?? array();
+            if (!is_array($managerIdsRaw)) {
+                $managerIdsRaw = array_filter(array_map('trim', explode(',', (string)$managerIdsRaw)));
+            }
+            $managerIds = array_values(array_unique(array_filter(array_map(function($id){
+                return _int($id, 0);
+            }, $managerIdsRaw))));
+            $facility_unit_manager_user_id = count($managerIds) > 0 ? (int)$managerIds[0] : 0;
             $allowed = array('ROOM', 'OFFICE', 'LABORATORY', 'OTHER');
             if ($facility_id <= 0 || $unit_code === '' || $unit_name === '') {
                 json_response(array('success' => false, 'message' => 'Unit code, name, and facility are required.'), 422);
@@ -244,6 +316,7 @@ try {
             $hasUnitManager = fr_column_exists('facility_records_units', 'facility_unit_manager_user_id');
             $hasUnitManagerLegacy = fr_column_exists('facility_records_units', 'accountable_user_id');
             $unitManagerCol = $hasUnitManager ? 'facility_unit_manager_user_id' : ($hasUnitManagerLegacy ? 'accountable_user_id' : '');
+            $hasUnitManagersTable = fr_table_exists('facility_records_unit_managers');
 
             if ($unit_id > 0) {
                 $dup = call_mysql_query("SELECT unit_id FROM facility_records_units
@@ -263,7 +336,13 @@ try {
                                         WHERE unit_id = {$unit_id}
                                         LIMIT 1");
                 if (!$ok) json_response(array('success' => false, 'message' => 'Failed to update unit.'), 500);
-                activity_log_new("FACILITY UNIT UPDATE", "SUCCESS", array('unit_id' => $unit_id, 'facility_id' => $facility_id, 'unit_code' => $unit_code, 'unit_name' => $unit_name, 'facility_unit_manager_user_id' => $facility_unit_manager_user_id));
+                if ($hasUnitManagersTable) {
+                    call_mysql_query("DELETE FROM facility_records_unit_managers WHERE unit_id = {$unit_id}");
+                    foreach ($managerIds as $mid) {
+                        call_mysql_query("INSERT INTO facility_records_unit_managers (unit_id, user_id) VALUES ({$unit_id}, " . (int)$mid . ")");
+                    }
+                }
+                activity_log_new("FACILITY UNIT UPDATE", "SUCCESS", array('unit_id' => $unit_id, 'facility_id' => $facility_id, 'unit_code' => $unit_code, 'unit_name' => $unit_name, 'facility_unit_manager_user_ids' => $managerIds));
                 json_response(array('success' => true, 'message' => 'Unit updated.'));
             }
 
@@ -285,7 +364,13 @@ try {
             $insertVals .= ", " . (int)$s_user_id . ", " . (int)$s_user_id;
             $ok = call_mysql_query("INSERT INTO facility_records_units ({$insertCols}) VALUES ({$insertVals})");
             if (!$ok) json_response(array('success' => false, 'message' => 'Failed to create unit.'), 500);
-            activity_log_new("FACILITY UNIT CREATE", "SUCCESS", array('facility_id' => $facility_id, 'unit_code' => $unit_code, 'unit_name' => $unit_name, 'facility_unit_manager_user_id' => $facility_unit_manager_user_id));
+            $newUnitId = (int)mysqli_insert_id($db_connect);
+            if ($hasUnitManagersTable && $newUnitId > 0) {
+                foreach ($managerIds as $mid) {
+                    call_mysql_query("INSERT INTO facility_records_unit_managers (unit_id, user_id) VALUES ({$newUnitId}, " . (int)$mid . ")");
+                }
+            }
+            activity_log_new("FACILITY UNIT CREATE", "SUCCESS", array('facility_id' => $facility_id, 'unit_code' => $unit_code, 'unit_name' => $unit_name, 'facility_unit_manager_user_ids' => $managerIds));
             json_response(array('success' => true, 'message' => 'Unit created.'));
             break;
 
@@ -606,10 +691,17 @@ try {
             }
 
             // Force managed-by from facility unit manager.
+            $hasUnitManagersTable = fr_table_exists('facility_records_unit_managers');
             $hasUnitManager = fr_column_exists('facility_records_units', 'facility_unit_manager_user_id');
             $hasUnitManagerLegacy = fr_column_exists('facility_records_units', 'accountable_user_id');
             $unitManagerCol = $hasUnitManager ? 'facility_unit_manager_user_id' : ($hasUnitManagerLegacy ? 'accountable_user_id' : '');
-            if ($unitManagerCol !== '') {
+            if ($hasUnitManagersTable) {
+                $mgrRes = call_mysql_query("SELECT MIN(user_id) AS unit_manager_user_id
+                                            FROM facility_records_unit_managers
+                                            WHERE unit_id = {$unit_id}");
+                $mgrRow = $mgrRes ? call_mysql_fetch_array($mgrRes) : null;
+                $managed_by_user_id = (int)($mgrRow['unit_manager_user_id'] ?? 0);
+            } elseif ($unitManagerCol !== '') {
                 $mgrRes = call_mysql_query("SELECT {$unitManagerCol} AS unit_manager_user_id
                                             FROM facility_records_units
                                             WHERE unit_id = {$unit_id}
