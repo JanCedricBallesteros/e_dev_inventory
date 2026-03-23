@@ -26,9 +26,10 @@ if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) {
 }
 
 if (role_has("USER") || role_has("USERS")) {
-	header("Location: " . BASE_URL . "app/main_users.php");
+	header("Location: " . BASE_URL . "users/dashboard/main_users.php");
 	exit();
 }
 
 header("Location: " . API_URL);
 exit();
+

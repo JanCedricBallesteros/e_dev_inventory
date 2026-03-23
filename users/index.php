@@ -1,5 +1,6 @@
 <?php
-require 'config/config.php';
+defined('DOMAIN_PATH') || define('DOMAIN_PATH', dirname(__DIR__, 1));
+require DOMAIN_PATH . '/config/config.php';
 require GLOBAL_FUNC;
 require CL_SESSION_PATH;
 require CONNECT_PATH;
@@ -11,7 +12,7 @@ if (!isset($g_user_role) || empty($g_user_role)) {
 }
 
 if (role_has("SUPER_ADMIN")) {
-	header("Location: " . BASE_URL . "superadmin/pages/user_information.php");
+	header("Location: " . BASE_URL . "superadmin/pages/main_superadmin.php");
 	exit();
 }
 

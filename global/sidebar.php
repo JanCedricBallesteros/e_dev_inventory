@@ -288,25 +288,25 @@ if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) {
 
                 <?php if (role_has("USER") || role_has("USERS")) { ?>
                     <li class="nav-item <?php echo navigation_active("main_users"); ?>">
-                        <a href="<?php echo BASE_URL . "app/main_users.php"; ?>">
+                        <a href="<?php echo BASE_URL . "users/dashboard/main_users.php"; ?>">
                             <i class="fas fa-home"></i>
                             <p>Dashboard</p>
                         </a>
                     </li>
                     <li class="nav-item <?php echo navigation_active("request_items"); ?>">
-                        <a href="<?php echo BASE_URL . "app/request_items.php"; ?>">
+                        <a href="<?php echo BASE_URL . "users/modules/request_items.php"; ?>">
                             <i class="fas fa-clipboard-list"></i>
                             <p>Request Items</p>
                         </a>
                     </li>
                     <li class="nav-item <?php echo navigation_active("facility_records"); ?>">
-                        <a href="<?php echo BASE_URL . "app/facility_records.php"; ?>">
+                        <a href="<?php echo BASE_URL . "users/modules/facility_records.php"; ?>">
                             <i class="fas fa-building"></i>
                             <p>Facility Records</p>
                         </a>
                     </li>
                     <li class="nav-item <?php echo navigation_active("personal_records"); ?>">
-                        <a href="<?php echo BASE_URL . "app/personal_records.php"; ?>">
+                        <a href="<?php echo BASE_URL . "users/modules/personal_records.php"; ?>">
                             <i class="fas fa-archive"></i>
                             <p>Personal Inventory</p>
                         </a>
@@ -316,3 +316,4 @@ if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) {
         </div>
     </div>
 </div>
+
