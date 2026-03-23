@@ -157,22 +157,17 @@ if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) {
                 <?php } ?>
 
                 <?php if (role_has("ADMIN") || ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && ($staffHasCSM || $staffHasPO))) { ?>
-                    <li class="nav-item <?php echo navigation_active("csm_category,csm_manage_inventory,csm_manage_invtest,csm_available_items,csm_physical_checking,csm_qrcode,csm_all_function_test", "active submenu"); ?>">
+                    <li class="nav-item <?php echo navigation_active("csm_category,csm_manage_inventory,csm_manage_invtest,csm_available_items,csm_physical_checking,csm_qrcode", "active submenu"); ?>">
                         <a class="collapsed" aria-expanded="false" data-bs-toggle="collapse" href="#csm_nav">
                             <i class="fas fa-cubes"></i>
                             <p>Consumable (CSM)</p>
                             <span class="caret"></span>
                         </a>
-                        <div class="collapse <?php echo navigation_active("csm_category,csm_manage_inventory,csm_manage_invtest,csm_available_items,csm_physical_checking,csm_qrcode,csm_all_function_test", "show"); ?>" id="csm_nav">
+                        <div class="collapse <?php echo navigation_active("csm_category,csm_manage_inventory,csm_manage_invtest,csm_available_items,csm_physical_checking,csm_qrcode", "show"); ?>" id="csm_nav">
                             <ul class="nav nav-collapse">
                                 <li class="<?php echo navigation_active("csm_category"); ?>">
                                     <a href="<?php echo BASE_URL . "admin/modules/consumable/csm_category.php"; ?>">
                                         <span class="sub-item">Item Category</span>
-                                    </a>
-                                </li>
-                                <li class="<?php echo navigation_active("csm_all_function_test"); ?>">
-                                    <a href="<?php echo BASE_URL . "admin/modules/consumable/csm_all_function_test.php"; ?>">
-                                        <span class="sub-item">All Function Test</span>
                                     </a>
                                 </li>
                                 <li class="<?php echo navigation_active("csm_manage_inventory"); ?>">
