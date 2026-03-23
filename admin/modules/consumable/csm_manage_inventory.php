@@ -276,7 +276,10 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                 </div>
 
                 <div class="d-flex justify-content-end gap-2 mb-2">
-                    <button class="btn btn-outline-secondary btn-sm" id="clearSelection">Clear Selection</button>
+                  <button class="btn btn-outline-primary btn-sm" id="bulkSetAvailability">
+                    <i class="bi bi-sliders"></i> Set Rules
+                  </button>
+                  <button class="btn btn-outline-secondary btn-sm" id="clearSelection">Clear Selection</button>
                 </div>
 
                 <div id="csm-inventory-table"></div>
