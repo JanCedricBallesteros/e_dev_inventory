@@ -27,6 +27,7 @@ $isAdmin = role_has("ADMIN");
     include_once DOMAIN_PATH . '/global/include_top.php';
     ?>
     <link href="<?= BASE_URL ?>assets/css/tabulator_bootstrap.min.css" rel="stylesheet">
+    <link href="<?= BASE_URL ?>assets/css/select2.min.css" rel="stylesheet">
     <style>
         .section-card { border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
         .section-card .card-header { background: var(--bg-eclearance-rgb); color: #fff; font-weight: 600; }
@@ -49,6 +50,21 @@ $isAdmin = role_has("ADMIN");
         .tabulator {
             font-size: 0.875rem;
         }
+        .select2-container--default .select2-selection--single {
+            height: 38px;
+            border: 1px solid #ced4da;
+            border-radius: 0.375rem;
+        }
+        .select2-container--default .select2-selection--single .select2-selection__rendered {
+            line-height: 36px;
+            padding-left: 12px;
+        }
+        .select2-container--default .select2-selection--single .select2-selection__arrow {
+            height: 36px;
+        }
+        .table-toolbar { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+        .table-toolbar .form-control,
+        .table-toolbar .form-select { height: 38px; }
     </style>
 </head>
 
@@ -215,6 +231,9 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                             <div class="col-md-3 d-grid">
                                 <button class="btn btn-success" id="saveCheck"><i class="bi bi-check2-circle"></i> Save Check</button>
                             </div>
+                            <div class="col-md-3 d-grid">
+                                <button class="btn btn-outline-secondary" id="resetCheck"><i class="bi bi-x-circle"></i> Clear</button>
+                            </div>
                         </div>
                         <div id="checkMsg" class="mt-2"></div>
                     </div>
@@ -225,9 +244,13 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                 <div class="card section-card">
                     <div class="card-header d-flex align-items-center justify-content-between">
                         <span><i class="bi bi-table"></i>&ensp;Checked Items</span>
-                        <div class="d-flex gap-2">
+                        <div class="table-toolbar">
                             <select class="form-select form-select-sm" id="filterSession"></select>
                             <input type="text" class="form-control form-control-sm" id="checkSearch" placeholder="Search property code or description" style="max-width:260px;">
+                            <button class="btn btn-outline-light btn-sm" id="exportChecksCsv">CSV</button>
+                            <button class="btn btn-outline-light btn-sm" id="exportChecksXlsx">XLSX</button>
+                            <button class="btn btn-outline-light btn-sm" id="exportChecksJson">JSON</button>
+                            <button class="btn btn-outline-light btn-sm" id="printChecks">Print</button>
                         </div>
                     </div>
                     <div class="card-body">
@@ -275,6 +298,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 
 <script src="<?= BASE_URL ?>assets/js/jquery.min.js"></script>
 <script src="<?= BASE_URL ?>assets/js/tabulator.min.js"></script>
+<script src="<?= BASE_URL ?>assets/js/select2.min.js"></script>
 <script src="https://unpkg.com/html5-qrcode"></script>
 <script src="<?= BASE_URL ?>assets/js/qr_search.js"></script>
 <?php include_once DOMAIN_PATH . '/global/include_bottom.php'; ?>
@@ -287,6 +311,7 @@ const isAdmin = <?php echo $isAdmin ? 'true' : 'false'; ?>;
 let sessionsTable = null;
 let checksTable = null;
 let currentItem = null;
+let checksTableReady = false;
 
 function showMessage(target, type, text) {
     $(target).html(`<div class="alert alert-${type} mb-2">${text}</div>`);
@@ -328,12 +353,18 @@ function loadSessions() {
             options.push(`<option value="${s.id}">${label}</option>`);
         });
         $('#activeSession').html(options.join(''));
+        if ($.fn.select2) {
+            $('#activeSession').val('').trigger('change');
+        }
 
         const filterOpts = ['<option value="">All Sessions</option>'];
         (res.data || []).forEach(s => {
             filterOpts.push(`<option value="${s.id}">${s.series_code}</option>`);
         });
         $('#filterSession').html(filterOpts.join(''));
+        if ($.fn.select2) {
+            $('#filterSession').val('').trigger('change');
+        }
     }, 'json');
 }
 
@@ -376,6 +407,7 @@ function initChecksTable() {
         responsiveLayout: 'collapse',
         placeholder: 'No checked items found',
         pagination: 'local',
+        paginationCounter: 'rows',
         paginationSize: 10,
         paginationSizeSelector: [5, 10, 20, 50, true],
         ajaxResponse: function(url, params, response) {
@@ -395,6 +427,9 @@ function initChecksTable() {
             { title: 'Date Checked', field: 'checked_at', width: 150 },
             { title: 'Checked By', field: 'checked_by_name', width: 150 }
         ]
+    });
+    checksTable.on('tableBuilt', function(){
+        checksTableReady = true;
     });
 }
 
@@ -456,6 +491,10 @@ $(document).ready(function() {
     initSessionsTable();
     initChecksTable();
     loadSessions();
+    if ($.fn.select2) {
+        $('#activeSession').select2({ placeholder: 'Select Active Session', allowClear: true, width: '100%' });
+        $('#filterSession').select2({ placeholder: 'All Sessions', allowClear: true, width: '200px' });
+    }
 
     if (typeof initQrSearch === 'function') {
         initQrSearch({
@@ -481,6 +520,11 @@ $(document).ready(function() {
         resetItemUI();
         loadItem($('#propertyCodeInput').val().trim());
     });
+    $('#resetCheck').on('click', function(){
+        resetItemUI();
+        $('#propertyCodeInput').val('');
+        $('#checkMsg').html('');
+    });
     $('#propertyCodeInput').on('keypress', function(e) {
         if (e.which === 13) {
             e.preventDefault();
@@ -498,6 +542,12 @@ $(document).ready(function() {
     $('#sessionForm').on('submit', function(e) {
         e.preventDefault();
         if (!isAdmin) return;
+        const start = $(this).find('[name=\"start_date\"]').val();
+        const end = $(this).find('[name=\"end_date\"]').val();
+        if (start && end && start > end) {
+            showMessage('#sessionMsg', 'danger', 'End date must be after start date.');
+            return;
+        }
         const data = $(this).serialize() + '&action=create_session';
         $.post(PROCESS_URL, data, function(res) {
             if (res.success) {
@@ -561,11 +611,32 @@ $(document).ready(function() {
 
     $('#filterSession').on('change', function() {
         const sessionId = $(this).val();
-        checksTable.setData(PROCESS_URL, { action: 'list_checks', session_id: sessionId, search: $('#checkSearch').val().trim() }, 'POST');
+        if (checksTableReady) {
+            checksTable.setData(PROCESS_URL, { action: 'list_checks', session_id: sessionId, search: $('#checkSearch').val().trim() }, 'POST');
+        }
     });
-    $('#checkSearch').on('keyup', function() {
+    let searchTimer = null;
+    $('#checkSearch').on('input', function() {
         const sessionId = $('#filterSession').val();
-        checksTable.setData(PROCESS_URL, { action: 'list_checks', session_id: sessionId, search: $('#checkSearch').val().trim() }, 'POST');
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(function(){
+            if (checksTableReady) {
+                checksTable.setData(PROCESS_URL, { action: 'list_checks', session_id: sessionId, search: $('#checkSearch').val().trim() }, 'POST');
+            }
+        }, 250);
+    });
+
+    $('#exportChecksCsv').on('click', function(){
+        if (checksTable) checksTable.download('csv', 'ast_physical_checks.csv');
+    });
+    $('#exportChecksXlsx').on('click', function(){
+        if (checksTable) checksTable.download('xlsx', 'ast_physical_checks.xlsx', { sheetName: 'Checks' });
+    });
+    $('#exportChecksJson').on('click', function(){
+        if (checksTable) checksTable.download('json', 'ast_physical_checks.json');
+    });
+    $('#printChecks').on('click', function(){
+        if (checksTable) checksTable.print(false, true);
     });
 });
 </script>

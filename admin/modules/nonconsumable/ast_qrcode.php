@@ -39,13 +39,24 @@ if (!(
         .ast-preview-header {
             background: #fff;
             border-bottom: 1.5px solid #000;
-            padding: 6px 10px;
-            font-size: 11px;
+            padding: 16px 12px;
+            font-size: 13px;
             font-weight: 800;
             letter-spacing: 0.3px;
             display: flex;
             align-items: center;
             justify-content: space-between;
+        }
+        .ast-header-brand {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .ast-header-logo {
+            width: 32px;
+            height: 32px;
+            object-fit: contain;
+            flex: 0 0 auto;
         }
         .ast-preview-body {
             display: flex;
@@ -114,8 +125,8 @@ if (!(
             gap: 5px;
         }
         .ast-preview-qr img {
-            width: 140px;
-            height: 140px;
+            width: 152px;
+            height: 152px;
             object-fit: contain;
             border: 1px solid #ccc;
             padding: 4px;
@@ -129,22 +140,8 @@ if (!(
             line-height: 1.2;
             max-width: 155px;
         }
-        .ast-preview-remarks {
-            border-top: 1.5px solid #000;
-            padding: 5px 10px;
-            min-height: 36px;
-        }
-        .ast-preview-remarks-label {
-            font-size: 10px;
-            font-style: italic;
-            color: #777;
-        }
-        .ast-preview-remarks-value {
-            font-size: 12px;
-            font-weight: 600;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+        .ast-preview-body {
+            padding-bottom: 6px;
         }
     </style>
 </head>
@@ -218,6 +215,7 @@ if (!(
 const BASE_URL = <?php echo json_encode(BASE_URL); ?>;
 const PROCESS_URL = BASE_URL + 'admin/modules/nonconsumable/process/ast_inventory_process.php';
 const QR_GENERATOR_URL = BASE_URL + 'admin/modules/tools/qr_image.php';
+const LOGO_URL = BASE_URL + 'upload/img/ccc-logo.png';
 
 let qrItems = [];
 let qrMsgTimeout = null;
@@ -297,7 +295,6 @@ function renderList(filter = '', resetPage = false) {
         const acqDate     = item.acquisition_date || '';
         const issued      = item.issued_to_name || item.issued_to || '';
         const acctOfficer = item.accountable_officer || '';
-        const remarks     = item.remarks || item.notes || '';
         const qrUrl       = QR_GENERATOR_URL + '?v=' + encodeURIComponent(code);
         const shortDesc   = desc.length > 65 ? desc.slice(0, 63) + '\u2026' : desc;
 
@@ -317,7 +314,10 @@ function renderList(filter = '', resetPage = false) {
             <div class="col-12 col-sm-6">
                 <div class="ast-preview-tag">
                     <div class="ast-preview-header">
-                        <span>City College of Calamba</span>
+                        <div class="ast-header-brand">
+                            <img class="ast-header-logo" src="${LOGO_URL}" alt="CCC logo">
+                            <span>City College of Calamba</span>
+                        </div>
                         <div class="form-check mb-0">
                             <input class="form-check-input qr-check" type="checkbox" data-code="${escHtml(code)}" ${selectedCodes.has(code) ? 'checked' : ''}>
                         </div>
@@ -334,10 +334,6 @@ function renderList(filter = '', resetPage = false) {
                             <img src="${qrUrl}" alt="QR ${escHtml(code)}">
                             <div class="ast-preview-qr-code">${escHtml(code)}</div>
                         </div>
-                    </div>
-                    <div class="ast-preview-remarks">
-                        <div class="ast-preview-remarks-label">Remarks</div>
-                        ${remarks ? `<div class="ast-preview-remarks-value">${escHtml(remarks)}</div>` : ''}
                     </div>
                 </div>
             </div>
@@ -426,15 +422,23 @@ const AST_TAG_CSS = `
     .ast-tag-header {
         background: #fff;
         color: #000;
-        text-align: center;
-        padding: 0.8mm 2mm;
-        font-size: 6.5pt;
+        text-align: left;
+        padding: 2.8mm 2mm;
+        font-size: 8.6pt;
         font-weight: 800;
         letter-spacing: 0.3px;
         border-bottom: 1.5px solid #000;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 6px;
+    }
+    .ast-tag-header .ast-header-logo {
+        width: 20px;
+        height: 20px;
     }
 
     /* ---- Body: details left + QR right ---- */
@@ -501,8 +505,8 @@ const AST_TAG_CSS = `
         box-sizing: border-box;
     }
     .ast-tag-qr img {
-        width: 24mm;
-        height: 24mm;
+        width: 26mm;
+        height: 26mm;
         object-fit: contain;
         border: 1px solid #ccc;
         padding: 0.5mm;
@@ -517,33 +521,13 @@ const AST_TAG_CSS = `
         line-height: 1.1;
     }
 
-    /* ---- Remarks strip ---- */
-    .ast-tag-remarks {
-        border-top: 1.5px solid #000;
-        padding: 0.5mm 1.5mm;
-        min-height: 5mm;
-        box-sizing: border-box;
-        overflow: hidden;
-    }
-    .ast-tag-remarks-label {
-        font-size: 5pt;
-        font-style: italic;
-        color: #555;
-        margin-bottom: 0.2mm;
-    }
-    .ast-tag-remarks-value {
-        font-size: 5.8pt;
-        font-weight: 600;
-        overflow-wrap: anywhere;
-        word-break: break-word;
-    }
 
     @media print {
         body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     }
 `;
 
-function buildAstTag({ code, propNum, serial, category, desc, acqDate, cost, issued, acctOfficer, remarks, qrUrl }) {
+function buildAstTag({ code, propNum, serial, category, desc, acqDate, cost, issued, acctOfficer, qrUrl }) {
     const shortDesc = desc.length > 65 ? desc.slice(0, 63) + '\u2026' : desc;
     // Build optional meta lines — only include if value exists
     const metaLines = [
@@ -555,8 +539,11 @@ function buildAstTag({ code, propNum, serial, category, desc, acqDate, cost, iss
     ].filter(Boolean);
 
     return `
-        <div class="ast-tag">
-            <div class="ast-tag-header">City College of Calamba</div>
+            <div class="ast-tag">
+            <div class="ast-tag-header">
+                <img class="ast-header-logo" src="${LOGO_URL}" alt="CCC logo">
+                <span>City College of Calamba</span>
+            </div>
             <div class="ast-tag-body">
                 <div class="ast-tag-details">
                     <div class="ast-tag-line tl-cat">${escHtml(category)}</div>
@@ -569,10 +556,6 @@ function buildAstTag({ code, propNum, serial, category, desc, acqDate, cost, iss
                     <img src="${qrUrl}" alt="QR ${escHtml(code)}">
                     <div class="ast-tag-qr-code">${escHtml(code)}</div>
                 </div>
-            </div>
-            <div class="ast-tag-remarks">
-                <div class="ast-tag-remarks-label">Remarks</div>
-                <div class="ast-tag-remarks-value">${escHtml(remarks)}</div>
             </div>
         </div>
     `;
@@ -592,7 +575,6 @@ function getTagData(code) {
         cost:        (item.cost_value != null && item.cost_value !== '') ? String(item.cost_value) : '',
         issued:      item.issued_to_name || item.issued_to || '',
         acctOfficer: item.accountable_officer || '',
-        remarks:     item.remarks || item.notes || '',
         qrUrl:       QR_GENERATOR_URL + '?v=' + encodeURIComponent(code)
     };
 }
