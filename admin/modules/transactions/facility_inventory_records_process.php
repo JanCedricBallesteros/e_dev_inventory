@@ -169,6 +169,7 @@ try {
                         f.facility_id,
                         f.facility_code,
                         f.facility_name,
+                        f.facility_floor,
                         f.status,
                         (
                             SELECT COUNT(*)
@@ -197,6 +198,22 @@ try {
             $facility_id = _int(_post('facility_id'), 0);
             $facility_code = strtoupper(_post('facility_code'));
             $facility_name = _post('facility_name');
+            $floors_raw = _post('facility_floor');
+            $floors_list = array();
+            if (is_array($floors_raw)) {
+                $floors_list = $floors_raw;
+            } elseif ($floors_raw !== '') {
+                $decoded = json_decode((string)$floors_raw, true);
+                if (is_array($decoded)) $floors_list = $decoded;
+            }
+            $floors_clean = array();
+            foreach ($floors_list as $f) {
+                $name = trim((string)$f);
+                if ($name === '') continue;
+                if (!in_array($name, $floors_clean, true)) $floors_clean[] = $name;
+            }
+            $floors_json = json_encode(array('floors' => $floors_clean), JSON_UNESCAPED_UNICODE);
+            $floors_sql = "'" . _esc($floors_json) . "'";
             if ($facility_code === '' || $facility_name === '') {
                 json_response(array('success' => false, 'message' => 'Facility code and name are required.'), 422);
             }
@@ -209,11 +226,12 @@ try {
                 $ok = call_mysql_query("UPDATE facility_records_facilities
                                         SET facility_code = '" . _esc($facility_code) . "',
                                             facility_name = '" . _esc($facility_name) . "',
+                                            facility_floor = {$floors_sql},
                                             updated_by = " . (int)$s_user_id . "
                                         WHERE facility_id = {$facility_id}
                                         LIMIT 1");
                 if (!$ok) json_response(array('success' => false, 'message' => 'Failed to update facility.'), 500);
-                activity_log_new("FACILITY UPDATE", "SUCCESS", array('facility_id' => $facility_id, 'facility_code' => $facility_code, 'facility_name' => $facility_name));
+                activity_log_new("FACILITY UPDATE", "SUCCESS", array('facility_id' => $facility_id, 'facility_code' => $facility_code, 'facility_name' => $facility_name, 'floors' => $floors_clean));
                 json_response(array('success' => true, 'message' => 'Facility updated.'));
             }
 
@@ -221,10 +239,10 @@ try {
             if ($dup && mysqli_num_rows($dup) > 0) {
                 json_response(array('success' => false, 'message' => 'Facility code already exists.'), 409);
             }
-            $ok = call_mysql_query("INSERT INTO facility_records_facilities (facility_code, facility_name, created_by, updated_by)
-                                    VALUES ('" . _esc($facility_code) . "', '" . _esc($facility_name) . "', " . (int)$s_user_id . ", " . (int)$s_user_id . ")");
+            $ok = call_mysql_query("INSERT INTO facility_records_facilities (facility_code, facility_name, facility_floor, created_by, updated_by)
+                                    VALUES ('" . _esc($facility_code) . "', '" . _esc($facility_name) . "', {$floors_sql}, " . (int)$s_user_id . ", " . (int)$s_user_id . ")");
             if (!$ok) json_response(array('success' => false, 'message' => 'Failed to create facility.'), 500);
-            activity_log_new("FACILITY CREATE", "SUCCESS", array('facility_code' => $facility_code, 'facility_name' => $facility_name));
+            activity_log_new("FACILITY CREATE", "SUCCESS", array('facility_code' => $facility_code, 'facility_name' => $facility_name, 'floors' => $floors_clean));
             json_response(array('success' => true, 'message' => 'Facility created.'));
             break;
 
@@ -243,6 +261,7 @@ try {
                             u.unit_type,
                             u.unit_code,
                             u.unit_name,
+                            u.floor_label,
                             u.status,
                             MIN(um.user_id) AS facility_unit_manager_user_id,
                             GROUP_CONCAT(DISTINCT um.user_id ORDER BY ua.l_name SEPARATOR ',') AS facility_unit_manager_user_ids,
@@ -266,6 +285,7 @@ try {
                             u.unit_type,
                             u.unit_code,
                             u.unit_name,
+                            u.floor_label,
                             u.status,
                             " . ($unitManagerCol !== '' ? "u.{$unitManagerCol} AS facility_unit_manager_user_id," : "NULL AS facility_unit_manager_user_id,") . "
                             CONCAT(COALESCE(ua.f_name,''), ' ', COALESCE(ua.l_name,'')) AS unit_manager_name,
@@ -298,6 +318,9 @@ try {
             $unit_type = strtoupper(_post('unit_type'));
             $unit_code = strtoupper(_post('unit_code'));
             $unit_name = _post('unit_name');
+            $floor_label_raw = trim((string)_post('floor_label'));
+            $floor_label = $floor_label_raw !== '' ? $floor_label_raw : null;
+            $floor_sql = $floor_label !== null ? "'" . _esc($floor_label) . "'" : "NULL";
             $managerIdsRaw = $_POST['facility_unit_manager_user_ids'] ?? array();
             if (!is_array($managerIdsRaw)) {
                 $managerIdsRaw = array_filter(array_map('trim', explode(',', (string)$managerIdsRaw)));
@@ -331,6 +354,7 @@ try {
                                         SET unit_type = '" . _esc($unit_type) . "',
                                             unit_code = '" . _esc($unit_code) . "',
                                             unit_name = '" . _esc($unit_name) . "',
+                                            floor_label = {$floor_sql},
                                             " . ($unitManagerCol !== '' ? "{$unitManagerCol} = " . ($facility_unit_manager_user_id > 0 ? $facility_unit_manager_user_id : "NULL") . "," : "") . "
                                             updated_by = " . (int)$s_user_id . "
                                         WHERE unit_id = {$unit_id}
@@ -342,7 +366,7 @@ try {
                         call_mysql_query("INSERT INTO facility_records_unit_managers (unit_id, user_id) VALUES ({$unit_id}, " . (int)$mid . ")");
                     }
                 }
-                activity_log_new("FACILITY UNIT UPDATE", "SUCCESS", array('unit_id' => $unit_id, 'facility_id' => $facility_id, 'unit_code' => $unit_code, 'unit_name' => $unit_name, 'facility_unit_manager_user_ids' => $managerIds));
+                activity_log_new("FACILITY UNIT UPDATE", "SUCCESS", array('unit_id' => $unit_id, 'facility_id' => $facility_id, 'unit_code' => $unit_code, 'unit_name' => $unit_name, 'floor_label' => $floor_label, 'facility_unit_manager_user_ids' => $managerIds));
                 json_response(array('success' => true, 'message' => 'Unit updated.'));
             }
 
@@ -354,8 +378,8 @@ try {
                 json_response(array('success' => false, 'message' => 'Unit code already exists for this facility.'), 409);
             }
 
-            $insertCols = "facility_id, unit_type, unit_code, unit_name";
-            $insertVals = "{$facility_id}, '" . _esc($unit_type) . "', '" . _esc($unit_code) . "', '" . _esc($unit_name) . "'";
+            $insertCols = "facility_id, unit_type, unit_code, unit_name, floor_label";
+            $insertVals = "{$facility_id}, '" . _esc($unit_type) . "', '" . _esc($unit_code) . "', '" . _esc($unit_name) . "', {$floor_sql}";
             if ($unitManagerCol !== '') {
                 $insertCols .= ", {$unitManagerCol}";
                 $insertVals .= ", " . ($facility_unit_manager_user_id > 0 ? $facility_unit_manager_user_id : "NULL");
@@ -370,7 +394,7 @@ try {
                     call_mysql_query("INSERT INTO facility_records_unit_managers (unit_id, user_id) VALUES ({$newUnitId}, " . (int)$mid . ")");
                 }
             }
-            activity_log_new("FACILITY UNIT CREATE", "SUCCESS", array('facility_id' => $facility_id, 'unit_code' => $unit_code, 'unit_name' => $unit_name, 'facility_unit_manager_user_ids' => $managerIds));
+            activity_log_new("FACILITY UNIT CREATE", "SUCCESS", array('facility_id' => $facility_id, 'unit_code' => $unit_code, 'unit_name' => $unit_name, 'floor_label' => $floor_label, 'facility_unit_manager_user_ids' => $managerIds));
             json_response(array('success' => true, 'message' => 'Unit created.'));
             break;
 

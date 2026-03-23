@@ -32,6 +32,10 @@ if (!(role_has("ADMIN") || $staffAccess)) {
         .facility-header .facility-meta .title-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
         .facility-header .facility-actions { display: flex; gap: 6px; flex-shrink: 0; }
         .facility-code { font-family: monospace; font-weight: 700; }
+        .floor-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+        .floor-badge { background: #eef5ff; color: #1e3a8a; border: 1px dashed #a5b4fc; border-radius: 999px; font-size: 0.75rem; padding: 2px 8px; }
+        .floor-group { margin-top: 8px; border-left: 3px solid #e2e8f0; padding-left: 8px; }
+        .floor-header { font-weight: 600; font-size: 0.85rem; color: #334155; display: flex; align-items: center; gap: 6px; margin: 6px 0; }
         .small-muted { color: #6c757d; font-size: 0.85rem; }
         .unit-card { border: 1px solid #dbe2ea; border-radius: 8px; padding: 10px 12px; background: #fff; cursor: pointer; transition: all 0.2s ease; margin-bottom: 8px; }
         .unit-card:hover { border-color: #a5b4fc; background: #f8faff; transform: translateX(4px); }
@@ -165,6 +169,16 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                     <label class="form-label fw-semibold">Facility Name</label>
                     <input type="text" id="facilityName" class="form-control" placeholder="e.g., Science Building">
                 </div>
+                <div class="mt-2">
+                    <label class="form-label fw-semibold">Floors</label>
+                    <div id="floorRows" class="d-flex flex-column gap-2"></div>
+                    <div class="d-flex align-items-center gap-2 mt-2">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" id="addFloorRow">
+                            <i class="bi bi-plus-lg"></i> Add Floor
+                        </button>
+                        <div class="form-text">These floors will be available when assigning units.</div>
+                    </div>
+                </div>
                 <div id="facilityMsg" class="mt-2"></div>
             </div>
             <div class="modal-footer">
@@ -201,6 +215,12 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                 <div>
                     <label class="form-label fw-semibold">Unit Name</label>
                     <input type="text" id="unitName" class="form-control" placeholder="e.g., Room 101">
+                </div>
+                <div class="mt-2">
+                    <label class="form-label fw-semibold">Floor</label>
+                    <select id="unitFloor" class="form-select">
+                        <option value="">No floor</option>
+                    </select>
                 </div>
                 <div class="mt-2">
                     <label class="form-label fw-semibold">Facility Unit Managers</label>
@@ -312,6 +332,86 @@ function escapeHtml(value){
         .replace(/'/g, '&#39;');
 }
 
+function normalizeFloorList(list){
+    const out = [];
+    (list || []).forEach(function(item){
+        const name = String(item || '').trim();
+        if (!name) return;
+        if (!out.includes(name)) out.push(name);
+    });
+    return out;
+}
+
+function parseFloorsJson(raw){
+    if (!raw) return [];
+    if (Array.isArray(raw)) return normalizeFloorList(raw);
+    try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return normalizeFloorList(parsed);
+        if (parsed && Array.isArray(parsed.floors)) return normalizeFloorList(parsed.floors);
+    } catch (e) {}
+    return [];
+}
+
+function parseFloorsInput(raw){
+    const parts = String(raw || '')
+        .split(/\r?\n|,/)
+        .map(function(s){ return s.trim(); })
+        .filter(Boolean);
+    return normalizeFloorList(parts);
+}
+
+function addFloorRow(value = ''){
+    const safe = escapeHtml(value);
+    const row = `
+        <div class="floor-row border rounded p-2">
+            <div class="row g-2 align-items-center">
+                <div class="col-12 col-md-10">
+                    <input type="text" class="form-control form-control-sm floor-input" placeholder="e.g., Floor 1" value="${safe}">
+                </div>
+                <div class="col-12 col-md-2 d-grid">
+                    <button type="button" class="btn btn-sm btn-outline-danger btn-remove-floor" title="Remove floor">
+                        <i class="bi bi-x"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    $('#floorRows').append(row);
+}
+
+function resetFloorRows(list){
+    $('#floorRows').empty();
+    const floors = Array.isArray(list) ? list : [];
+    if (!floors.length) {
+        addFloorRow('');
+        return;
+    }
+    floors.forEach(function(f){ addFloorRow(f); });
+}
+
+function collectFloorRows(){
+    const floors = [];
+    $('#floorRows .floor-input').each(function(){
+        const val = ($(this).val() || '').trim();
+        if (!val) return;
+        if (!floors.includes(val)) floors.push(val);
+    });
+    return floors;
+}
+
+function buildFloorOptions(facility, selected){
+    const floors = facility && facility.floors ? facility.floors.slice() : [];
+    if (selected && !floors.includes(selected)) floors.push(selected);
+    const options = ['<option value="">No floor</option>'];
+    floors.forEach(function(f){
+        const safe = escapeHtml(f);
+        const sel = String(selected || '') === String(f) ? ' selected' : '';
+        options.push(`<option value="${safe}"${sel}>${safe}</option>`);
+    });
+    return options.join('');
+}
+
 function normalizeScannedCode(raw){
     let text = String(raw || '').trim();
     if (!text) return '';
@@ -342,7 +442,10 @@ function normalizeScannedCode(raw){
 function loadFacilities(cb){
     $.post(PROCESS_URL, { action: 'list_facilities' }, function(res){
         if (!res.success) { showPageError(res.message || 'Failed to load facilities.'); return; }
-        facilityList = res.data || [];
+        facilityList = (res.data || []).map(function(f){
+            const floors = parseFloorsJson(f.facility_floor);
+            return Object.assign({}, f, { floors });
+        });
         renderFacilities();
         if (typeof cb === 'function') cb();
     }, 'json').fail(function(xhr){
@@ -389,6 +492,10 @@ function renderFacilities(){
         const facilityName = escapeHtml(f.facility_name || '');
         const totalItems = parseInt(f.active_item_count || 0, 10) || 0;
         const totalUnits = parseInt(f.unit_count || 0, 10) || 0;
+        const floors = Array.isArray(f.floors) ? f.floors : [];
+        const floorBadges = floors.length
+            ? floors.map(function(fl){ return `<span class="floor-badge">${escapeHtml(fl)}</span>`; }).join('')
+            : '<span class="small-muted">No floors set</span>';
         wrap.append(`
             <div class="facility-group">
                 <div class="facility-header ${isActive ? 'active' : ''}" data-id="${f.facility_id}">
@@ -399,6 +506,7 @@ function renderFacilities(){
                             <span class="badge bg-light text-dark facility-code">${facilityCode}</span>
                         </div>
                         <div class="small" style="opacity:0.9;">${totalUnits} unit(s) &middot; ${totalItems} item(s)</div>
+                        <div class="floor-badges">${floorBadges}</div>
                     </div>
                     <div class="facility-actions">
                         <button class="btn btn-light btn-sm btn-add-unit" data-id="${f.facility_id}"><i class="bi bi-plus-lg"></i> Add Unit</button>
@@ -425,7 +533,8 @@ function loadUnits(cb){
         renderUnits();
         if (selectedUnit) {
             const _facCode = selectedFacility ? (selectedFacility.facility_code || '') : '';
-            $('#selectedUnitInfo').text((_facCode ? _facCode + ' / ' : '') + (selectedUnit.unit_code || '') + ' — ' + (selectedUnit.unit_name || ''));
+            const floorLabel = selectedUnit.floor_label ? ' — ' + selectedUnit.floor_label : '';
+            $('#selectedUnitInfo').text((_facCode ? _facCode + ' / ' : '') + (selectedUnit.unit_code || '') + ' — ' + (selectedUnit.unit_name || '') + floorLabel);
             $('#selectedManagedBy').text(selectedUnit.unit_manager_name ? 'Managed By: ' + selectedUnit.unit_manager_name : '');
             loadAssignments();
         }
@@ -539,26 +648,54 @@ function renderUnits(){
     const container = $(`.facility-units[data-facility-id="${selectedFacility.facility_id}"]`);
     if (!container.length) return;
     container.empty();
-    if (!unitList.length){
+    const facilityFloors = Array.isArray(selectedFacility.floors) ? selectedFacility.floors : [];
+    const groups = {};
+    unitList.forEach(function(u){
+        const key = String(u.floor_label || '').trim() || 'Unassigned';
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(u);
+    });
+    const orderedKeys = [];
+    facilityFloors.forEach(function(f){
+        if (!orderedKeys.includes(f)) orderedKeys.push(f);
+    });
+    Object.keys(groups).forEach(function(k){
+        if (!orderedKeys.includes(k)) orderedKeys.push(k);
+    });
+    if (!orderedKeys.length) {
         container.html('<div class="small-muted">No units yet for this facility.</div>');
         return;
     }
-    unitList.forEach(function(u){
-        const active = selectedUnit && String(selectedUnit.unit_id) === String(u.unit_id) ? 'active' : '';
-        const officer = escapeHtml((u.unit_manager_name || '').trim());
-        const unitCode = escapeHtml(u.unit_code || '');
-        const unitName = escapeHtml(u.unit_name || '');
-        container.append(`
-            <div class="unit-card ${active}" data-id="${u.unit_id}">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div class="fw-semibold">${unitCode} - ${unitName} (${u.active_item_count || 0})</div>
-                    <button class="btn btn-outline-secondary btn-sm btn-edit-unit" data-id="${u.unit_id}" title="Edit Unit">
-                        <i class="bi bi-pencil"></i>
-                    </button>
-                </div>
-                ${officer ? `<div class="small-muted mt-1">Manager: ${officer}</div>` : ''}
-            </div>
-        `);
+    orderedKeys.forEach(function(key){
+        const rows = groups[key] || [];
+        const safeKey = escapeHtml(key);
+        let html = `
+            <div class="floor-group">
+                <div class="floor-header"><i class="bi bi-layers"></i> ${safeKey}</div>
+        `;
+        if (!rows.length) {
+            html += '<div class="small-muted">No units yet for this floor.</div>';
+        } else {
+            rows.forEach(function(u){
+                const active = selectedUnit && String(selectedUnit.unit_id) === String(u.unit_id) ? 'active' : '';
+                const officer = escapeHtml((u.unit_manager_name || '').trim());
+                const unitCode = escapeHtml(u.unit_code || '');
+                const unitName = escapeHtml(u.unit_name || '');
+                html += `
+                    <div class="unit-card ${active}" data-id="${u.unit_id}">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div class="fw-semibold">${unitCode} - ${unitName} (${u.active_item_count || 0})</div>
+                            <button class="btn btn-outline-secondary btn-sm btn-edit-unit" data-id="${u.unit_id}" title="Edit Unit">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                        </div>
+                        ${officer ? `<div class="small-muted mt-1">Manager: ${officer}</div>` : ''}
+                    </div>
+                `;
+            });
+        }
+        html += '</div>';
+        container.append(html);
     });
 }
 
@@ -686,6 +823,10 @@ $(document).ready(function(){
     initUserSelect2();
     loadFacilities(applyInitialSelectionFromQuery);
 
+    if (!$('#floorRows .floor-row').length) {
+        resetFloorRows([]);
+    }
+
     $('#facilityList').on('click', '.facility-header', function(e){
         if ($(e.target).closest('.btn-edit-facility, .btn-add-unit').length) return;
         const id = $(this).data('id');
@@ -722,6 +863,7 @@ $(document).ready(function(){
         $('#facilityId').val(f.facility_id);
         $('#facilityCode').val(f.facility_code);
         $('#facilityName').val(f.facility_name);
+        resetFloorRows(Array.isArray(f.floors) ? f.floors : []);
         $('#facilityMsg').html('');
         $('#facilityModal').modal('show');
     });
@@ -730,16 +872,32 @@ $(document).ready(function(){
         $('#facilityId').val('');
         $('#facilityCode').val('');
         $('#facilityName').val('');
+        resetFloorRows([]);
         $('#facilityMsg').html('');
         $('#facilityModal').modal('show');
     });
 
+    $('#addFloorRow').on('click', function(){
+        addFloorRow('');
+    });
+
+    $('#floorRows').on('click', '.btn-remove-floor', function(){
+        const rows = $('#floorRows .floor-row').length;
+        if (rows <= 1) {
+            $(this).closest('.floor-row').find('.floor-input').val('');
+            return;
+        }
+        $(this).closest('.floor-row').remove();
+    });
+
     $('#saveFacilityBtn').on('click', function(){
+        const floors = collectFloorRows();
         const payload = {
             action: 'save_facility',
             facility_id: $('#facilityId').val(),
             facility_code: $('#facilityCode').val().trim(),
-            facility_name: $('#facilityName').val().trim()
+            facility_name: $('#facilityName').val().trim(),
+            facility_floor: JSON.stringify(floors)
         };
         $.post(PROCESS_URL, payload, function(res){
             if (!res.success){
@@ -767,6 +925,7 @@ $(document).ready(function(){
         $('#unitType').val('ROOM');
         $('#unitCode').val('');
         $('#unitName').val('');
+        $('#unitFloor').html(buildFloorOptions(selectedFacility, ''));
         $('#unitManagerUserId').val(null).trigger('change');
         $('#unitMsg').html('');
         $('#unitModal').modal('show');
@@ -779,7 +938,8 @@ $(document).ready(function(){
         currentPage = 1;
         if (selectedUnit) {
             const _facCode = selectedFacility ? (selectedFacility.facility_code || '') : '';
-            $('#selectedUnitInfo').text((_facCode ? _facCode + ' / ' : '') + (selectedUnit.unit_code || '') + ' — ' + (selectedUnit.unit_name || ''));
+            const floorLabel = selectedUnit.floor_label ? ' — ' + selectedUnit.floor_label : '';
+            $('#selectedUnitInfo').text((_facCode ? _facCode + ' / ' : '') + (selectedUnit.unit_code || '') + ' — ' + (selectedUnit.unit_name || '') + floorLabel);
             $('#selectedManagedBy').text(selectedUnit.unit_manager_name ? 'Managed By: ' + selectedUnit.unit_manager_name : '');
         }
         renderUnits();
@@ -796,6 +956,7 @@ $(document).ready(function(){
         $('#unitType').val(u.unit_type || 'ROOM');
         $('#unitCode').val(u.unit_code || '');
         $('#unitName').val(u.unit_name || '');
+        $('#unitFloor').html(buildFloorOptions(selectedFacility, u.floor_label || ''));
         let managerIds = String(u.facility_unit_manager_user_ids || '').split(',').filter(Boolean);
         let managerNames = String(u.unit_manager_names || '').split('||');
         if (!managerIds.length && u.facility_unit_manager_user_id) {
@@ -829,6 +990,7 @@ $(document).ready(function(){
             unit_type: $('#unitType').val(),
             unit_code: $('#unitCode').val().trim(),
             unit_name: $('#unitName').val().trim(),
+            floor_label: $('#unitFloor').val() || '',
             facility_unit_manager_user_ids: $('#unitManagerUserId').val() || []
         };
         $.post(PROCESS_URL, payload, function(res){
@@ -918,6 +1080,3 @@ $(document).ready(function(){
 });
 </script>
 </html>
-
-
-
