@@ -392,17 +392,38 @@ try {
             $hasUnitManager = table_column_exists('facility_records_units', 'facility_unit_manager_user_id');
             $hasUnitManagerLegacy = table_column_exists('facility_records_units', 'accountable_user_id');
             $unitManagerCol = $hasUnitManager ? 'facility_unit_manager_user_id' : ($hasUnitManagerLegacy ? 'accountable_user_id' : '');
-            $res = call_mysql_query("SELECT
-                                        u.unit_id,
-                                        u.unit_code,
-                                        u.unit_name,
-                                        u.unit_type,
-                                        " . ($unitManagerCol !== '' ? "u.{$unitManagerCol}" : "NULL") . " AS facility_unit_manager_user_id,
-                                        CONCAT(COALESCE(ua.f_name,''), ' ', COALESCE(ua.l_name,'')) AS unit_manager_name
-                                     FROM facility_records_units u
-                                     LEFT JOIN users ua ON ua.user_id = " . ($unitManagerCol !== '' ? "u.{$unitManagerCol}" : "0") . "
-                                     WHERE u.facility_id = {$facilityId} AND u.status = 1
-                                     ORDER BY u.unit_name ASC");
+            $hasUnitManagersTable = table_exists('facility_records_unit_managers');
+            if ($hasUnitManagersTable) {
+                $res = call_mysql_query("SELECT
+                                            u.unit_id,
+                                            u.unit_code,
+                                            u.unit_name,
+                                            u.unit_type,
+                                            MIN(um.user_id) AS facility_unit_manager_user_id,
+                                            GROUP_CONCAT(DISTINCT um.user_id ORDER BY ua.l_name SEPARATOR ',') AS facility_unit_manager_user_ids,
+                                            GROUP_CONCAT(DISTINCT CONCAT(COALESCE(ua.f_name,''), ' ', COALESCE(ua.l_name,'')) ORDER BY ua.l_name SEPARATOR '||') AS unit_manager_names,
+                                            GROUP_CONCAT(DISTINCT CONCAT(COALESCE(ua.f_name,''), ' ', COALESCE(ua.l_name,'')) ORDER BY ua.l_name SEPARATOR ', ') AS unit_manager_name
+                                         FROM facility_records_units u
+                                         LEFT JOIN facility_records_unit_managers um ON um.unit_id = u.unit_id
+                                         LEFT JOIN users ua ON ua.user_id = um.user_id
+                                         WHERE u.facility_id = {$facilityId} AND u.status = 1
+                                         GROUP BY u.unit_id
+                                         ORDER BY u.unit_name ASC");
+            } else {
+                $res = call_mysql_query("SELECT
+                                            u.unit_id,
+                                            u.unit_code,
+                                            u.unit_name,
+                                            u.unit_type,
+                                            " . ($unitManagerCol !== '' ? "u.{$unitManagerCol}" : "NULL") . " AS facility_unit_manager_user_id,
+                                            NULL AS facility_unit_manager_user_ids,
+                                            NULL AS unit_manager_names,
+                                            CONCAT(COALESCE(ua.f_name,''), ' ', COALESCE(ua.l_name,'')) AS unit_manager_name
+                                         FROM facility_records_units u
+                                         LEFT JOIN users ua ON ua.user_id = " . ($unitManagerCol !== '' ? "u.{$unitManagerCol}" : "0") . "
+                                         WHERE u.facility_id = {$facilityId} AND u.status = 1
+                                         ORDER BY u.unit_name ASC");
+            }
             $rows = [];
             if ($res) {
                 while ($row = call_mysql_fetch_array($res)) {
@@ -489,11 +510,18 @@ try {
                 json_response(['success' => false, 'message' => 'Selected unit does not belong to the facility.'], 422);
             }
 
+            $hasUnitManagersTable = table_exists('facility_records_unit_managers');
             $hasUnitManager = table_column_exists('facility_records_units', 'facility_unit_manager_user_id');
             $hasUnitManagerLegacy = table_column_exists('facility_records_units', 'accountable_user_id');
             $unitManagerCol = $hasUnitManager ? 'facility_unit_manager_user_id' : ($hasUnitManagerLegacy ? 'accountable_user_id' : '');
             $managedByUserId = 0;
-            if ($unitManagerCol !== '') {
+            if ($hasUnitManagersTable) {
+                $mgrRes = call_mysql_query("SELECT MIN(user_id) AS unit_manager_user_id
+                                            FROM facility_records_unit_managers
+                                            WHERE unit_id = {$unitId}");
+                $mgrRow = $mgrRes ? call_mysql_fetch_array($mgrRes) : null;
+                $managedByUserId = (int)($mgrRow['unit_manager_user_id'] ?? 0);
+            } elseif ($unitManagerCol !== '') {
                 $mgrRes = call_mysql_query("SELECT {$unitManagerCol} AS unit_manager_user_id
                                             FROM facility_records_units
                                             WHERE unit_id = {$unitId}

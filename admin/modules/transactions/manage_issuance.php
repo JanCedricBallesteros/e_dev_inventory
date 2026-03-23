@@ -48,6 +48,9 @@ if (!(role_has("ADMIN") || $staffAccess)) {
         .thumb-wrap { display: flex; align-items: center; justify-content: center; }
         .img-preview { max-width: 100%; max-height: 70vh; border-radius: 8px; }
         .tabulator { font-size: 0.875rem; }
+        .select2-container .select2-selection--single { min-height: 38px; }
+        .select2-container--default .select2-selection--single .select2-selection__rendered { line-height: 36px; }
+        .select2-container--default .select2-selection--single .select2-selection__arrow { height: 36px; }
     </style>
 </head>
 
@@ -152,7 +155,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                 <i class="bi bi-qr-code-scan"></i>
                             </button>
                         </div>
-                        <input type="text" id="assignSearch" class="form-control mt-2" placeholder="Search item code/description (optional)">
+                        <input type="hidden" id="assignSearch">
                     </div>
                     <div class="col-12">
                         <label class="form-label fw-semibold">Selected Item</label>
@@ -264,6 +267,7 @@ let facilityItems = [];
 let selectedFacility = null;
 let selectedUnit = null;
 let assignmentTable = null;
+let assignmentTableReady = false;
 let pendingLocateUnitId = null;
 
 function showPageError(msg){
@@ -495,7 +499,7 @@ function loadAssignments(){
 }
 
 function renderAssignments(){
-    if (!assignmentTable) return;
+    if (!assignmentTable || !assignmentTableReady) return;
     const sourceRows = selectedUnit ? assignmentList : (selectedFacility ? facilityItems : []);
     const q = ($('#invSearch').val() || '').toLowerCase().trim();
     assignmentTable.setData(sourceRows);
@@ -716,6 +720,10 @@ function initAssignmentTable(){
             }}
         ]
     });
+    assignmentTable.on('tableBuilt', function(){
+        assignmentTableReady = true;
+        renderAssignments();
+    });
 }
 
 $(document).ready(function(){
@@ -723,7 +731,6 @@ $(document).ready(function(){
     initUserSelect2();
     initAssignableItemSelect2();
     loadFacilities();
-    renderAssignments();
 
     $('#facilityList').on('click', '.facility-header', function(){
         const id = $(this).data('id');
@@ -797,8 +804,12 @@ $(document).ready(function(){
         $('#assignQty').val(1);
         $('#assignRemarks').val('');
         $('#assignIssuedToUserId').val(null).trigger('change');
-        $('#assignManagedByUserId').val(selectedUnit && selectedUnit.facility_unit_manager_user_id ? String(selectedUnit.facility_unit_manager_user_id) : '');
-        $('#assignManagedByName').val(selectedUnit && selectedUnit.unit_manager_name ? String(selectedUnit.unit_manager_name) : '');
+        const managerIds = String(selectedUnit && selectedUnit.facility_unit_manager_user_ids ? selectedUnit.facility_unit_manager_user_ids : '').split(',').filter(Boolean);
+        const managerNames = String(selectedUnit && selectedUnit.unit_manager_names ? selectedUnit.unit_manager_names : '').split('||').filter(Boolean);
+        const managedById = managerIds.length ? String(managerIds[0]) : (selectedUnit && selectedUnit.facility_unit_manager_user_id ? String(selectedUnit.facility_unit_manager_user_id) : '');
+        const managedByName = managerNames.length ? managerNames.join(', ') : (selectedUnit && selectedUnit.unit_manager_name ? String(selectedUnit.unit_manager_name) : '');
+        $('#assignManagedByUserId').val(managedById);
+        $('#assignManagedByName').val(managedByName);
         $('#assignMsg').html('<div class="alert alert-info mb-0">Search item code/description or scan QR.</div>');
         $('#assignModal').modal('show');
     });

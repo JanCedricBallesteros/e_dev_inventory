@@ -48,6 +48,44 @@ if (!(role_has("ADMIN") || $staffAccess)) {
         .thumb-wrap { display: flex; align-items: center; justify-content: center; }
         .img-preview { max-width: 100%; max-height: 70vh; border-radius: 8px; }
         .tabulator { font-size: 0.875rem; }
+        .select2-container--default .select2-selection--single {
+            height: 38px;
+            border: 1px solid #ced4da;
+            border-radius: 0.375rem;
+        }
+        .select2-container--default .select2-selection--single .select2-selection__rendered {
+            line-height: 36px;
+            padding-left: 12px;
+            color: #212529;
+        }
+        .select2-container--default .select2-selection--single .select2-selection__arrow {
+            height: 36px;
+        }
+        .select2-container--default .select2-selection--multiple {
+            min-height: 38px;
+            border: 1px solid #ced4da;
+            border-radius: 0.375rem;
+            height: auto;
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .select2-container--default .select2-selection--multiple .select2-selection__rendered {
+            color: #212529;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            padding: 2px 6px;
+        }
+        .select2-container--default .select2-selection--multiple .select2-search__field {
+            color: #212529 !important;
+            background: transparent !important;
+            min-width: 80px;
+        }
+        .select2-container--default .select2-search--dropdown .select2-search__field {
+            color: #212529;
+            background: #fff;
+        }
     </style>
 </head>
 
@@ -165,8 +203,8 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                     <input type="text" id="unitName" class="form-control" placeholder="e.g., Room 101">
                 </div>
                 <div class="mt-2">
-                    <label class="form-label fw-semibold">Facility Unit Manager</label>
-                    <select id="unitManagerUserId" class="form-select"></select>
+                    <label class="form-label fw-semibold">Facility Unit Managers</label>
+                    <select id="unitManagerUserId" class="form-select" multiple></select>
                 </div>
                 <div id="unitMsg" class="mt-2"></div>
             </div>
@@ -240,6 +278,7 @@ let facilityItems = [];
 let selectedFacility = null;
 let selectedUnit = null;
 let assignmentTable = null;
+let assignmentTableReady = false;
 let pendingLocateUnitId = null;
 
 function showPageError(msg){
@@ -447,11 +486,21 @@ function initUserSelect2(){
         $('#unitManagerUserId').select2('destroy');
     }
     $('#unitManagerUserId').select2({
-        placeholder: 'Select facility unit manager',
+        placeholder: 'Select facility unit managers',
         allowClear: true,
+        closeOnSelect: false,
+        multiple: true,
         width: '100%',
         dropdownParent: $('#unitModal'),
+        tags: false,
         ajax: commonAjax(true)
+    });
+
+    $('#unitManagerUserId').off('select2:open').on('select2:open', function(){
+        const inst = $(this).data('select2');
+        if (inst) {
+            inst.trigger('query', { term: '' });
+        }
     });
 
 }
@@ -518,7 +567,7 @@ function loadAssignments(){
 }
 
 function renderAssignments(){
-    if (!assignmentTable) return;
+    if (!assignmentTable || !assignmentTableReady) return;
     const sourceRows = selectedUnit ? assignmentList : (selectedFacility ? facilityItems : []);
     const q = ($('#invSearch').val() || '').toLowerCase().trim();
     assignmentTable.setData(sourceRows);
@@ -588,13 +637,16 @@ function initAssignmentTable(){
             }}
         ]
     });
+    assignmentTable.on('tableBuilt', function(){
+        assignmentTableReady = true;
+        renderAssignments();
+    });
 }
 
 $(document).ready(function(){
     initAssignmentTable();
     initUserSelect2();
     loadFacilities();
-    renderAssignments();
 
     $('#facilityList').on('click', '.facility-header', function(e){
         if ($(e.target).closest('.btn-edit-facility, .btn-add-unit').length) return;
@@ -706,11 +758,20 @@ $(document).ready(function(){
         $('#unitType').val(u.unit_type || 'ROOM');
         $('#unitCode').val(u.unit_code || '');
         $('#unitName').val(u.unit_name || '');
-        const managerId = u.facility_unit_manager_user_id ? String(u.facility_unit_manager_user_id) : '';
-        const managerName = u.unit_manager_name ? String(u.unit_manager_name) : '';
-        if (managerId) {
-            const opt = new Option(managerName || ('User #' + managerId), managerId, true, true);
-            $('#unitManagerUserId').append(opt).trigger('change');
+        let managerIds = String(u.facility_unit_manager_user_ids || '').split(',').filter(Boolean);
+        let managerNames = String(u.unit_manager_names || '').split('||');
+        if (!managerIds.length && u.facility_unit_manager_user_id) {
+            managerIds = [String(u.facility_unit_manager_user_id)];
+            managerNames = [String(u.unit_manager_name || ('User #' + u.facility_unit_manager_user_id))];
+        }
+        $('#unitManagerUserId').empty();
+        if (managerIds.length) {
+            managerIds.forEach(function(id, idx){
+                const name = managerNames[idx] || ('User #' + id);
+                const opt = new Option(name, String(id), true, true);
+                $('#unitManagerUserId').append(opt);
+            });
+            $('#unitManagerUserId').val(managerIds).trigger('change');
         } else {
             $('#unitManagerUserId').val(null).trigger('change');
         }
@@ -730,7 +791,7 @@ $(document).ready(function(){
             unit_type: $('#unitType').val(),
             unit_code: $('#unitCode').val().trim(),
             unit_name: $('#unitName').val().trim(),
-            facility_unit_manager_user_id: $('#unitManagerUserId').val()
+            facility_unit_manager_user_ids: $('#unitManagerUserId').val() || []
         };
         $.post(PROCESS_URL, payload, function(res){
             if (!res.success){
@@ -740,7 +801,10 @@ $(document).ready(function(){
             $('#unitModal').modal('hide');
             loadUnits();
             notifySuccess(res.message || 'Saved');
-        }, 'json');
+        }, 'json').fail(function(xhr){
+            const msg = xhr.responseJSON && xhr.responseJSON.message ? xhr.responseJSON.message : 'Server error saving unit.';
+            $('#unitMsg').html('<div class="alert alert-danger mb-0">' + msg + '</div>');
+        });
     });
 
     $('#invSearch').on('input', function(){
