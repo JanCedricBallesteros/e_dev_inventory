@@ -283,6 +283,10 @@ function initTable() {
                 field: "category_id",
                 width: 120,
                 headerSort: false,
+                cellClick: function(e, cell) {
+                    const id = cell.getValue();
+                    if (id) editCategory(id);
+                },
                 formatter: function(cell) {
                     const id = cell.getValue();
                     return `

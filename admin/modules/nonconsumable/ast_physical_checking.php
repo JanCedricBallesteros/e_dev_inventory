@@ -92,15 +92,13 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                 <div class="filter-label">Audit Name (optional)</div>
                                 <input type="text" class="form-control" name="audit_name" placeholder="e.g., March 2026">
                             </div>
-                            <div class="col-md-3">
-                                <div class="filter-label">Start Date</div>
-                                <input type="date" class="form-control" name="start_date" required>
+                            <div class="col-md-4">
+                                <div class="filter-label">Date Range</div>
+                                <input type="text" class="form-control" id="sessionDateRange" placeholder="YYYY-MM-DD - YYYY-MM-DD" autocomplete="off">
+                                <input type="hidden" name="start_date" id="sessionStartDate">
+                                <input type="hidden" name="end_date" id="sessionEndDate">
                             </div>
                             <div class="col-md-3">
-                                <div class="filter-label">End Date</div>
-                                <input type="date" class="form-control" name="end_date" required>
-                            </div>
-                            <div class="col-md-2">
                                 <div class="filter-label">Status</div>
                                 <select class="form-select" name="status">
                                     <option value="Pending">Pending</option>
@@ -108,7 +106,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                     <option value="Closed">Closed</option>
                                 </select>
                             </div>
-                            <div class="col-md-1 d-grid">
+                            <div class="col-md-2 d-grid">
                                 <button type="submit" class="btn btn-primary">Create</button>
                             </div>
                         </form>
@@ -317,6 +315,21 @@ function showMessage(target, type, text) {
     $(target).html(`<div class="alert alert-${type} mb-2">${text}</div>`);
 }
 
+function parseDateRangeStrings(raw) {
+    const text = (raw || '').trim();
+    if (!text) return { start: '', end: '' };
+    const parts = text.split(/\s+-\s+|\s+–\s+/).filter(Boolean);
+    if (parts.length === 1) return { start: parts[0], end: parts[0] };
+    return { start: parts[0], end: parts[1] };
+}
+
+function syncSessionDates() {
+    const range = parseDateRangeStrings($('#sessionDateRange').val());
+    $('#sessionStartDate').val(range.start || '');
+    $('#sessionEndDate').val(range.end || '');
+    return range;
+}
+
 function escapeHtml(str) {
     return String(str === null || str === undefined ? '' : str)
         .replace(/&/g, '&amp;')
@@ -496,6 +509,29 @@ $(document).ready(function() {
         $('#filterSession').select2({ placeholder: 'All Sessions', allowClear: true, width: '200px' });
     }
 
+    $('#sessionDateRange').on('change keyup', syncSessionDates);
+    if (typeof $.fn.daterangepicker === 'function') {
+        $('#sessionDateRange').daterangepicker({
+            autoUpdateInput: false,
+            locale: {
+                format: 'YYYY-MM-DD',
+                cancelLabel: 'Clear'
+            },
+            opens: 'left'
+        });
+
+        $('#sessionDateRange').on('apply.daterangepicker', function(ev, picker) {
+            const value = picker.startDate.format('YYYY-MM-DD') + ' - ' + picker.endDate.format('YYYY-MM-DD');
+            $(this).val(value);
+            syncSessionDates();
+        });
+
+        $('#sessionDateRange').on('cancel.daterangepicker', function() {
+            $(this).val('');
+            syncSessionDates();
+        });
+    }
+
     if (typeof initQrSearch === 'function') {
         initQrSearch({
             searchInput: '#propertyCodeInput',
@@ -542,8 +578,13 @@ $(document).ready(function() {
     $('#sessionForm').on('submit', function(e) {
         e.preventDefault();
         if (!isAdmin) return;
-        const start = $(this).find('[name=\"start_date\"]').val();
-        const end = $(this).find('[name=\"end_date\"]').val();
+        const range = syncSessionDates();
+        const start = range.start;
+        const end = range.end;
+        if (!start || !end) {
+            showMessage('#sessionMsg', 'danger', 'Please select a valid date range.');
+            return;
+        }
         if (start && end && start > end) {
             showMessage('#sessionMsg', 'danger', 'End date must be after start date.');
             return;
@@ -553,6 +594,9 @@ $(document).ready(function() {
             if (res.success) {
                 showMessage('#sessionMsg', 'success', res.message || 'Session created.');
                 $('#sessionForm')[0].reset();
+                $('#sessionDateRange').val('');
+                $('#sessionStartDate').val('');
+                $('#sessionEndDate').val('');
                 loadSessions();
             } else {
                 showMessage('#sessionMsg', 'danger', res.message || 'Failed to create session.');

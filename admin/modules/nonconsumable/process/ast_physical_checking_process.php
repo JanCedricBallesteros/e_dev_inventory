@@ -60,16 +60,17 @@ try {
                 $status = 'Pending';
             }
             $year = date('Y');
-            $sqlMax = "SELECT MAX(CAST(RIGHT(series_code,3) AS UNSIGNED)) AS maxnum
+            $prefix = "PCAST-{$year}-";
+            $sqlMax = "SELECT MAX(CAST(RIGHT(series_code,2) AS UNSIGNED)) AS maxnum
                        FROM ast_audit_sessions
-                       WHERE series_code LIKE 'AST-PC-{$year}-%'";
+                       WHERE series_code LIKE '{$prefix}%'";
             $resMax = call_mysql_query($sqlMax);
             $max = 0;
             if ($resMax && ($r = call_mysql_fetch_array($resMax))) {
                 $max = (int)($r['maxnum'] ?? 0);
             }
-            $next = str_pad((string)($max + 1), 3, '0', STR_PAD_LEFT);
-            $series_code = "AST-PC-{$year}-{$next}";
+            $next = str_pad((string)($max + 1), 2, '0', STR_PAD_LEFT);
+            $series_code = $prefix . $next;
 
             $sql = "INSERT INTO ast_audit_sessions
                     (series_code, audit_name, start_date, end_date, status, created_by, created_at)
