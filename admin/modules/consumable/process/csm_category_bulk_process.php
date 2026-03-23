@@ -29,12 +29,6 @@ function json_out($arr, $code = 200){
     exit();
 }
 
-function csm_category_bulk_activity_log_safe($action, $result = "SUCCESS", $details = array()) {
-    if (function_exists('activity_log_new')) {
-        activity_log_new($action, $result, $details);
-    }
-}
-
 /**
  * Normalize any provided code into DB format:
  * - Always returns "CSM" + digits (variable length)
@@ -200,11 +194,6 @@ try {
                 "Plumbing,CSM0003\n" .
                 "Hardware,CSM-0004\n" .
                 "Large Code Example,CSM10000\n";
-
-            csm_category_bulk_activity_log_safe("CSM CATEGORY BULK TEMPLATE DOWNLOAD", "SUCCESS", array(
-                'filename' => $filename
-            ));
-
             json_out(['success'=>true,'filename'=>$filename,'content'=>$content]);
         }
 
@@ -214,7 +203,6 @@ try {
             }
 
             $tmp = $_FILES['file']['tmp_name'];
-            $uploadedFileName = trim((string)($_FILES['file']['name'] ?? ''));
             if (!is_uploaded_file($tmp)) {
                 json_out(['success'=>false,'message'=>'Invalid upload.'], 422);
             }
@@ -238,14 +226,10 @@ try {
             $inserted = 0;
             $skipped  = 0;
             $errors   = [];
-            $inserted_rows_sample = [];
-            $inserted_rows_limit = 50;
 
             // CSV internal duplicate protection
             $seenNames = [];
             $seenCodes = [];
-
-            $submittedRows = count($rows);
 
             $rowIndex = 1; // since header may be removed, we still report 1-based row numbers
             foreach ($rows as $r) {
@@ -323,13 +307,6 @@ try {
                 ");
                 if ($ok) {
                     $inserted++;
-
-                    if (count($inserted_rows_sample) < $inserted_rows_limit) {
-                        $inserted_rows_sample[] = array(
-                            'item_category_name' => $nameNorm,
-                            'item_category_code' => $dbCode
-                        );
-                    }
                 } else {
                     $skipped++;
                     $errors[] = "Row {$rowIndex}: Insert failed for {$nameNorm} ({$dbCode}).";
@@ -342,16 +319,6 @@ try {
                 $errors = array_slice($errors, 0, 20);
                 $errors[] = "More issues exist (showing up to 20).";
             }
-
-            csm_category_bulk_activity_log_safe("CSM CATEGORY BULK CSV CREATE", "SUCCESS", array(
-                'filename' => $uploadedFileName !== '' ? $uploadedFileName : null,
-                'submitted_rows' => (int)$submittedRows,
-                'inserted' => (int)$inserted,
-                'skipped' => (int)$skipped,
-                'errors_count' => (int)count($errors),
-                'inserted_rows_sample' => $inserted_rows_sample,
-                'errors' => $errors
-            ));
 
             json_out([
                 'success'  => true,

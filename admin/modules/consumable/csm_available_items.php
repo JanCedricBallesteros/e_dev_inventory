@@ -33,7 +33,32 @@ function getAllCategories() {
     return $rows;
 }
 
+function getUnitOptions() {
+    $sql = "SELECT DISTINCT TRIM(unit) AS unit
+            FROM csm_inventory
+            WHERE unit IS NOT NULL
+              AND TRIM(unit) <> ''
+            ORDER BY unit ASC";
+    $result = call_mysql_query($sql);
+
+    $rows = [];
+    if ($result) {
+        while ($row = call_mysql_fetch_array($result)) {
+            if (!empty($row['unit'])) {
+                $rows[] = $row['unit'];
+            }
+        }
+    }
+
+    if (empty($rows)) {
+        $rows = array('pcs', 'box', 'pack', 'ream', 'bottle', 'set', 'roll', 'pad', 'carton', 'unit');
+    }
+
+    return $rows;
+}
+
 $categories = getAllCategories();
+$unitOptions = getUnitOptions();
 ?>
 <!DOCTYPE html>
 <html lang="en" class="h-100">
@@ -276,7 +301,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                     <input type="text" class="form-control" id="fullItemCodeField" readonly placeholder="CSM-XXXX-0001">
                                 </div>
 
-                                <div class="col-md-8">
+                                <div class="col-12">
                                     <label class="form-label fw-semibold">Itemized Description</label>
                                     <textarea class="form-control"
                                               name="item_description"
@@ -287,28 +312,38 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                 </div>
 
                                 <div class="col-md-4">
+                                    <label class="form-label fw-semibold">Unit (measurement)</label>
+                                    <select class="form-select" name="unit" id="unitSelect" required>
+                                        <option value="">Select existing or type a new unit</option>
+                                        <?php foreach ($unitOptions as $unit): ?>
+                                            <option value="<?= htmlspecialchars($unit) ?>"><?= htmlspecialchars($unit) ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+
+                                <div class="col-md-4">
                                     <label class="form-label fw-semibold">Source of Funds</label>
                                     <input type="text" class="form-control" name="source_of_funds" id="sourceOfFunds" placeholder="e.g. General Fund">
                                 </div>
 
-                                <div class="col-md-3">
+                                <div class="col-md-4">
+                                    <label class="form-label fw-semibold">Item Cost</label>
+                                    <input type="number" step="0.01" min="0" class="form-control" name="cost_value" id="itemCost" value="0.00" required>
+                                </div>
+
+                                <div class="col-md-4">
                                     <label class="form-label fw-semibold">Actual Qty</label>
                                     <input type="number" min="0" class="form-control" name="quantity" id="unitQuantity" value="0" required>
                                 </div>
 
-                                <div class="col-md-3">
+                                <div class="col-md-4">
                                     <label class="form-label fw-semibold">Available to Issue</label>
                                     <input type="number" min="0" class="form-control" name="current_quantity" id="currentUnitQuantity" value="0" required>
                                 </div>
 
-                                <div class="col-md-3">
+                                <div class="col-md-4">
                                     <label class="form-label fw-semibold">Critical Level</label>
                                     <input type="number" min="0" class="form-control" name="qty_crit_level" id="unitCritLevel" value="0" required>
-                                </div>
-
-                                <div class="col-md-3">
-                                    <label class="form-label fw-semibold">Item Cost</label>
-                                    <input type="number" step="0.01" min="0" class="form-control" name="cost_value" id="itemCost" value="0.00" required>
                                 </div>
 
                                 <div class="col-12">
@@ -534,6 +569,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                         <div class="col-md-6"><span class="text-muted">Category:</span> <span class="fw-semibold" id="reviewCategory"></span></div>
                         <div class="col-md-6"><span class="text-muted">Item Code:</span> <span class="fw-semibold" id="reviewItemCode"></span></div>
                         <div class="col-md-6"><span class="text-muted">Description:</span> <span class="fw-semibold" id="reviewDescription"></span></div>
+                        <div class="col-md-6"><span class="text-muted">Unit:</span> <span class="fw-semibold" id="reviewUnit"></span></div>
                         <div class="col-md-6"><span class="text-muted">Source of Funds:</span> <span class="fw-semibold" id="reviewSource"></span></div>
                         <div class="col-md-3"><span class="text-muted">Actual Qty:</span> <span class="fw-semibold" id="reviewUnitQty"></span></div>
                         <div class="col-md-3"><span class="text-muted">Available Qty:</span> <span class="fw-semibold" id="reviewCurrentQty"></span></div>
@@ -613,12 +649,22 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                             <input type="text" class="form-control" id="edit_full_item_code" readonly>
                         </div>
 
-                        <div class="col-md-8">
+                        <div class="col-md-6">
                             <label class="form-label fw-semibold">Itemized Description</label>
                             <textarea name="item_description" id="edit_item_description" class="form-control" required></textarea>
                         </div>
 
-                        <div class="col-md-4">
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold">Unit (measurement)</label>
+                            <select name="unit" id="edit_unit" class="form-select" required>
+                                <option value="">Select existing or type a new unit</option>
+                                <?php foreach ($unitOptions as $unit): ?>
+                                    <option value="<?= htmlspecialchars($unit) ?>"><?= htmlspecialchars($unit) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+
+                        <div class="col-md-3">
                             <label class="form-label fw-semibold">Source of Funds</label>
                             <input type="text" name="source_of_funds" id="edit_source_of_funds" class="form-control">
                         </div>
@@ -678,7 +724,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                     <label class="form-label">Available to Issue</label>
                     <input type="number" class="form-control" name="current_quantity" id="avail_current_unit_quantity" min="0" required>
 
-                    <div class="form-text">Cannot be lower than Critical Level and cannot exceed Actual Qty.</div>
+                    <div class="form-text">Cannot be negative and cannot exceed Actual Qty.</div>
 
                     <div id="availableMsg" class="mt-2"></div>
 
@@ -903,6 +949,8 @@ function collectAddItemDraft() {
         item_category_code: categoryCode,
         category_label: categoryLabel && categoryLabel !== 'Select category' ? categoryLabel : '',
         item_description: ($('#itemDescription').val() || '').trim(),
+        unit: ($('#unitSelect').val() || '').trim(),
+        unit_label: ($('#unitSelect option:selected').text() || '').trim(),
         source_of_funds: ($('#sourceOfFunds').val() || '').trim(),
         quantity: ($('#unitQuantity').val() || '').trim(),
         current_quantity: ($('#currentUnitQuantity').val() || '').trim(),
@@ -914,13 +962,13 @@ function collectAddItemDraft() {
 function validateAddItemDraft(draft) {
     if (!draft.item_category_code) return 'Category is required.';
     if (!draft.item_description) return 'Itemized description is required.';
+    if (!draft.unit) return 'Unit is required.';
     if (draft.inventory_system_item_code && !/^\d+$/.test(draft.inventory_system_item_code)) return 'Item code number must contain digits only.';
     if (draft.quantity === '' || parseInt(draft.quantity, 10) < 0) return 'Actual Qty must be 0 or higher.';
     if (draft.current_quantity === '' || parseInt(draft.current_quantity, 10) < 0) return 'Available to Issue must be 0 or higher.';
     if (draft.qty_crit_level === '' || parseInt(draft.qty_crit_level, 10) < 0) return 'Critical Level must be 0 or higher.';
     if (draft.cost_value === '' || parseFloat(draft.cost_value) < 0) return 'Item Cost must be 0 or higher.';
     if (parseInt(draft.current_quantity, 10) > parseInt(draft.quantity, 10)) return 'Available to Issue cannot exceed Actual Qty.';
-    if (parseInt(draft.current_quantity, 10) < parseInt(draft.qty_crit_level, 10)) return 'Available to Issue cannot be lower than Critical Level.';
     return '';
 }
 
@@ -928,6 +976,7 @@ function populateReviewModal(draft) {
     $('#reviewCategory').text(draft.category_label || draft.item_category_code || '-');
     $('#reviewItemCode').text(draft.full_item_code_preview || '(Auto-generated)');
     $('#reviewDescription').text(draft.item_description || '-');
+    $('#reviewUnit').text(draft.unit_label || draft.unit || '-');
     $('#reviewSource').text(draft.source_of_funds || '-');
     $('#reviewUnitQty').text(draft.quantity);
     $('#reviewCurrentQty').text(draft.current_quantity);
@@ -950,6 +999,7 @@ function buildAddItemPayload(draft) {
         inventory_system_item_code: draft.inventory_system_item_code,
         item_description: draft.item_description,
         item_category_code: draft.item_category_code,
+        unit: draft.unit,
         quantity: draft.quantity,
         current_quantity: draft.current_quantity,
         qty_crit_level: draft.qty_crit_level,
@@ -982,6 +1032,7 @@ function submitAddItemFromReview() {
                 showMessage('#addItemMsg', 'success', 'Record added successfully.');
                 $('#addItemForm')[0].reset();
                 $('#categorySelect').val('').trigger('change');
+                $('#unitSelect').val('').trigger('change');
                 updateCodePreview();
                 refreshTable();
                 loadInventoryForDropdown();
@@ -1100,6 +1151,7 @@ function initTable() {
                     return escHtml(groupLabel(d.item_category_code, d.item_category_name));
                 }
             },
+            { title: 'Unit', field: 'unit', width: 100, hozAlign: 'center', headerFilter: 'input', headerFilterPlaceholder: 'Filter...' },
             { title: 'Actual Qty', field: 'quantity', width: 100, hozAlign: 'center' },
             { title: 'Available', field: 'current_quantity', width: 100, hozAlign: 'center' },
             { title: 'Critical', field: 'qty_crit_level', width: 95, hozAlign: 'center' },
@@ -1220,6 +1272,7 @@ function refreshTable() {
                 data.item_description,
                 data.item_category_code,
                 data.item_category_name,
+                data.unit,
                 data.source_of_funds
             ].join(' ').toLowerCase();
 
@@ -1251,6 +1304,8 @@ function loadItemByCode(code) {
                         <div>${escHtml(d.item_description || '-')}</div>
                     </div>
                     <div class="small text-muted">
+                        Unit: <span class="fw-semibold">${escHtml(d.unit || '-')}</span>
+                        &nbsp;|&nbsp;
                         Actual Qty: <span class="fw-semibold">${escHtml(d.quantity || '0')}</span>
                         &nbsp;|&nbsp;
                         Available: <span class="fw-semibold">${escHtml(d.current_quantity || '0')}</span>
@@ -1294,6 +1349,13 @@ function openEditModal(id){
             $('#edit_inventory_system_item_code').val(extractNumericSuffix(d.inventory_system_item_code));
             $('#edit_item_description').val(d.item_description || '');
             $('#edit_item_category_code').val(d.item_category_code || '').trigger('change');
+
+            const editUnitVal = d.unit || '';
+            if (editUnitVal && $('#edit_unit option').filter(function(){ return $(this).val() === editUnitVal; }).length === 0) {
+                $('#edit_unit').append(new Option(editUnitVal, editUnitVal, false, false));
+            }
+            $('#edit_unit').val(editUnitVal).trigger('change');
+
             $('#edit_unit_quantity').val(d.quantity || 0);
             $('#edit_unit_crit_level').val(d.qty_crit_level || 0);
             $('#edit_item_cost').val(d.cost_value || 0);
@@ -1345,10 +1407,25 @@ $(document).ready(function() {
         width: '100%'
     });
 
+    $('#unitSelect').select2({
+        placeholder: 'Select existing or type a new unit',
+        allowClear: true,
+        tags: true,
+        width: '100%'
+    });
+
     $('#edit_item_category_code').select2({
         dropdownParent: $('#editRecordModal'),
         placeholder: 'Select category',
         allowClear: true,
+        width: '100%'
+    });
+
+    $('#edit_unit').select2({
+        dropdownParent: $('#editRecordModal'),
+        placeholder: 'Select existing or type a new unit',
+        allowClear: true,
+        tags: true,
         width: '100%'
     });
 
@@ -1399,6 +1476,7 @@ $(document).ready(function() {
     $('#resetAddForm').on('click', function() {
         $('#addItemForm')[0].reset();
         $('#categorySelect').val('').trigger('change');
+        $('#unitSelect').val('').trigger('change');
         $('#addItemMsg').html('');
         updateCodePreview();
     });
