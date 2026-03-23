@@ -395,25 +395,33 @@ const AST_TAG_CSS = `
         margin: 0;
     }
 
-    /* Wrapper: 2 columns, 3mm gap → 5 rows fit per page */
-    .ast-print-wrap {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 3mm;
-        align-content: flex-start;
+        /* Wrapper: 2 columns x 5 rows per page, dotted cut guides */
+    .ast-print-table {
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
     }
-
-    /* ---- Tag shell: fixed 50mm height to guarantee 5 rows/page ---- */
+    .ast-print-table tr {
+        page-break-inside: avoid;
+    }
+    .ast-print-table td {
+        border: 1px dotted #999;
+        padding: 0.6mm;
+        vertical-align: top;
+        box-sizing: border-box;
+    }
+/* ---- Tag shell: fixed 50mm height to guarantee 5 rows/page ---- */
     .ast-tag {
         width: 97mm;
         height: 50mm;
         overflow: hidden;
-        border: 1.5px solid #000;
+        border: 1px solid #000;
         border-radius: 1mm;
         background: #fff;
         box-sizing: border-box;
         display: flex;
         flex-direction: column;
+        margin: 0 auto;
         break-inside: avoid;
         page-break-inside: avoid;
     }
@@ -561,6 +569,20 @@ function buildAstTag({ code, propNum, serial, category, desc, acqDate, cost, iss
     `;
 }
 
+function buildPrintTable(tagHtmlList) {
+    const cols = 2;
+    let rows = '';
+    for (let i = 0; i < tagHtmlList.length; i += cols) {
+        rows += '<tr>';
+        for (let c = 0; c < cols; c++) {
+            const idx = i + c;
+            rows += `<td>${tagHtmlList[idx] || ''}</td>`;
+        }
+        rows += '</tr>';
+    }
+    return `<table class="ast-print-table"><tbody>${rows}</tbody></table>`;
+}
+
 function getTagData(code) {
     const byCode = {};
     qrItems.forEach(item => { if (item.property_code) byCode[item.property_code] = item; });
@@ -602,7 +624,7 @@ function printSelected() {
     if (selectedCodes.size === 0) return;
 
     const tags = [...selectedCodes].map(code => buildAstTag(getTagData(code)));
-    const itemsHtml = `<div class="ast-print-wrap">${tags.join('')}</div>`;
+    const itemsHtml = buildPrintTable(tags);
 
     const printWin = window.open('', '_blank');
     printWin.document.write(`<!DOCTYPE html><html><head><title>AST Property Tags</title><style>${AST_TAG_CSS}</style></head><body>${itemsHtml}</body></html>`);
@@ -648,9 +670,10 @@ function saveToPdf() {
 
     // Build a standalone DOM element for one page of tags
     function makePageEl(pageCodes) {
-        const tags = pageCodes.map(code => buildAstTag(getTagData(code))).join('');
+        const tags = pageCodes.map(code => buildAstTag(getTagData(code)));
+        const tableHtml = buildPrintTable(tags);
         const el = document.createElement('div');
-        el.innerHTML = `<style>${AST_TAG_CSS}</style><div class="ast-print-wrap">${tags}</div>`;
+        el.innerHTML = `<style>${AST_TAG_CSS}</style>${tableHtml}`;
         return el;
     }
 
@@ -785,3 +808,5 @@ $(document).ready(function() {
 });
 </script>
 </html>
+
+
