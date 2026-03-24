@@ -188,7 +188,7 @@ if (!(
 
         .tag-row{
             display:grid;
-            grid-template-columns: 32mm 1fr;
+            grid-template-columns: 20mm 1fr;
             border-bottom: 1px solid var(--tag-grid);
             box-sizing:border-box;
             min-height: 5.2mm;
@@ -392,10 +392,11 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                     <div class="d-flex align-items-center gap-2">
                         <label class="mb-0 small text-muted">Per page:</label>
                         <select id="qrPageSize" class="form-select form-select-sm" style="width:auto;">
-                            <option value="10">10</option>
-                            <option value="20" selected>20</option>
-                            <option value="50">50</option>
-                            <option value="100">100</option>
+                            <option value="20">20</option>
+                            <option value="100" selected>100</option>
+                            <option value="500">500</option>
+                            <option value="1000">1000</option>
+                            <option value="all">All</option>
                         </select>
                         <div id="qrPagination"></div>
                     </div>
@@ -521,7 +522,7 @@ function buildDetailedTag({ code, desc, catLine, acq, cost, notes, qrUrl }) {
       <div class="tag-top">
         <div class="tag-ccc">CCC</div>
         <div class="tag-agency">
-          <div class="agency">City Government of Calamba</div>
+          <div class="agency">CITY COLLEGE OF CALAMBA</div>
           <div class="subtitle">Property Inventory Tag</div>
         </div>
         <div class="tag-logo">
@@ -746,7 +747,6 @@ const TAG_PRINT_CSS = `
     --simple-w: 70mm;
     --simple-h: 38mm;
 
-    --gap: 6mm;
   }
 
   @page { size: Letter; margin: 8mm; }
@@ -866,7 +866,7 @@ const TAG_PRINT_CSS = `
 
   .tag-row{
     display:grid;
-    grid-template-columns: 32mm 1fr;
+    grid-template-columns: 20mm 1fr;
     border-bottom: 1px solid var(--tag-grid);
     box-sizing:border-box;
     min-height: 5.2mm;

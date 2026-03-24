@@ -216,7 +216,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 
 <main id="main" class="main">
     <div class="pagetitle">
-        <h1 class="h4 fw-semibold mb-1">Consumable Inventory</h1>
+        <h1 class="h4 fw-semibold mb-1">CSM Inventory</h1>
         <p class="text-muted small mb-0">Review inventory, filter by date, export data, and update availability rules.</p>
     </div>
 
@@ -276,10 +276,10 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                 </div>
 
                 <div class="d-flex justify-content-end gap-2 mb-2">
-                  <button class="btn btn-outline-primary btn-sm" id="bulkSetAvailability">
-                    <i class="bi bi-sliders"></i> Set Rules
-                  </button>
-                  <button class="btn btn-outline-secondary btn-sm" id="clearSelection">Clear Selection</button>
+                    <button class="btn btn-outline-primary btn-sm" id="bulkSetAvailability">
+                        <i class="bi bi-sliders"></i> Bulk Set Rules
+                    </button>
+                    <button class="btn btn-outline-secondary btn-sm" id="clearSelection">Clear Selection</button>
                 </div>
 
                 <div id="csm-inventory-table"></div>
@@ -302,6 +302,9 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                 <form id="availabilityForm">
                     <input type="hidden" name="action" value="update_availability_settings">
                     <input type="hidden" name="inventory_id" id="availInventoryId">
+                    <input type="hidden" id="availBulkIds">
+
+                    <div class="small fw-semibold text-dark mb-2 d-none" id="availBulkNote"></div>
 
                     <div class="row g-3">
                         <div class="col-md-8">
@@ -313,19 +316,19 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                             <div id="availStatusLabel">—</div>
                         </div>
 
-                        <div class="col-md-4">
+                        <div class="col-md-4" id="availQtyWrap">
                             <label class="form-label fw-semibold">Available Quantity</label>
                             <input type="number" min="0" name="current_quantity" id="availCurrentQty" class="form-control" placeholder="Enter available quantity">
                             <div class="small text-muted mt-1" id="availQtyHint"></div>
                         </div>
 
-                        <div class="col-md-8">
+                        <div class="col-md-8" id="availTeachWrap">
                             <label class="form-label fw-semibold">Teaching Personnel</label>
                             <select id="availTeachingStatus" class="form-select" multiple></select>
                             <div class="small text-muted mt-1">Choose allowed teaching status. Select None to block all.</div>
                         </div>
 
-                        <div class="col-md-8 offset-md-4">
+                        <div class="col-md-8 offset-md-4" id="availNonTeachWrap">
                             <label class="form-label fw-semibold">Non-Teaching Personnel</label>
                             <select id="availNonTeachingStatus" class="form-select" multiple></select>
                             <div class="small text-muted mt-1">Choose allowed non-teaching status. Select None to block all.</div>
@@ -409,6 +412,7 @@ let invMsgTimeout = null;
 let employmentStatuses = [];
 const NONE_STATUS_VALUE = 'NONE';
 let availStatusLock = false;
+let isBulkAvailMode = false;
 
 function showInvMessage(message) {
     const el = $('#invMsg');
@@ -612,8 +616,15 @@ function setAvailabilitySelectValues(teachVals, nonVals, mode) {
 }
 
 function openAvailabilityModal(inventoryId) {
+    isBulkAvailMode = false;
     $('#availMsg').html('');
     $('#availInventoryId').val(inventoryId);
+    $('#availBulkIds').val('');
+    $('#availBulkNote').addClass('d-none').text('');
+    $('#availQtyWrap').show();
+    $('#availTeachWrap').removeClass('col-md-12').addClass('col-md-8');
+    $('#availNonTeachWrap').removeClass('col-md-12 offset-md-0').addClass('col-md-8 offset-md-4');
+
     $('#availItemLabel').text('Loading...');
     $('#availStatusLabel').html('—');
     $('#availCurrentQty').val('');
@@ -654,6 +665,31 @@ function openAvailabilityModal(inventoryId) {
             $('#availabilityModal').modal('show');
         }
     });
+}
+
+function openAvailabilityModalBulk(ids) {
+    if (!ids || !ids.length) return;
+
+    isBulkAvailMode = true;
+    $('#availMsg').html('');
+    $('#availInventoryId').val('');
+    $('#availBulkIds').val(ids.join(','));
+    $('#availBulkNote').removeClass('d-none').text(`${ids.length} item(s) selected`);
+    $('#availQtyWrap').hide();
+    $('#availTeachWrap').removeClass('col-md-8').addClass('col-md-12');
+    $('#availNonTeachWrap').removeClass('col-md-8 offset-md-4').addClass('col-md-12 offset-md-0');
+
+    $('#availItemLabel').text('Bulk rule update');
+    $('#availStatusLabel').html('<span class="status-pill status-0">Multiple Items</span>');
+    $('#availCurrentQty').val('');
+    $('#availQtyHint').text('');
+
+    availStatusLock = true;
+    $('#availTeachingStatus').val([NONE_STATUS_VALUE]).trigger('change.select2');
+    $('#availNonTeachingStatus').val([NONE_STATUS_VALUE]).trigger('change.select2');
+    availStatusLock = false;
+
+    $('#availabilityModal').modal('show');
 }
 
 function getSelectedRulesPayload() {
@@ -960,6 +996,22 @@ $(document).ready(function() {
         });
     }
 
+    $('#bulkSetAvailability').on('click', function() {
+        if (!inventoryTable) return;
+
+        const rows = inventoryTable.getSelectedData() || [];
+        const ids = rows
+            .map(r => parseInt(r.inventory_id, 10))
+            .filter(v => !isNaN(v) && v > 0);
+
+        if (!ids.length) {
+            showInvMessage('Please select at least one item first.');
+            return;
+        }
+
+        openAvailabilityModalBulk(ids);
+    });
+
     $('#clearSelection').on('click', function() {
         if (!inventoryTable) return;
         inventoryTable.deselectRow();
@@ -968,6 +1020,41 @@ $(document).ready(function() {
     $('#availabilityForm').on('submit', function(e) {
         e.preventDefault();
         $('#availMsg').html('');
+
+        const rulesPayload = getSelectedRulesPayload();
+        const bulkIds = ($('#availBulkIds').val() || '').trim();
+
+        if (bulkIds) {
+            $.ajax({
+                url: PROCESS_URL,
+                type: 'POST',
+                dataType: 'json',
+                data: {
+                    action: 'update_availability_settings_bulk',
+                    inventory_ids: bulkIds,
+                    allowed_status: JSON.stringify(rulesPayload)
+                },
+                success: function(res) {
+                    if (res && res.success) {
+                        showAvailMessage('success', res.message || 'Bulk rules updated.');
+                        refreshTable();
+                        if (inventoryTable) inventoryTable.deselectRow();
+                        setTimeout(function() {
+                            $('#availabilityModal').modal('hide');
+                        }, 700);
+                    } else {
+                        showAvailMessage('danger', (res && res.message) || 'Bulk save failed.');
+                    }
+                },
+                error: function(xhr) {
+                    let msg = 'Server error while saving bulk rules.';
+                    if (xhr.responseJSON && xhr.responseJSON.message) msg = xhr.responseJSON.message;
+                    else if (xhr.responseText) msg = xhr.responseText;
+                    showAvailMessage('danger', msg);
+                }
+            });
+            return;
+        }
 
         const inventoryId = ($('#availInventoryId').val() || '').trim();
         const currentQty = parseInt($('#availCurrentQty').val() || '0', 10);
@@ -990,7 +1077,7 @@ $(document).ready(function() {
                 action: 'update_availability_settings',
                 inventory_id: inventoryId,
                 current_quantity: currentQty,
-                allowed_status: JSON.stringify(getSelectedRulesPayload())
+                allowed_status: JSON.stringify(rulesPayload)
             },
             success: function(res) {
                 if (res && res.success) {
