@@ -167,12 +167,6 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                     <button type="button" class="btn btn-sm btn-light" data-bs-toggle="modal" data-bs-target="#addCategoryModal">
                         <i class="bi bi-plus-circle"></i> Add Category
                     </button>
-                    <button type="button" class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#bulkModal">
-                        <i class="bi bi-file-earmark-arrow-up-fill"></i> Bulk CSV
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#logmodal">
-                        <i class="bi bi-clock-history"></i> Category Log
-                    </button>
                 </div>
             </div>
 
@@ -619,9 +613,6 @@ function buildTabulator(data){
                         </button>
                         <button class="btn btn-sm btn-warning me-1 btn-edit-cat" data-id="${id}" title="Edit">
                             <i class="bi bi-pencil"></i> Edit
-                        </button>
-                        <button class="btn btn-sm btn-danger btn-del-cat" data-id="${id}" title="Delete">
-                            <i class="bi bi-trash"></i> Delete
                         </button>
                     `;
                 }
