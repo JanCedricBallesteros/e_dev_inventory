@@ -161,9 +161,14 @@ if (!(
                 </div>
                 <div class="card-body mt-3 bg-white">
                     <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3">
-                        <div class="input-group" style="max-width:320px;">
-                            <span class="input-group-text"><i class="bi bi-search"></i></span>
-                            <input type="text" id="qrSearch" class="form-control" placeholder="Search property code or description">
+                        <div class="d-flex flex-wrap gap-2 align-items-center" style="max-width:520px;">
+                            <div class="input-group" style="width:320px;">
+                                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                                <input type="text" id="qrSearch" class="form-control" placeholder="Search property code or description">
+                            </div>
+                            <select id="qrCategoryFilter" class="form-select form-select-sm" style="min-width:180px;">
+                                <option value="">All Categories</option>
+                            </select>
                         </div>
                         <div class="d-flex align-items-center flex-wrap gap-2">
                             <div class="dropdown">
@@ -224,6 +229,7 @@ let pageSize = 20;
 let lastFilter = '';
 let selectedCodes = new Set(); // tracks selections across pages
 let dateFilter = '';           // active date batch filter
+let categoryFilter = '';       // active category filter
 
 // Keep the full filtered list for Select All across pages
 let filteredItems = [];
@@ -266,7 +272,8 @@ function renderList(filter = '', resetPage = false) {
         const serial = (item.serial_number || '').toLowerCase();
         const matchesSearch = f === '' || code.includes(f) || desc.includes(f) || cat.includes(f) || serial.includes(f);
         const matchesDate   = dateFilter === '' || (item.created_at && String(item.created_at).startsWith(dateFilter));
-        return matchesSearch && matchesDate;
+        const matchesCategory = categoryFilter === '' || cat === categoryFilter.toLowerCase();
+        return matchesSearch && matchesDate && matchesCategory;
     });
 
     if (filteredItems.length === 0) {
@@ -606,18 +613,39 @@ function loadQrItems() {
     $.post(PROCESS_URL, { action: 'list_items', limit: 500 }, function(res) {
         if (res && res.success) {
             qrItems = res.data || [];
+            populateCategoryFilter();
             renderList($('#qrSearch').val() || '');
             showQrMessage('');
         } else {
             qrItems = [];
+            populateCategoryFilter();
             renderList('');
             showQrMessage(res && res.message ? res.message : 'Failed to load QR codes.');
         }
     }, 'json').fail(function() {
         qrItems = [];
+        populateCategoryFilter();
         renderList('');
         showQrMessage('Server error while loading QR codes.');
     });
+}
+
+function populateCategoryFilter() {
+    const select = $('#qrCategoryFilter');
+    const map = new Map();
+    qrItems.forEach(item => {
+        const name = (item.item_category_name || '').trim();
+        if (name) map.set(name.toLowerCase(), name);
+    });
+    const categories = Array.from(map.values()).sort((a, b) => a.localeCompare(b));
+    const options = ['<option value="">All Categories</option>'];
+    categories.forEach(cat => {
+        options.push(`<option value="${escHtml(cat)}">${escHtml(cat)}</option>`);
+    });
+    select.html(options.join(''));
+    if (categoryFilter) {
+        select.val(categoryFilter);
+    }
 }
 
 function printSelected() {
@@ -707,6 +735,11 @@ $(document).ready(function() {
 
     $('#qrSearch').on('keyup', function() {
         renderList($(this).val(), true);
+    });
+
+    $('#qrCategoryFilter').on('change', function() {
+        categoryFilter = ($(this).val() || '').trim();
+        renderList($('#qrSearch').val() || '', true);
     });
 
     $(document).on('change', '.qr-check', function() {
