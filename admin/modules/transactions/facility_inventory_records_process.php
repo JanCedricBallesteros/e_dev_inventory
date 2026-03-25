@@ -65,6 +65,14 @@ function fr_column_exists($table, $column)
     return $res && mysqli_num_rows($res) > 0;
 }
 
+function fr_first_existing_col($table, $candidates, $fallback = '')
+{
+    foreach ($candidates as $col) {
+        if (fr_column_exists($table, $col)) return $col;
+    }
+    return $fallback;
+}
+
 function fr_resolve_row_images(&$row) {
     $row['category_photo_url'] = null;
     $row['category_photo_thumb_url'] = null;
@@ -474,44 +482,64 @@ try {
             $search = trim(preg_replace('/\s+/', ' ', (string)$search));
 
             if ($module_type === 'CSM') {
-                $where = "WHERE c.status = 'available' AND c.current_unit_quantity > 0";
+                $codeCol = fr_first_existing_col('csm_inventory', array('inventory_system_item_code', 'item_code'), 'inventory_system_item_code');
+                $qtyCol = fr_first_existing_col('csm_inventory', array('current_quantity', 'current_unit_quantity'), '');
+                $unitCol = fr_first_existing_col('csm_inventory', array('unit'), '');
+                $hasStatus = fr_column_exists('csm_inventory', 'status');
+
+                $where = "WHERE 1=1";
+                if ($hasStatus) {
+                    $where .= " AND (LOWER(c.status) = 'available' OR c.status = 1)";
+                }
+                if ($qtyCol !== '') {
+                    $where .= " AND c.{$qtyCol} > 0";
+                }
                 if ($search !== '') {
                     $s = _esc('%' . $search . '%');
                     $where .= " AND (
-                        c.inventory_system_item_code LIKE '{$s}'
+                        c.{$codeCol} LIKE '{$s}'
                         OR c.item_description LIKE '{$s}'
-                        OR CONCAT_WS(' ', c.inventory_system_item_code, c.item_description) LIKE '{$s}'
+                        OR CONCAT_WS(' ', c.{$codeCol}, c.item_description) LIKE '{$s}'
                     )";
                 }
                 $sql = "SELECT
                             c.inventory_id AS source_item_id,
-                            c.inventory_system_item_code AS item_code,
+                            c.{$codeCol} AS item_code,
                             c.item_description,
-                            c.current_unit_quantity AS available_qty,
-                            '' AS unit
+                            " . ($qtyCol !== '' ? "c.{$qtyCol}" : "NULL") . " AS available_qty,
+                            " . ($unitCol !== '' ? "c.{$unitCol}" : "''") . " AS unit
                         FROM csm_inventory c
                         {$where}
-                        ORDER BY c.inventory_system_item_code ASC";
+                        ORDER BY c.{$codeCol} ASC";
             } else {
                 $module_type = 'AST';
-                $where = "WHERE a.is_available = 1";
+                $codeCol = fr_first_existing_col('ast_inventory', array('property_code', 'item_code'), 'property_code');
+                $hasAvailFlag = fr_column_exists('ast_inventory', 'is_available');
+                $availQtyCol = fr_first_existing_col('ast_inventory', array('available_qty'), '');
+
+                $where = "WHERE 1=1";
+                if ($hasAvailFlag) {
+                    $where .= " AND a.is_available = 1";
+                } elseif ($availQtyCol !== '') {
+                    $where .= " AND a.{$availQtyCol} > 0";
+                }
                 if ($search !== '') {
                     $s = _esc('%' . $search . '%');
                     $where .= " AND (
-                        a.property_code LIKE '{$s}'
+                        a.{$codeCol} LIKE '{$s}'
                         OR a.item_description LIKE '{$s}'
                         OR a.serial_number LIKE '{$s}'
-                        OR CONCAT_WS(' ', a.property_code, a.item_description, a.serial_number) LIKE '{$s}'
+                        OR CONCAT_WS(' ', a.{$codeCol}, a.item_description, a.serial_number) LIKE '{$s}'
                     )";
                 }
                 $sql = "SELECT
                             a.item_id AS source_item_id,
-                            a.property_code AS item_code,
+                            a.{$codeCol} AS item_code,
                             a.item_description,
                             a.unit
                         FROM ast_inventory a
                         {$where}
-                        ORDER BY a.property_code ASC";
+                        ORDER BY a.{$codeCol} ASC";
             }
             $res = call_mysql_query($sql);
             if ($res) {
@@ -536,9 +564,12 @@ try {
             $s = _esc('%' . $search . '%');
 
             if ($module_type === 'AST') {
-                $sqlAny = "SELECT property_code, item_description, is_available
+                $codeCol = fr_first_existing_col('ast_inventory', array('property_code', 'item_code'), 'property_code');
+                $hasAvailFlag = fr_column_exists('ast_inventory', 'is_available');
+                $availQtyCol = fr_first_existing_col('ast_inventory', array('available_qty'), '');
+                $sqlAny = "SELECT {$codeCol} AS item_code, item_description" . ($hasAvailFlag ? ", is_available" : "") . ($availQtyCol !== '' ? ", {$availQtyCol} AS available_qty" : "") . "
                            FROM ast_inventory
-                           WHERE property_code LIKE '{$s}'
+                           WHERE {$codeCol} LIKE '{$s}'
                               OR item_description LIKE '{$s}'
                               OR serial_number LIKE '{$s}'
                            ORDER BY property_code ASC
@@ -546,16 +577,17 @@ try {
                 $anyRes = call_mysql_query($sqlAny);
                 $any = $anyRes ? call_mysql_fetch_array($anyRes) : null;
                 if ($any) {
-                    $ia = (int)($any['is_available'] ?? 0);
-                    if ($ia !== 1) {
+                    $ia = $hasAvailFlag ? (int)($any['is_available'] ?? 0) : 1;
+                    $aq = $availQtyCol !== '' ? (int)($any['available_qty'] ?? 0) : null;
+                    if ($ia !== 1 || ($aq !== null && $aq <= 0)) {
                         json_response(array(
                             'success' => true,
-                            'message' => "Found AST item {$any['property_code']}, but it is not available for assignment (is_available: {$ia})."
+                            'message' => "Found AST item {$any['item_code']}, but it is not available for assignment."
                         ));
                     }
                     json_response(array(
                         'success' => true,
-                        'message' => "AST item {$any['property_code']} exists and is available. Please select it from the dropdown results."
+                        'message' => "AST item {$any['item_code']} exists and is available. Please select it from the dropdown results."
                     ));
                 }
 
@@ -567,26 +599,31 @@ try {
                 }
                 json_response(array('success' => true, 'message' => 'No AST item matched your search.'));
             } else {
-                $sqlAny = "SELECT inventory_system_item_code, item_description, status, current_unit_quantity
+                $codeCol = fr_first_existing_col('csm_inventory', array('inventory_system_item_code', 'item_code'), 'inventory_system_item_code');
+                $qtyCol = fr_first_existing_col('csm_inventory', array('current_quantity', 'current_unit_quantity'), '');
+                $hasStatus = fr_column_exists('csm_inventory', 'status');
+                $sqlAny = "SELECT {$codeCol} AS item_code, item_description" . ($hasStatus ? ", status" : "") . ($qtyCol !== '' ? ", {$qtyCol} AS current_qty" : "") . "
                            FROM csm_inventory
-                           WHERE inventory_system_item_code LIKE '{$s}'
+                           WHERE {$codeCol} LIKE '{$s}'
                               OR item_description LIKE '{$s}'
-                           ORDER BY inventory_system_item_code ASC
+                           ORDER BY {$codeCol} ASC
                            LIMIT 1";
                 $anyRes = call_mysql_query($sqlAny);
                 $any = $anyRes ? call_mysql_fetch_array($anyRes) : null;
                 if ($any) {
-                    $qty = (int)($any['current_unit_quantity'] ?? 0);
-                    $status = strtolower((string)($any['status'] ?? ''));
-                    if ($status !== 'available' || $qty <= 0) {
+                    $qty = $qtyCol !== '' ? (int)($any['current_qty'] ?? 0) : 1;
+                    $statusRaw = $hasStatus ? $any['status'] : null;
+                    $statusStr = strtolower((string)($statusRaw ?? ''));
+                    $statusOk = ($statusStr === 'available' || $statusRaw === 1 || $statusRaw === '1');
+                    if (!$statusOk || $qty <= 0) {
                         json_response(array(
                             'success' => true,
-                            'message' => "Found CSM item {$any['inventory_system_item_code']}, but it is not available for assignment (status: {$any['status']}, current qty: {$qty})."
+                            'message' => "Found CSM item {$any['item_code']}, but it is not available for assignment."
                         ));
                     }
                     json_response(array(
                         'success' => true,
-                        'message' => "CSM item {$any['inventory_system_item_code']} exists and is available. Please select it from the dropdown results."
+                        'message' => "CSM item {$any['item_code']} exists and is available. Please select it from the dropdown results."
                     ));
                 }
                 $altRes = call_mysql_query("SELECT property_code FROM ast_inventory

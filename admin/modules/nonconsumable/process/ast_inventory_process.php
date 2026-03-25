@@ -446,8 +446,9 @@ try {
             break;
 
         case 'list_items':
-            $limit = _int(_post('limit', 100));
-            if ($limit <= 0 || $limit > 500) $limit = 100;
+            $limit = _int(_post('limit', 1000));
+            if ($limit <= 0) $limit = 1000;
+            if ($limit > 5000) $limit = 5000;
             $search = _post('search');
             $hasSerial = has_serial_number_column();
 

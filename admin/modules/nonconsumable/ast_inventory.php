@@ -1,5 +1,6 @@
 <?php
 // admin/modules/nonconsumable/ast_inventory.php
+// /*todo next time, not urgent:wire Tabulator to use AJAX pagination instead of loading all at once.*/
 require_once dirname(__DIR__, 3) . '/config/config.php';
 require GLOBAL_FUNC;
 require CL_SESSION_PATH;
@@ -289,6 +290,37 @@ let availStatusLock = false;
 let isBulkAvailMode = false;
 let showIssuedOnly = false;
 let lastPageSize = null;
+const GROUP_STATE_KEY = 'ast_inventory_group_state_v1';
+
+function loadGroupState() {
+    try {
+        const raw = localStorage.getItem(GROUP_STATE_KEY);
+        const parsed = raw ? JSON.parse(raw) : {};
+        return (parsed && typeof parsed === 'object') ? parsed : {};
+    } catch (e) {
+        return {};
+    }
+}
+
+function saveGroupState(state) {
+    try {
+        localStorage.setItem(GROUP_STATE_KEY, JSON.stringify(state || {}));
+    } catch (e) {}
+}
+
+function setGroupOpenState(key, isOpen) {
+    const k = String(key || 'Uncategorized');
+    const state = loadGroupState();
+    state[k] = !!isOpen;
+    saveGroupState(state);
+}
+
+function getGroupOpenState(key) {
+    const k = String(key || 'Uncategorized');
+    const state = loadGroupState();
+    if (Object.prototype.hasOwnProperty.call(state, k)) return !!state[k];
+    return true; // default open
+}
 
 function refreshGroupSelectStates() {
     if (!inventoryTable) return;
@@ -652,6 +684,9 @@ function initTable() {
         paginationCounter: "rows",
         selectable: true,
         groupBy: "item_category_name",
+        groupStartOpen: function(value){
+            return getGroupOpenState(value || 'Uncategorized');
+        },
         groupHeader: function(value, count, data) {
             const qty = data.reduce((sum, r) => sum + (parseInt(r.quantity, 10) || 0), 0);
             const name = value || "Uncategorized";
@@ -758,10 +793,17 @@ function initTable() {
             refreshGroupSelectStates();
         }
     });
+
+    inventoryTable.on('groupOpened', function(group){
+        setGroupOpenState(group.getKey(), true);
+    });
+    inventoryTable.on('groupClosed', function(group){
+        setGroupOpenState(group.getKey(), false);
+    });
 }
 
 function loadInventory() {
-    $.post(PROCESS_URL, { action: 'list_items', limit: 1000 }, function(res) {
+    $.post(PROCESS_URL, { action: 'list_items', limit: 5000 }, function(res) {
         if (res && res.success) {
             rawRows = res.data || [];
             inventoryTable.setData(rawRows);
