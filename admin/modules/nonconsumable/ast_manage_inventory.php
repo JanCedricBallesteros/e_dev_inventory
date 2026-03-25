@@ -182,10 +182,15 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                 <input type="hidden" name="number_of_units" id="numberOfUnits" value="1">
                                 <input type="hidden" name="serial_numbers_json" id="serialNumbersJson" value="[]">
                                 <div class="col-md-4">
-                                    <label class="form-label fw-semibold">Unit (measurement)</label>
+                                    <label class="form-label fw-semibold">Unit (measurement)
+                                        <span class="text-muted ms-1" data-bs-toggle="tooltip" data-bs-placement="top" title="Type a unit (e.g., pcs, box, set) and press Enter to add it if it is not listed.">
+                                            <i class="bi bi-info-circle"></i>
+                                        </span>
+                                    </label>
                                     <select class="form-select" name="unit" id="unitSelect" required>
                                         <option value="">Select existing or type a new unit</option>
                                     </select>
+                                    <div class="small text-muted mt-1">Tip: type a unit and press Enter to add it.</div>
                                 </div>
                                 <div class="col-md-4">
                                     <label class="form-label fw-semibold">Source of Fund (optional)</label>
@@ -202,9 +207,12 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                 <div class="col-12">
                                     <div class="d-flex align-items-center justify-content-between mb-1">
                                         <label class="form-label fw-semibold mb-0">Quantity Rows</label>
-                                        <button type="button" class="btn btn-sm btn-outline-primary" id="addUnitRowBtn">
-                                            <i class="bi bi-plus-lg"></i> Add Quantity
-                                        </button>
+                                        <div class="d-flex align-items-center gap-2">
+                                            <input type="number" class="form-control form-control-sm" id="addUnitRowCount" min="1" max="50" value="1" style="width:90px;" aria-label="Quantity count">
+                                            <button type="button" class="btn btn-sm btn-outline-primary" id="addUnitRowBtn">
+                                                <i class="bi bi-plus-lg"></i> Add Quantity
+                                            </button>
+                                        </div>
                                     </div>
                                     <div id="unitRows" class="d-flex flex-column gap-2"></div>
                                     <div class="small text-muted mt-1">Each row = one item quantity to be created.</div>
@@ -485,6 +493,10 @@ let serialScanner = null;
 let serialTargetInput = null;
 let lastSerialScan = '';
 let lastSerialScanAt = 0;
+const ADD_ITEM_DRAFT_KEY = 'ast_add_item_draft_v1';
+let pendingLocalDraft = null;
+let suppressDraftSave = false;
+let saveDraftTimer = null;
 
 function playSerialBeep(kind) {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -522,6 +534,101 @@ function showPageMessage(message) {
     }, 4000);
 }
 
+function saveAddItemDraft() {
+    if (suppressDraftSave) return;
+    const draft = collectAddItemDraft();
+    const payload = { draft, saved_at: new Date().toISOString() };
+    try {
+        localStorage.setItem(ADD_ITEM_DRAFT_KEY, JSON.stringify(payload));
+    } catch (e) {
+        // Ignore storage errors (quota/private mode)
+    }
+}
+
+function scheduleSaveAddItemDraft() {
+    if (saveDraftTimer) clearTimeout(saveDraftTimer);
+    saveDraftTimer = setTimeout(saveAddItemDraft, 250);
+}
+
+function clearAddItemDraft() {
+    try { localStorage.removeItem(ADD_ITEM_DRAFT_KEY); } catch (e) {}
+}
+
+function loadAddItemDraft() {
+    try {
+        const raw = localStorage.getItem(ADD_ITEM_DRAFT_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return parsed && parsed.draft ? parsed.draft : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+function applyAddItemDraft(draft) {
+    if (!draft) return false;
+    suppressDraftSave = true;
+
+    $('#propertyNumberField').val(draft.property_number || '');
+    $('#itemDescription').val(draft.item_description || '');
+    $('#sourceOfFund').val(draft.source_of_fund || '');
+    $('#costValue').val(draft.cost_value || '');
+
+    if (draft.category_id) {
+        if ($('#categorySelect option[value="' + draft.category_id + '"]').length === 0) {
+            $('#categorySelect').append(new Option(draft.category_label || draft.category_id, draft.category_id, true, true));
+        }
+        $('#categorySelect').val(draft.category_id).trigger('change');
+    }
+
+    if (draft.unit) {
+        if ($('#unitSelect option[value="' + draft.unit + '"]').length === 0) {
+            $('#unitSelect').append(new Option(draft.unit_label || draft.unit, draft.unit, true, true));
+        }
+        $('#unitSelect').val(draft.unit).trigger('change');
+    }
+
+    $('#unitRows').html('');
+    const serials = Array.isArray(draft.serial_rows) ? draft.serial_rows : [];
+    if (serials.length === 0) {
+        addUnitRow('');
+    } else {
+        serials.forEach(val => addUnitRow(val));
+    }
+    refreshPropertyCode();
+
+    suppressDraftSave = false;
+    return true;
+}
+
+function tryRestoreAddItemDraft() {
+    if (!pendingLocalDraft) pendingLocalDraft = loadAddItemDraft();
+    if (!pendingLocalDraft) return;
+
+    const hasContent = (d) => {
+        if (!d) return false;
+        if (d.category_id) return true;
+        if (d.property_number) return true;
+        if (d.item_description) return true;
+        if (d.unit) return true;
+        if (d.source_of_fund) return true;
+        if (d.cost_value) return true;
+        if (Array.isArray(d.serial_rows) && d.serial_rows.some(v => (v || '').trim() !== '')) return true;
+        return false;
+    };
+    if (!hasContent(pendingLocalDraft)) return;
+
+    const categoryReady = $('#categorySelect option').length > 0;
+    const unitReady = $('#unitSelect option').length > 0;
+    if (!categoryReady || !unitReady) return;
+
+    const applied = applyAddItemDraft(pendingLocalDraft);
+    if (applied) {
+        pendingLocalDraft = null;
+        showMessage('#addItemMsg', 'info', 'Restored your saved draft.');
+    }
+}
+
 
 function loadCategories() {
     $.post(PROCESS_URL, { action: 'list_categories' }, function(res) {
@@ -539,6 +646,7 @@ function loadCategories() {
                 allowClear: true,
                 width: '100%'
             });
+            tryRestoreAddItemDraft();
             showPageMessage('');
         } else {
             $('#categorySelect').html('<option value="">Failed to load</option>');
@@ -566,6 +674,7 @@ function loadUnits() {
                 tags: true,
                 width: '100%'
             });
+            tryRestoreAddItemDraft();
             showPageMessage('');
         } else {
             $('#unitSelect').html('<option value="">Failed to load</option>');
@@ -647,6 +756,7 @@ function addUnitRow(serialVal = '') {
     `;
     $('#unitRows').append(rowHtml);
     refreshUnitRowLabels();
+    scheduleSaveAddItemDraft();
 }
 
 function refreshUnitRowLabels() {
@@ -867,6 +977,7 @@ function submitAddItemFromReview() {
             refreshTable();
             loadPropertyCodes();
             loadUnits();
+            clearAddItemDraft();
             return;
         }
         setReviewModalState({ loading: false, content: true, error: (res && res.message) ? res.message : 'Save failed.' });
@@ -1324,6 +1435,14 @@ function setupSerialScannerModal() {
         refreshPropertyCode();
         setupSerialScannerModal();
 
+        // Enable Bootstrap tooltips (for unit helper, etc.)
+        if (typeof bootstrap !== 'undefined') {
+            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            tooltipTriggerList.forEach(function (tooltipTriggerEl) {
+                new bootstrap.Tooltip(tooltipTriggerEl);
+            });
+        }
+
     $('#propertyNumberField').on('keypress', function(e) {
         // Only allow letters and numbers
         const char = String.fromCharCode(e.which || e.keyCode);
@@ -1336,11 +1455,20 @@ function setupSerialScannerModal() {
         let val = ($(this).val() || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
         $(this).val(val);
         debouncedRefreshPropertyCode();
-    }).on('change', debouncedRefreshPropertyCode);
+        scheduleSaveAddItemDraft();
+    }).on('change', function() {
+        debouncedRefreshPropertyCode();
+        scheduleSaveAddItemDraft();
+    });
 
     $('#addUnitRowBtn').on('click', function() {
-        addUnitRow('');
+        const raw = parseInt($('#addUnitRowCount').val(), 10);
+        const count = isFinite(raw) ? Math.max(1, Math.min(raw, 50)) : 1;
+        for (let i = 0; i < count; i++) {
+            addUnitRow('');
+        }
         refreshPropertyCode();
+        scheduleSaveAddItemDraft();
     });
 
     $('#unitRows').on('click', '.btn-remove-unit-row', function() {
@@ -1352,6 +1480,7 @@ function setupSerialScannerModal() {
             refreshUnitRowLabels();
         }
         refreshPropertyCode();
+        scheduleSaveAddItemDraft();
     });
 
     $('#confirmAddItemBtn').on('click', function() {
@@ -1384,6 +1513,15 @@ function setupSerialScannerModal() {
         resetUnitRows();
         refreshPropertyCode();
         $('#addItemMsg').html('');
+        clearAddItemDraft();
+    });
+
+    $('#addItemForm').on('input change', 'input, textarea, select', function() {
+        scheduleSaveAddItemDraft();
+    });
+
+    $('#unitRows').on('input', '.serial-row-input', function() {
+        scheduleSaveAddItemDraft();
     });
 
     $('#addQtyForm').on('submit', function(e) {
@@ -1442,6 +1580,8 @@ function setupSerialScannerModal() {
             }
         });
     }
+
+    tryRestoreAddItemDraft();
 });
 </script>
 </body>
