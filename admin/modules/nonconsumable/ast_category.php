@@ -532,6 +532,7 @@ $('#categoryTable').on('click', '.js-thumb-preview, .item-badge', function() {
                         $('#bulkAddForm')[0].reset();
                         $('#bulkRows').html('');
                         addBulkRow();
+                    setTimeout(function(){ $('#bulkAddModal').modal('hide'); }, 800);
                     }
 
                     table.replaceData();
