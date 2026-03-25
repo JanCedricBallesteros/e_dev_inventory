@@ -608,6 +608,7 @@ try {
                         a.module_type,
                         a.item_code,
                         a.item_description,
+                        a.unit_id,
                         a.qty,
                         a.unit,
                         a.status,
@@ -619,6 +620,7 @@ try {
                         " . ($hasManagedBy ? "CONCAT(COALESCE(u3.f_name,''), ' ', COALESCE(u3.l_name,''))" : "''") . " AS managed_by_name,
                         fu.unit_name,
                         fu.unit_code,
+                        fu.floor_label,
                         ast_cat.category_photo AS ast_category_photo,
                         ast_cat.item_category_name AS ast_category_name,
                         csm_inv.item_category_img AS csm_category_img,
@@ -654,6 +656,7 @@ try {
                         a.module_type,
                         a.item_code,
                         a.item_description,
+                        a.unit_id,
                         a.qty,
                         a.unit,
                         a.status,
@@ -663,6 +666,7 @@ try {
                         CONCAT(COALESCE(u1.f_name,''), ' ', COALESCE(u1.l_name,'')) AS issued_to_name,
                         CONCAT(COALESCE(u2.f_name,''), ' ', COALESCE(u2.l_name,'')) AS accountable_name,
                         " . ($hasManagedBy ? "CONCAT(COALESCE(u3.f_name,''), ' ', COALESCE(u3.l_name,''))" : "''") . " AS managed_by_name,
+                        fu.floor_label,
                         ast_cat.category_photo AS ast_category_photo,
                         ast_cat.item_category_name AS ast_category_name,
                         csm_inv.item_category_img AS csm_category_img,
@@ -671,6 +675,7 @@ try {
                     LEFT JOIN users u1 ON u1.user_id = a.issued_to_user_id
                     LEFT JOIN users u2 ON u2.user_id = a.accountable_user_id
                     " . ($hasManagedBy ? "LEFT JOIN users u3 ON u3.user_id = a.managed_by_user_id" : "") . "
+                    LEFT JOIN facility_records_units fu ON fu.unit_id = a.unit_id
                     LEFT JOIN ast_inventory ast_inv ON a.module_type = 'AST' AND a.item_code = ast_inv.property_code
                     LEFT JOIN ast_inventory_category ast_cat ON ast_inv.category_id = ast_cat.category_id
                     LEFT JOIN csm_inventory csm_inv ON a.module_type = 'CSM' AND a.item_code = csm_inv.inventory_system_item_code

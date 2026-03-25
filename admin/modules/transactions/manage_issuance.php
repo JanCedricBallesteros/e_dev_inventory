@@ -32,6 +32,13 @@ if (!(role_has("ADMIN") || $staffAccess)) {
         .facility-header .facility-meta .title-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
         .facility-header .facility-actions { display: flex; gap: 6px; flex-shrink: 0; }
         .facility-code { font-family: monospace; font-weight: 700; }
+        .floor-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+        .floor-badge { background: #eef5ff; color: #1e3a8a; border: 1px dashed #a5b4fc; border-radius: 999px; font-size: 0.75rem; padding: 2px 8px; }
+        .floor-group { margin-top: 8px; border-left: 3px solid #e2e8f0; padding-left: 8px; }
+        .floor-header { font-weight: 600; font-size: 0.85rem; color: #334155; display: flex; align-items: center; gap: 6px; margin: 6px 0; cursor: pointer; user-select: none; }
+        .floor-header .chevron { margin-left: auto; transition: transform 0.15s ease; }
+        .floor-header.collapsed .chevron { transform: rotate(-90deg); }
+        .floor-header.active { color: #0d6efd; }
         .small-muted { color: #6c757d; font-size: 0.85rem; }
         .unit-card { border: 1px solid #dbe2ea; border-radius: 8px; padding: 10px 12px; background: #fff; cursor: pointer; transition: all 0.2s ease; margin-bottom: 8px; }
         .unit-card:hover { border-color: #a5b4fc; background: #f8faff; transform: translateX(4px); }
@@ -269,6 +276,8 @@ let selectedUnit = null;
 let assignmentTable = null;
 let assignmentTableReady = false;
 let pendingLocateUnitId = null;
+let selectedFloor = null;
+let floorCollapseState = {};
 
 function showPageError(msg){
     const el = $('#pageMsg');
@@ -295,6 +304,41 @@ function escapeHtml(value){
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+}
+
+function normalizeFloorList(list){
+    const out = [];
+    (list || []).forEach(function(item){
+        const name = String(item || '').trim();
+        if (!name) return;
+        if (!out.includes(name)) out.push(name);
+    });
+    return out;
+}
+
+function normalizeFloorKey(name){
+    return String(name || '').trim() || 'Unassigned';
+}
+
+function getRowFloorLabel(row){
+    const floor = row ? (row.floor_label ?? row.unit_floor ?? row.unit_floor_label ?? row.floor ?? row.unit_floor_name) : '';
+    let normalized = normalizeFloorKey(floor);
+    if (normalized === 'Unassigned' && row && row.unit_id && Array.isArray(unitList)) {
+        const match = unitList.find(function(u){ return String(u.unit_id) === String(row.unit_id); });
+        if (match) normalized = normalizeFloorKey(match.floor_label);
+    }
+    return normalized;
+}
+
+function parseFloorsJson(raw){
+    if (!raw) return [];
+    if (Array.isArray(raw)) return normalizeFloorList(raw);
+    try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return normalizeFloorList(parsed);
+        if (parsed && Array.isArray(parsed.floors)) return normalizeFloorList(parsed.floors);
+    } catch (e) {}
+    return [];
 }
 
 function normalizeScannedCode(raw){
@@ -327,7 +371,10 @@ function normalizeScannedCode(raw){
 function loadFacilities(cb){
     $.post(PROCESS_URL, { action: 'list_facilities' }, function(res){
         if (!res.success) { showPageError(res.message || 'Failed to load facilities.'); return; }
-        facilityList = res.data || [];
+        facilityList = (res.data || []).map(function(f){
+            const floors = parseFloorsJson(f.facility_floor);
+            return Object.assign({}, f, { floors });
+        });
         renderFacilities();
         if (typeof cb === 'function') cb();
     }, 'json').fail(function(xhr){
@@ -349,6 +396,10 @@ function renderFacilities(){
         const facilityName = escapeHtml(f.facility_name || '');
         const totalItems = parseInt(f.active_item_count || 0, 10) || 0;
         const totalUnits = parseInt(f.unit_count || 0, 10) || 0;
+        const floors = Array.isArray(f.floors) ? f.floors : [];
+        const floorBadges = floors.length
+            ? floors.map(function(fl){ return `<span class="floor-badge">${escapeHtml(fl)}</span>`; }).join('')
+            : '<span class="small-muted">No floors set</span>';
         wrap.append(`
             <div class="facility-group">
                 <div class="facility-header ${isActive ? 'active' : ''}" data-id="${f.facility_id}">
@@ -359,6 +410,7 @@ function renderFacilities(){
                             <span class="badge bg-light text-dark facility-code">${facilityCode}</span>
                         </div>
                         <div class="small" style="opacity:0.9;">${totalUnits} unit(s) &middot; ${totalItems} item(s)</div>
+                        <div class="floor-badges">${floorBadges}</div>
                     </div>
                 </div>
                 <div class="facility-units mt-2" data-facility-id="${f.facility_id}">
@@ -381,7 +433,8 @@ function loadUnits(cb){
         renderUnits();
         if (selectedUnit) {
             const _facCode = selectedFacility ? (selectedFacility.facility_code || '') : '';
-            $('#selectedUnitInfo').text((_facCode ? _facCode + ' / ' : '') + (selectedUnit.unit_code || '') + ' — ' + (selectedUnit.unit_name || ''));
+            const floorLabel = selectedUnit.floor_label ? ' — ' + selectedUnit.floor_label : '';
+            $('#selectedUnitInfo').text((_facCode ? _facCode + ' / ' : '') + (selectedUnit.unit_code || '') + ' — ' + (selectedUnit.unit_name || '') + floorLabel);
             $('#selectedManagedBy').text(selectedUnit.unit_manager_name ? 'Managed By: ' + selectedUnit.unit_manager_name : '');
             loadAssignments();
         }
@@ -445,23 +498,57 @@ function renderUnits(){
     const container = $(`.facility-units[data-facility-id="${selectedFacility.facility_id}"]`);
     if (!container.length) return;
     container.empty();
-    if (!unitList.length){
+    const facilityFloors = Array.isArray(selectedFacility.floors) ? selectedFacility.floors : [];
+    const groups = {};
+    unitList.forEach(function(u){
+        const key = String(u.floor_label || '').trim() || 'Unassigned';
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(u);
+    });
+    const collapseMap = floorCollapseState[selectedFacility.facility_id] || {};
+    const orderedKeys = [];
+    facilityFloors.forEach(function(f){
+        if (!orderedKeys.includes(f)) orderedKeys.push(f);
+    });
+    Object.keys(groups).forEach(function(k){
+        if (!orderedKeys.includes(k)) orderedKeys.push(k);
+    });
+    if (!orderedKeys.length) {
         container.html('<div class="small-muted">No units yet for this facility.</div>');
         return;
     }
-    unitList.forEach(function(u){
-        const active = selectedUnit && String(selectedUnit.unit_id) === String(u.unit_id) ? 'active' : '';
-        const officer = escapeHtml((u.unit_manager_name || '').trim());
-        const unitCode = escapeHtml(u.unit_code || '');
-        const unitName = escapeHtml(u.unit_name || '');
-        container.append(`
-            <div class="unit-card ${active}" data-id="${u.unit_id}">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div class="fw-semibold">${unitCode} - ${unitName} (${u.active_item_count || 0})</div>
-                </div>
-                ${officer ? `<div class="small-muted mt-1">Manager: ${officer}</div>` : ''}
-            </div>
-        `);
+    orderedKeys.forEach(function(key){
+        const rows = groups[key] || [];
+        const floorKey = normalizeFloorKey(key);
+        const safeKey = escapeHtml(floorKey);
+        const isActiveFloor = selectedFloor && normalizeFloorKey(selectedFloor) === floorKey;
+        let isCollapsed = Object.prototype.hasOwnProperty.call(collapseMap, floorKey) ? !!collapseMap[floorKey] : true;
+        if (isActiveFloor) isCollapsed = false;
+        let html = `
+            <div class="floor-group" data-floor-key="${safeKey}">
+                <div class="floor-header ${isCollapsed ? 'collapsed' : ''} ${isActiveFloor ? 'active' : ''}" data-floor="${encodeURIComponent(floorKey)}"><i class="bi bi-layers"></i> ${safeKey} <span class="chevron"><i class="bi bi-chevron-down"></i></span></div>
+                <div class="floor-body ${isCollapsed ? 'd-none' : ''}">
+        `;
+        if (!rows.length) {
+            html += '<div class="small-muted">No units yet for this floor.</div>';
+        } else {
+            rows.forEach(function(u){
+                const active = selectedUnit && String(selectedUnit.unit_id) === String(u.unit_id) ? 'active' : '';
+                const officer = escapeHtml((u.unit_manager_name || '').trim());
+                const unitCode = escapeHtml(u.unit_code || '');
+                const unitName = escapeHtml(u.unit_name || '');
+                html += `
+                    <div class="unit-card ${active}" data-id="${u.unit_id}">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div class="fw-semibold">${unitCode} - ${unitName} (${u.active_item_count || 0})</div>
+                        </div>
+                        ${officer ? `<div class="small-muted mt-1">Manager: ${officer}</div>` : ''}
+                    </div>
+                `;
+            });
+        }
+        html += '</div></div>';
+        container.append(html);
     });
 }
 
@@ -500,7 +587,13 @@ function loadAssignments(){
 
 function renderAssignments(){
     if (!assignmentTable || !assignmentTableReady) return;
-    const sourceRows = selectedUnit ? assignmentList : (selectedFacility ? facilityItems : []);
+    let sourceRows = selectedUnit ? assignmentList : (selectedFacility ? facilityItems : []);
+    if (!selectedUnit && selectedFacility && selectedFloor) {
+        const targetFloor = normalizeFloorKey(selectedFloor);
+        sourceRows = (sourceRows || []).filter(function(r){
+            return getRowFloorLabel(r) === targetFloor;
+        });
+    }
     const q = ($('#invSearch').val() || '').toLowerCase().trim();
     assignmentTable.setData(sourceRows);
     if (q) {
@@ -748,6 +841,7 @@ $(document).ready(function(){
             facilityItems = [];
             assignmentList = [];
             unitList = [];
+            selectedFloor = null;
             currentPage = 1;
         $('#btnAssignItem').prop('disabled', true);
         $('#selectedUnitInfo').text('Select a facility or unit to view items.');
@@ -760,6 +854,10 @@ $(document).ready(function(){
         facilityItems = [];
         assignmentList = [];
         selectedUnit = null;
+        selectedFloor = null;
+        if (selectedFacility) {
+            floorCollapseState[selectedFacility.facility_id] = {};
+        }
         currentPage = 1;
         $('#btnAssignItem').prop('disabled', true);
         $('#selectedUnitInfo').text(selectedFacility ? (selectedFacility.facility_name || '') + ' (' + (selectedFacility.facility_code || '') + ') — All Units' : '');
@@ -773,15 +871,51 @@ $(document).ready(function(){
     $('#facilityList').on('click', '.unit-card', function(){
         const id = $(this).data('id');
         selectedUnit = unitList.find(x => String(x.unit_id) === String(id)) || null;
+        if (selectedUnit) {
+            selectedFloor = normalizeFloorKey(selectedUnit.floor_label || '');
+        }
         currentPage = 1;
         $('#btnAssignItem').prop('disabled', !selectedUnit);
         if (selectedUnit) {
             const _facCode = selectedFacility ? (selectedFacility.facility_code || '') : '';
-            $('#selectedUnitInfo').text((_facCode ? _facCode + ' / ' : '') + (selectedUnit.unit_code || '') + ' — ' + (selectedUnit.unit_name || ''));
+            const floorLabel = selectedUnit.floor_label ? ' — ' + selectedUnit.floor_label : '';
+            $('#selectedUnitInfo').text((_facCode ? _facCode + ' / ' : '') + (selectedUnit.unit_code || '') + ' — ' + (selectedUnit.unit_name || '') + floorLabel);
             $('#selectedManagedBy').text(selectedUnit.unit_manager_name ? 'Managed By: ' + selectedUnit.unit_manager_name : '');
         }
         renderUnits();
         loadAssignments();
+    });
+
+    $('#facilityList').on('click', '.floor-header', function(){
+        const facilityId = $(this).closest('.facility-units').data('facility-id');
+        if (!facilityId) return;
+        const floorEncoded = $(this).data('floor') || '';
+        const floor = normalizeFloorKey(decodeURIComponent(floorEncoded));
+        if (!floorCollapseState[facilityId]) floorCollapseState[facilityId] = {};
+        const currentCollapsed = Object.prototype.hasOwnProperty.call(floorCollapseState[facilityId], floor) ? !!floorCollapseState[facilityId][floor] : true;
+        const nextState = !currentCollapsed;
+        floorCollapseState[facilityId][floor] = nextState;
+        const facility = selectedFacility && String(selectedFacility.facility_id) === String(facilityId) ? selectedFacility : null;
+        if (!nextState) {
+            selectedUnit = null;
+            selectedFloor = floor;
+            $(this).closest('.facility-units').find('.floor-header').not(this).removeClass('active');
+            if (facility) {
+                $('#selectedUnitInfo').text((facility.facility_name || '') + ' (' + (facility.facility_code || '') + ') — Floor: ' + floor);
+                $('#selectedManagedBy').text('Managed By: Multiple');
+            }
+        } else if (selectedFloor && normalizeFloorKey(selectedFloor) === floor) {
+            selectedFloor = null;
+            $(this).closest('.facility-units').find('.floor-header').removeClass('active');
+            if (facility) {
+                $('#selectedUnitInfo').text((facility.facility_name || '') + ' (' + (facility.facility_code || '') + ') — All Units');
+                $('#selectedManagedBy').text('Managed By: Multiple');
+            }
+        }
+        $(this).toggleClass('collapsed', nextState).toggleClass('active', !nextState);
+        $(this).siblings('.floor-body').toggleClass('d-none', nextState);
+        renderAssignments();
+        scheduleAssignmentRedraw();
     });
 
     $('#invSearch').on('input', function(){
