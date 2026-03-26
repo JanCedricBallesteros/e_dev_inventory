@@ -185,7 +185,14 @@ function  user_log($data = array())
 	global $db_connect;
 
 	$input = array_merge(array("ID_USER" => "", "IP" => "", "TOKEN" => "", "ACTION" => "", "AGENTS" => "", "SUMMARY" => "", "USER_ROLE" => ""), $data);
-	$token_id = $input['TOKEN'];
+	$token_id = trim((string)$input['TOKEN']);
+	if ($token_id === '') {
+		$token_id = (string)session_id();
+		if ($token_id === '') {
+			$token_id = 'logout_' . uniqid('', true);
+		}
+	}
+	$input['TOKEN'] = $token_id;
 	if (empty($input['ID_USER'])) {
 		return false;
 	}
@@ -198,6 +205,9 @@ function  user_log($data = array())
 			$user_login_id =  $data['user_log_id'];
 			#checking duplicate entry token
 			$token_array = json_decode($data['token_id']);
+			if (!is_array($token_array)) {
+				$token_array = array();
+			}
 			if (in_array($token_id, $token_array)) {
 				$duplicate_token = true;
 			}
@@ -263,12 +273,12 @@ function  user_log($data = array())
 
 	$sql_query = '';
 	if (empty($user_login_id)) { #not existing
-		$input['TOKEN'] =  "JSON_ARRAY('" . $input['TOKEN'] . "')";
+		$token_json = "JSON_ARRAY('" . escape($db_connect, $input['TOKEN']) . "')";
 		$input['SUMMARY'] = " JSON_ARRAY(JSON_ARRAY('" . DATE_TIME . "','" . $input['ACTION'] . "','" . $input['IP'] . "'))";
 		if ($input['ACTION'] == 'LOGIN') { ## fill login time
-			$sql_query = "INSERT INTO user_log (login_date,logout_date,action,user_id,session_id,ip_address,device,token_id,login_flag,user_level) VALUES ( '" . DATE_TIME . "','NULL','" . escape($db_connect, $input['ACTION']) . "', '" . escape($db_connect, $input['ID_USER']) . "'," . $input['SUMMARY'] . ",'" . escape($db_connect, $input['IP']) . "','" . escape($db_connect, $input['AGENTS']) . "'," . $input['TOKEN'] . ",'1','" . $input['USER_ROLE'] . "')";
+			$sql_query = "INSERT INTO user_log (login_date,logout_date,action,user_id,session_id,ip_address,device,token_id,login_flag,user_level) VALUES ( '" . DATE_TIME . "','NULL','" . escape($db_connect, $input['ACTION']) . "', '" . escape($db_connect, $input['ID_USER']) . "'," . $input['SUMMARY'] . ",'" . escape($db_connect, $input['IP']) . "','" . escape($db_connect, $input['AGENTS']) . "'," . $token_json . ",'1','" . $input['USER_ROLE'] . "')";
 		} else if ($input['ACTION'] == 'LOGOUT') { ## fill logout time
-			$sql_query = "INSERT INTO user_log (login_date,logout_date,action,user_id,session_id,ip_address,device,token_id,login_flag,user_level) VALUES ( 'NULL', '" . DATE_TIME . "','" . escape($db_connect, $input['ACTION']) . "', '" . escape($db_connect, $input['ID_USER']) . "'," . $input['SUMMARY'] . ",'" . escape($db_connect, $input['IP']) . "','" . escape($db_connect, $input['AGENTS']) . "','" . escape($db_connect, $input['TOKEN']) . "','1','" . $input['USER_ROLE'] . "')";
+			$sql_query = "INSERT INTO user_log (login_date,logout_date,action,user_id,session_id,ip_address,device,token_id,login_flag,user_level) VALUES ( 'NULL', '" . DATE_TIME . "','" . escape($db_connect, $input['ACTION']) . "', '" . escape($db_connect, $input['ID_USER']) . "'," . $input['SUMMARY'] . ",'" . escape($db_connect, $input['IP']) . "','" . escape($db_connect, $input['AGENTS']) . "'," . $token_json . ",'1','" . $input['USER_ROLE'] . "')";
 		}
 	} else { #existing records
 		$input['SUMMARY'] = " JSON_ARRAY_APPEND(session_id,'$',JSON_ARRAY('" . DATE_TIME . "','" . $input['ACTION'] . "','" . $input['IP'] . "'))";
