@@ -94,6 +94,11 @@ if (!(
             --tag-header:#b9d4ea;
             --tag-sub:#cfe3f5;
             --tag-text:#111;
+            --detailed-border:#1E3A8A;
+            --detailed-grid:#1E3A8A;
+            --detailed-header:#1E3A8A;
+            --detailed-sub:#FFFFFF;
+            --detailed-text:#1E3A8A;
 
             --detailed-w: 100mm;
             --detailed-h: 48mm;
@@ -113,7 +118,7 @@ if (!(
             width: var(--detailed-w);
             height: auto;
             min-height: var(--detailed-h);
-            border: 2px solid var(--tag-border);
+            border: 2px solid var(--detailed-border);
             border-radius: 1mm;
             overflow: visible;
             display:flex;
@@ -125,19 +130,23 @@ if (!(
             grid-template-columns: 18mm 1fr 14mm;
             min-height: 12mm;
             align-items:stretch;
-            border-bottom: 2px solid var(--tag-border);
+            border-bottom: 2px solid var(--detailed-border);
             box-sizing:border-box;
         }
 
         .tag-ccc{
-            background: var(--tag-header);
-            border-right: 2px solid var(--tag-border);
+            background: var(--detailed-header);
+            border-right: 2px solid var(--detailed-border);
             display:flex;
             align-items:center;
             justify-content:center;
-            font-weight:800;
-            letter-spacing:.6px;
-            font-size: 10pt;
+            padding: 1mm;
+        }
+        .tag-ccc img{
+            width: 13mm;
+            height: 10mm;
+            object-fit: contain;
+            display:block;
         }
 
         .tag-agency{
@@ -147,30 +156,27 @@ if (!(
         .tag-agency .agency{
             font-weight:700;
             font-size: 7.5pt;
+            color:var(--detailed-text);
         }
         .tag-agency .subtitle{
-            color:#b02a37;
+            color:var(--detailed-text);
             font-weight:800;
             font-size: 7pt;
             margin-top: .6mm;
         }
 
         .tag-logo{
-            border-left: 2px solid var(--tag-border);
+            border-left: 2px solid var(--detailed-border);
             display:flex;
             align-items:center;
             justify-content:center;
+            padding: 1mm;
         }
-        .tag-logo .logo-circle{
-            width: 9mm; height: 9mm;
-            border-radius: 50%;
-            border: 2px solid #b02a37;
-            display:flex;
-            align-items:center;
-            justify-content:center;
-            font-size: 7pt;
-            font-weight:800;
-            color:#b02a37;
+        .tag-logo img{
+            width: 10mm;
+            height: 10mm;
+            object-fit: contain;
+            display:block;
         }
 
         .tag-body{
@@ -180,7 +186,7 @@ if (!(
         }
 
         .tag-form{
-            border-right: 2px solid var(--tag-border);
+            border-right: 2px solid var(--detailed-border);
             height:auto;
             box-sizing:border-box;
             display:block;
@@ -189,19 +195,19 @@ if (!(
         .tag-row{
             display:grid;
             grid-template-columns: 20mm 1fr;
-            border-bottom: 1px solid var(--tag-grid);
+            border-bottom: 1px solid var(--detailed-grid);
             box-sizing:border-box;
             min-height: 5.2mm;
         }
         .tag-row:last-child{ border-bottom:none; }
 
         .tag-label{
-            background:#fafafa;
-            border-right:1px solid var(--tag-grid);
+            background:var(--detailed-sub);
+            border-right:1px solid var(--detailed-grid);
             padding: 0.9mm 1.2mm;
             font-size: 6.6pt;
             font-style: italic;
-            color:#333;
+            color:var(--detailed-text);
             display:flex;
             align-items:center;
             box-sizing:border-box;
@@ -211,6 +217,7 @@ if (!(
             padding: 0.9mm 1.2mm;
             font-size: 6.8pt;
             font-weight: 600;
+            color:var(--detailed-text);
             display:block;
             box-sizing:border-box;
             white-space: normal;
@@ -251,20 +258,20 @@ if (!(
         .tag-remarks{
             min-height: 9mm;
             height:auto;
-            border-top: 2px solid var(--tag-border);
+            border-top: 2px solid var(--detailed-border);
             display:grid;
             grid-template-columns: 32mm 1fr;
             box-sizing:border-box;
         }
         .tag-remarks .tag-label{
-            background: var(--tag-sub);
-            border-right: 1px solid var(--tag-border);
+            background: var(--detailed-sub);
+            border-right: 1px solid var(--detailed-border);
             font-size: 6.6pt;
         }
         .tag-remarks .tag-value{
-            background: var(--tag-sub);
+            background: var(--detailed-sub);
             font-weight: 700;
-            color:#111;
+            color:var(--detailed-text);
             font-size: 6.8pt;
             white-space: normal;
             overflow: visible;
@@ -459,6 +466,8 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 const BASE_URL = <?php echo json_encode(BASE_URL); ?>;
 const PROCESS_URL = BASE_URL + 'admin/modules/consumable/process/csm_inventory_process.php';
 const QR_GENERATOR_URL = BASE_URL + 'admin/modules/tools/qr_image.php';
+const LOGO_URL = BASE_URL + 'upload/img/ccc-display.png';
+const INVENTORY_LOGO_URL = BASE_URL + 'upload/img/inventory-logo.png';
 
 let qrItems = [];
 let qrMsgTimeout = null;
@@ -520,13 +529,15 @@ function buildDetailedTag({ code, desc, catLine, acq, cost, notes, qrUrl }) {
   return `
     <div class="tag-sticker">
       <div class="tag-top">
-        <div class="tag-ccc">CCC</div>
+        <div class="tag-ccc">
+          <img src="${LOGO_URL}" alt="CCC logo">
+        </div>
         <div class="tag-agency">
           <div class="agency">CITY COLLEGE OF CALAMBA</div>
           <div class="subtitle">Property Inventory Tag</div>
         </div>
         <div class="tag-logo">
-          <div class="logo-circle">CG</div>
+          <img src="${INVENTORY_LOGO_URL}" alt="Inventory logo">
         </div>
       </div>
 
@@ -741,6 +752,11 @@ const TAG_PRINT_CSS = `
     --tag-header:#b9d4ea;
     --tag-sub:#cfe3f5;
     --tag-text:#111;
+    --detailed-border:#1E3A8A;
+    --detailed-grid:#1E3A8A;
+    --detailed-header:#1E3A8A;
+    --detailed-sub:#FFFFFF;
+    --detailed-text:#1E3A8A;
 
     --detailed-w: 100mm;
     --detailed-h: 48mm;
@@ -791,7 +807,7 @@ const TAG_PRINT_CSS = `
     width: var(--detailed-w);
     height: auto;
     min-height: var(--detailed-h);
-    border: 2px solid var(--tag-border);
+    border: 2px solid var(--detailed-border);
     border-radius: 1mm;
     overflow: visible;
     display:flex;
@@ -803,19 +819,23 @@ const TAG_PRINT_CSS = `
     grid-template-columns: 18mm 1fr 14mm;
     min-height: 12mm;
     align-items:stretch;
-    border-bottom: 2px solid var(--tag-border);
+    border-bottom: 2px solid var(--detailed-border);
     box-sizing:border-box;
   }
 
   .tag-ccc{
-    background: var(--tag-header);
-    border-right: 2px solid var(--tag-border);
+    background: var(--detailed-header);
+    border-right: 2px solid var(--detailed-border);
     display:flex;
     align-items:center;
     justify-content:center;
-    font-weight:800;
-    letter-spacing:.6px;
-    font-size: 10pt;
+    padding: 1mm;
+  }
+  .tag-ccc img{
+    width: 13mm;
+    height: 10mm;
+    object-fit: contain;
+    display:block;
   }
 
   .tag-agency{
@@ -825,30 +845,27 @@ const TAG_PRINT_CSS = `
   .tag-agency .agency{
     font-weight:700;
     font-size: 7.5pt;
+    color:var(--detailed-text);
   }
   .tag-agency .subtitle{
-    color:#b02a37;
+    color:var(--detailed-text);
     font-weight:800;
     font-size: 7pt;
     margin-top: .6mm;
   }
 
   .tag-logo{
-    border-left: 2px solid var(--tag-border);
+    border-left: 2px solid var(--detailed-border);
     display:flex;
     align-items:center;
     justify-content:center;
+    padding: 1mm;
   }
-  .tag-logo .logo-circle{
-    width: 9mm; height: 9mm;
-    border-radius: 50%;
-    border: 2px solid #b02a37;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    font-size: 7pt;
-    font-weight:800;
-    color:#b02a37;
+  .tag-logo img{
+    width: 10mm;
+    height: 10mm;
+    object-fit: contain;
+    display:block;
   }
 
   .tag-body{
@@ -858,7 +875,7 @@ const TAG_PRINT_CSS = `
   }
 
   .tag-form{
-    border-right: 2px solid var(--tag-border);
+    border-right: 2px solid var(--detailed-border);
     height:auto;
     box-sizing:border-box;
     display:block;
@@ -867,19 +884,19 @@ const TAG_PRINT_CSS = `
   .tag-row{
     display:grid;
     grid-template-columns: 20mm 1fr;
-    border-bottom: 1px solid var(--tag-grid);
+    border-bottom: 1px solid var(--detailed-grid);
     box-sizing:border-box;
     min-height: 5.2mm;
   }
   .tag-row:last-child{ border-bottom:none; }
 
   .tag-label{
-    background:#fafafa;
-    border-right:1px solid var(--tag-grid);
+    background:var(--detailed-sub);
+    border-right:1px solid var(--detailed-grid);
     padding: 0.9mm 1.2mm;
     font-size: 6.6pt;
     font-style: italic;
-    color:#333;
+    color:var(--detailed-text);
     display:flex;
     align-items:center;
     box-sizing:border-box;
@@ -889,6 +906,7 @@ const TAG_PRINT_CSS = `
     padding: 0.9mm 1.2mm;
     font-size: 6.8pt;
     font-weight: 600;
+    color:var(--detailed-text);
     display:block;
     box-sizing:border-box;
     white-space: normal;
@@ -929,20 +947,20 @@ const TAG_PRINT_CSS = `
   .tag-remarks{
     min-height: 9mm;
     height:auto;
-    border-top: 2px solid var(--tag-border);
+    border-top: 2px solid var(--detailed-border);
     display:grid;
     grid-template-columns: 32mm 1fr;
     box-sizing:border-box;
   }
   .tag-remarks .tag-label{
-    background: var(--tag-sub);
-    border-right: 1px solid var(--tag-border);
+    background: var(--detailed-sub);
+    border-right: 1px solid var(--detailed-border);
     font-size: 6.6pt;
   }
   .tag-remarks .tag-value{
-    background: var(--tag-sub);
+    background: var(--detailed-sub);
     font-weight: 700;
-    color:#111;
+    color:var(--detailed-text);
     font-size: 6.8pt;
     white-space: normal;
     overflow: visible;
