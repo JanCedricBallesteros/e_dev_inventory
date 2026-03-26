@@ -845,7 +845,28 @@ try {
                         LIMIT 1
                       )
                       ELSE CONCAT('upload/category/', i.item_category_img)
-                    END AS assigned_image_url
+                    END AS assigned_image_url,
+                    COALESCE(
+                      CASE
+                        WHEN i.item_category_img IS NULL OR i.item_category_img = '' THEN NULL
+                        WHEN i.item_category_img LIKE 'upload/%' THEN i.item_category_img
+                        WHEN i.item_category_img LIKE '%/%' THEN i.item_category_img
+                        WHEN i.item_category_img REGEXP '^[0-9]+$' THEN (
+                          SELECT ci.file_url
+                          FROM csm_inventory_category_images ci
+                          WHERE ci.image_id = CAST(i.item_category_img AS UNSIGNED)
+                          LIMIT 1
+                        )
+                        ELSE CONCAT('upload/category/', i.item_category_img)
+                      END,
+                      (
+                        SELECT ci_primary.file_url
+                        FROM csm_inventory_category_images ci_primary
+                        WHERE ci_primary.category_id = {$category_id}
+                        ORDER BY (CASE WHEN IFNULL(ci_primary.is_primary,0)=1 THEN 0 ELSE 1 END), ci_primary.image_id ASC
+                        LIMIT 1
+                      )
+                    ) AS display_image
                 FROM csm_inventory i
                 WHERE REPLACE(REPLACE(UPPER(TRIM(i.item_category_code)), ' ', ''), '-', '') =
                       '"._esc($catCode)."'

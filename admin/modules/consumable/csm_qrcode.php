@@ -28,37 +28,87 @@ if (!(
     ?>
     <style>
         .qr-topbar{
-            align-items: stretch;
+            align-items:flex-start;
+            gap:1rem;
         }
         .qr-search-wrap{
-            flex: 1 1 380px;
-            min-width: 260px;
+            flex: 1 1 340px;
+            min-width: 280px;
         }
         .qr-topbar .input-group{
-            width: 100%;
-            max-width: 460px;
+            width:100%;
+            max-width:none;
+        }
+        .qr-search-wrap .btn{
+            min-width: 44px;
         }
         .qr-actions{
+            flex: 1 1 540px;
+            min-width: 320px;
+            display:grid;
+            grid-template-columns: repeat(3, minmax(160px, 1fr));
+            gap:.75rem;
+            align-items:start;
+        }
+        .qr-control{
             display:flex;
-            flex-wrap:wrap;
-            align-items:center;
-            justify-content:flex-end;
-            gap:.5rem;
-            flex: 1 1 520px;
+            flex-direction:column;
+            gap:.35rem;
+            min-width:0;
+        }
+        .qr-control-label{
+            font-size:12px;
+            color:#6c757d;
+            line-height:1.2;
         }
         .qr-actions > *{
-            flex: 0 0 auto;
+            min-width:0;
+        }
+        .qr-actions .btn,
+        .qr-actions .form-select{
+            min-height: 38px;
+            width:100%;
         }
         .qr-actions .form-check{
             min-height: 38px;
             display:flex;
             align-items:center;
-            padding-left: 1.75rem;
+            padding: .5rem .75rem .5rem 1.9rem;
             margin: 0;
+            border:1px solid #dee2e6;
+            border-radius:.5rem;
+            background:#fff;
         }
-        .qr-actions .btn,
-        .qr-actions .form-select{
-            min-height: 38px;
+        .qr-filter-dropdown .dropdown-toggle{
+            text-align:left;
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+        }
+        .qr-filter-dropdown .dropdown-menu{
+            width:100%;
+            min-width:240px;
+            max-height:280px;
+            overflow-y:auto;
+            padding:.5rem;
+        }
+        .qr-filter-option{
+            display:flex;
+            align-items:center;
+            gap:.5rem;
+            padding:.35rem .25rem;
+            border-radius:.375rem;
+        }
+        .qr-filter-option:hover{
+            background:#f8f9fa;
+        }
+        .qr-filter-option input{
+            margin:0;
+        }
+        .qr-filter-summary{
+            overflow:hidden;
+            text-overflow:ellipsis;
+            white-space:nowrap;
         }
         .qr-meta-bar{
             display:flex;
@@ -73,6 +123,9 @@ if (!(
             align-items:center;
             justify-content:flex-end;
             gap:.5rem;
+        }
+        .qr-meta-info{
+            flex:1 1 240px;
         }
         .qr-meta-actions .form-select{
             min-width: 88px;
@@ -392,24 +445,23 @@ if (!(
                 width:100%;
             }
             .qr-actions{
-                justify-content:flex-start;
+                grid-template-columns: 1fr;
+                min-width: 0;
             }
-            .qr-actions .btn,
-            .qr-actions .dropdown,
-            .qr-actions .form-select{
+            .qr-control{
                 width:100%;
+            }
+            .qr-control-label{
+                margin-bottom:0;
             }
             .qr-actions .form-check{
                 width:100%;
-                min-height:auto;
-                padding-top:.45rem;
-                padding-bottom:.45rem;
-                border:1px solid #dee2e6;
-                border-radius:.5rem;
-                background:#fff;
             }
             .qr-meta-actions{
                 justify-content:flex-start;
+            }
+            .qr-meta-actions label{
+                width:100%;
             }
             .qr-meta-actions #qrPagination{
                 width:100%;
@@ -436,46 +488,77 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
             <div class="card-body mt-3 bg-white">
                 <div class="d-flex flex-wrap gap-2 justify-content-between mb-3 qr-topbar">
                     <div class="qr-search-wrap">
+                        <div class="qr-control-label">Search</div>
                         <div class="input-group">
                             <span class="input-group-text"><i class="bi bi-search"></i></span>
                             <input type="text" id="qrSearch" class="form-control" placeholder="Search item code, description, category, source of funds, or QR verification">
+                            <button class="btn btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#scanQrModal" title="Scan QR">
+                                <i class="bi bi-upc-scan"></i>
+                            </button>
                         </div>
                     </div>
 
                     <div class="qr-actions">
-                        <div class="dropdown">
-                            <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" id="btnDateBatch" data-bs-toggle="dropdown" aria-expanded="false">
-                                <i class="bi bi-calendar3"></i>&ensp;Select by Date
+                        <div class="qr-control">
+                            <div class="qr-control-label">Category</div>
+                            <div class="dropdown qr-filter-dropdown" data-bs-auto-close="outside">
+                                <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" id="qrCategoryFilterBtn" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <span class="qr-filter-summary">All Categories</span>
+                                </button>
+                                <div class="dropdown-menu" id="qrCategoryFilterMenu">
+                                    <label class="qr-filter-option">
+                                        <input type="checkbox" class="form-check-input" id="qrCategoryAll" checked>
+                                        <span>All Categories</span>
+                                    </label>
+                                    <div class="dropdown-divider my-2"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="qr-control">
+                            <div class="qr-control-label">Batch Select</div>
+                            <div class="dropdown">
+                                <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" id="btnDateBatch" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <i class="bi bi-calendar3"></i>&ensp;Select by Date
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end" id="dateBatchMenu" style="max-height:300px;overflow-y:auto;min-width:220px;"></ul>
+                            </div>
+                        </div>
+
+                        <div class="qr-control">
+                            <div class="qr-control-label">Selection</div>
+                            <div class="form-check mb-0">
+                                <input class="form-check-input" type="checkbox" id="selectAllQr">
+                                <label class="form-check-label" for="selectAllQr">Select All</label>
+                            </div>
+                        </div>
+
+                        <div class="qr-control">
+                            <div class="qr-control-label">Layout</div>
+                            <select class="form-select form-select-sm" id="printLayout">
+                                <option value="simple" selected>Print: Simple Sticker</option>
+                                <option value="detailed">Print: Detailed Property Tag</option>
+                            </select>
+                        </div>
+
+                        <div class="qr-control">
+                            <div class="qr-control-label">Print</div>
+                            <button class="btn btn-outline-primary btn-sm" id="btnPrintSelected" disabled>
+                                <i class="bi bi-printer"></i>&ensp;Print Selected
                             </button>
-                            <ul class="dropdown-menu dropdown-menu-end" id="dateBatchMenu" style="max-height:300px;overflow-y:auto;min-width:220px;"></ul>
                         </div>
 
-                        <div class="form-check mb-0">
-                            <input class="form-check-input" type="checkbox" id="selectAllQr">
-                            <label class="form-check-label" for="selectAllQr">Select All</label>
+                        <div class="qr-control">
+                            <div class="qr-control-label">Export</div>
+                            <button class="btn btn-outline-success btn-sm" id="btnSavePdf" disabled>
+                                <i class="bi bi-file-earmark-pdf"></i>&ensp;Save as PDF
+                            </button>
                         </div>
-
-                        <select class="form-select form-select-sm" id="printLayout" style="max-width:280px;">
-                            <option value="simple" selected>Print: Simple Sticker</option>
-                            <option value="detailed">Print: Detailed Property Tag</option>
-                        </select>
-
-                        <button class="btn btn-outline-primary btn-sm" id="btnPrintSelected" disabled>
-                            <i class="bi bi-printer"></i>&ensp;Print Selected
-                        </button>
-
-                        <button class="btn btn-outline-success btn-sm" id="btnSavePdf" disabled>
-                            <i class="bi bi-file-earmark-pdf"></i>&ensp;Save as PDF
-                        </button>
-
-                        <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#scanQrModal">
-                            <i class="bi bi-upc-scan"></i>&ensp;Scan QR
-                        </button>
                     </div>
                 </div>
 
                 <div class="qr-meta-bar mb-2">
-                    <div id="qrPageInfo" class="text-muted small"></div>
+                    <div id="qrPageInfo" class="text-muted small qr-meta-info"></div>
                     <div class="qr-meta-actions">
                         <label class="mb-0 small text-muted">Per page:</label>
                         <select id="qrPageSize" class="form-select form-select-sm" style="width:auto;">
@@ -557,6 +640,7 @@ let pageSize = 20;
 let lastFilter = '';
 let selectedCodes = new Set();
 let dateFilter = '';
+let categoryFilter = null;
 let filteredItems = [];
 
 function escapeHtml(s){
@@ -584,6 +668,65 @@ function updateButtons() {
   const selectedCount = selectedCodes.size;
   $('#btnPrintSelected').prop('disabled', selectedCount === 0);
   $('#btnSavePdf').prop('disabled', selectedCount === 0);
+}
+
+function populateCategoryFilter() {
+  const menu = $('#qrCategoryFilterMenu');
+  const categories = new Set();
+
+  qrItems.forEach(item => {
+    const name = String(item.item_category_name || '').trim();
+    if (name) categories.add(name);
+  });
+
+  const sorted = Array.from(categories).sort((a, b) => a.localeCompare(b));
+  menu.find('.qr-filter-item').remove();
+
+  sorted.forEach(name => {
+    const checked = categoryFilter === null || categoryFilter.includes(name);
+    menu.append(`
+      <label class="qr-filter-option qr-filter-item">
+        <input type="checkbox" class="form-check-input qr-category-option" value="${escapeHtml(name)}" ${checked ? 'checked' : ''}>
+        <span>${escapeHtml(name)}</span>
+      </label>
+    `);
+  });
+
+  $('#qrCategoryAll').prop('checked', categoryFilter === null);
+  updateCategoryFilterSummary();
+}
+
+function updateCategoryFilterSummary() {
+  const summary = $('#qrCategoryFilterBtn .qr-filter-summary');
+  if (categoryFilter === null) {
+    summary.text('All Categories');
+    return;
+  }
+
+  if (categoryFilter.length === 0) {
+    summary.text('No Categories Selected');
+    return;
+  }
+
+  if (categoryFilter.length === 1) {
+    summary.text(categoryFilter[0]);
+    return;
+  }
+
+  summary.text(`${categoryFilter.length} categories selected`);
+}
+
+function syncCategorySelectionFromMenu() {
+  const checkedValues = $('.qr-category-option:checked').map(function() {
+    return $(this).val();
+  }).get();
+
+  if (checkedValues.length === 0) {
+    categoryFilter = [];
+  } else {
+    const allSelected = $('.qr-category-option').length === checkedValues.length;
+    categoryFilter = allSelected ? null : checkedValues;
+  }
 }
 
 function getSelectedCodes(){
@@ -775,7 +918,12 @@ function renderList(filter = '', resetPage = false) {
       (item.created_at && String(item.created_at).startsWith(dateFilter))
     );
 
-    return matchesSearch && matchesDate;
+    const matchesCategory = (
+      categoryFilter === null ||
+      categoryFilter.some(name => name.toLowerCase() === catName)
+    );
+
+    return matchesSearch && matchesDate && matchesCategory;
   });
 
   if (filteredItems.length === 0) {
@@ -811,15 +959,18 @@ function loadQrItems() {
   $.post(PROCESS_URL, { action: 'list_inventory' }, function(res){
     if (res && res.success) {
       qrItems = res.data || [];
+      populateCategoryFilter();
       renderList($('#qrSearch').val() || '');
       showQrMessage('');
     } else {
       qrItems = [];
+      populateCategoryFilter();
       renderList('');
       showQrMessage(res && res.message ? res.message : 'Failed to load QR codes.');
     }
   }, 'json').fail(function(){
     qrItems = [];
+    populateCategoryFilter();
     renderList('');
     showQrMessage('Server error while loading QR codes.');
   });
@@ -1385,6 +1536,28 @@ $(document).ready(function(){
 
   $('#qrSearch').on('keyup', function(){
     renderList($(this).val(), true);
+  });
+
+  $(document).on('change', '#qrCategoryAll', function() {
+    if ($(this).is(':checked')) {
+      categoryFilter = null;
+      $('.qr-category-option').prop('checked', true);
+    } else {
+      categoryFilter = [];
+      $('.qr-category-option').prop('checked', false);
+    }
+    populateCategoryFilter();
+    renderList($('#qrSearch').val() || '', true);
+  });
+
+  $(document).on('change', '.qr-category-option', function() {
+    syncCategorySelectionFromMenu();
+    populateCategoryFilter();
+    renderList($('#qrSearch').val() || '', true);
+  });
+
+  $(document).on('click mousedown', '#qrCategoryFilterMenu', function(e) {
+    e.stopPropagation();
   });
 
   $('#printLayout').on('change', function(){

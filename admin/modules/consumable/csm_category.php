@@ -89,6 +89,32 @@ $categories = getAllCSMCategoriesWithPrimary();
             cursor: default;
         }
         .thumb-wrap { display: flex; align-items: center; justify-content: center; }
+        .inv-thumb-wrap {
+            width: 56px;
+            height: 56px;
+            border: 1px solid #dee2e6;
+            border-radius: 10px;
+            background: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        .inv-thumb-wrap img {
+            width: 56px;
+            height: 56px;
+            object-fit: cover;
+            display: block;
+        }
+        .inv-thumb-fallback {
+            font-size: 24px;
+            line-height: 1;
+            color: #6c757d;
+        }
+        .inv-thumb-click {
+            cursor: pointer;
+            display: inline-flex;
+        }
 
         .preview-image {
             max-width: 200px;
@@ -528,14 +554,19 @@ function formatDate(val){
 function renderMainThumb(row){
     const thumb = row.primary_image ? absUrl(row.primary_image) : '';
     const full = thumb;
-    const name = row.item_category_name || '';
 
     if (thumb) {
-        return `<div class="thumb-wrap"><img src="${thumb}" data-full="${full}" class="item-thumb js-thumb-preview" alt="Category photo" loading="lazy"></div>`;
+        return `
+            <div class="inv-thumb-click js-thumb-preview" data-full="${escHtml(full)}" title="Click to view">
+                <div class="inv-thumb-wrap">
+                    <img src="${escHtml(thumb)}" alt="Category photo" loading="lazy"
+                         onerror="this.remove(); this.parentNode.innerHTML='<i class=&quot;bi bi-image inv-thumb-fallback&quot;></i>';">
+                </div>
+            </div>
+        `;
     }
 
-    const initials = (String(name).trim().split(/\s+/).map(w => w.charAt(0)).filter(Boolean).slice(0,2).join('') || 'CT').toUpperCase();
-    return `<div class="thumb-wrap"><div class="item-badge" title="${escHtml(name)}">${initials}</div></div>`;
+    return `<div class="inv-thumb-wrap"><i class="bi bi-image inv-thumb-fallback"></i></div>`;
 }
 function openViewModalFromRow(row){
     if(!row || !row.primary_image) return;
@@ -725,7 +756,7 @@ $(function(){
 });
 
 /* main image preview click */
-$('#categoryTable').on('click', '.js-thumb-preview, .item-badge', function() {
+$('#categoryTable').on('click', '.js-thumb-preview', function() {
     const full = $(this).data('full') || $(this).attr('src');
     if (!full) return;
     $('#viewImageTitle').text('Category Image');
@@ -871,7 +902,7 @@ function populateCategoryManager(res, focusImages){
     if (row && row.primary_image) {
         $('#currentPhotoDisplay').html(`<img src="${absUrl(row.primary_image)}" class="preview-image" alt="Current image">`);
     } else {
-        $('#currentPhotoDisplay').html('<div class="text-muted small">No image uploaded</div>');
+        $('#currentPhotoDisplay').html('<div class="inv-thumb-wrap"><i class="bi bi-image inv-thumb-fallback"></i></div><div class="text-muted small mt-2">No image uploaded</div>');
     }
 
     $('#imgCatTitle').text(row ? `${displayCode(row.item_category_code)} - ${row.item_category_name}` : `Category #${d.category_id}`);
@@ -1115,7 +1146,8 @@ function renderInvAssignRows(items, images){
 
   let html = '';
   items.forEach(it => {
-    const currentUrl = it.assigned_image_url ? absUrl(it.assigned_image_url) : '';
+    const currentImage = it.display_image || it.assigned_image_url || '';
+    const currentUrl = currentImage ? absUrl(currentImage) : '';
     const invCode = escHtml(it.inventory_code || '');
     const invName = escHtml(it.item_name || '');
     const invLabel = (invCode && invName) ? `${invCode} - ${invName}` : (invCode || invName || `Inventory #${escHtml(it.inventory_id)}`);

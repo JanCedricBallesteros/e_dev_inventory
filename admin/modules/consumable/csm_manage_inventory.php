@@ -95,6 +95,32 @@ if (!(
             cursor: pointer;
             display: inline-flex;
         }
+        .inv-thumb-wrap {
+            width: 56px;
+            height: 56px;
+            border: 1px solid #dee2e6;
+            border-radius: 10px;
+            background: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        .inv-thumb-wrap img {
+            width: 56px;
+            height: 56px;
+            object-fit: cover;
+            display: block;
+        }
+        .inv-thumb-fallback {
+            font-size: 24px;
+            line-height: 1;
+            color: #6c757d;
+        }
+        .inv-thumb-click {
+            cursor: pointer;
+            display: inline-flex;
+        }
         .img-preview {
             max-width: 100%;
             max-height: 70vh;
@@ -836,15 +862,16 @@ function initTable() {
 
                     if (url) {
                         return `
-                            <div class="thumb-wrap thumb-click js-thumb-preview" data-full="${escHtml(url)}" title="Click to view">
-                                <img class="item-thumb" src="${escHtml(url)}" alt="img"
-                                     onerror="this.remove(); this.parentNode.innerHTML='<div class=&quot;item-badge&quot;>${escHtml(((d.item_category_name || 'IT').split(/\\s+/).map(w => w.charAt(0)).join('').slice(0,2) || 'IT').toUpperCase())}</div>';">
+                            <div class="inv-thumb-click js-thumb-preview" data-full="${escHtml(url)}" title="Click to view">
+                                <div class="inv-thumb-wrap">
+                                    <img src="${escHtml(url)}" alt="img"
+                                         onerror="this.remove(); this.parentNode.innerHTML='<i class=&quot;bi bi-image inv-thumb-fallback&quot;></i>';">
+                                </div>
                             </div>
                         `;
                     }
 
-                    const initials = (String(d.item_category_name || 'IT').trim().split(/\s+/).map(w => w.charAt(0)).filter(Boolean).slice(0,2).join('') || 'IT').toUpperCase();
-                    return `<div class="thumb-wrap"><div class="item-badge">${escHtml(initials)}</div></div>`;
+                    return `<div class="inv-thumb-wrap"><i class="bi bi-image inv-thumb-fallback"></i></div>`;
                 }
             },
             {
