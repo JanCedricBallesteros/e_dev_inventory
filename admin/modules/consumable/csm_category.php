@@ -89,6 +89,32 @@ $categories = getAllCSMCategoriesWithPrimary();
             cursor: default;
         }
         .thumb-wrap { display: flex; align-items: center; justify-content: center; }
+        .inv-thumb-wrap {
+            width: 56px;
+            height: 56px;
+            border: 1px solid #dee2e6;
+            border-radius: 10px;
+            background: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        .inv-thumb-wrap img {
+            width: 56px;
+            height: 56px;
+            object-fit: cover;
+            display: block;
+        }
+        .inv-thumb-fallback {
+            font-size: 24px;
+            line-height: 1;
+            color: #6c757d;
+        }
+        .inv-thumb-click {
+            cursor: pointer;
+            display: inline-flex;
+        }
 
         .preview-image {
             max-width: 200px;
@@ -255,10 +281,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 
                             <div class="mb-3">
                                 <label class="form-label fw-semibold">Category Code</label>
-                                <div class="input-group">
-                                    <span class="input-group-text fw-semibold">CSM-</span>
-                                    <input type="text" class="form-control" id="edit_item_category_code" readonly>
-                                </div>
+                                <input type="text" class="form-control" id="edit_item_category_code" readonly>
                                 <small class="text-muted d-block mt-2">Locked.</small>
                             </div>
 
@@ -379,8 +402,8 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                   <li>File type: <strong>.csv</strong></li>
                   <li>Columns (order): <strong>Category Name</strong>, <strong>Code</strong></li>
                   <li><strong>Code</strong> is optional. If blank, system auto-generates.</li>
-                  <li>If provided, <strong>Code</strong> can be digits (e.g., <strong>1</strong>, <strong>0001</strong>, <strong>10000</strong>).</li>
-                  <li>Display will show <strong>CSM-</strong> + digits.</li>
+                  <li>If provided, <strong>Code</strong> may use letters, numbers, hyphen, or underscore.</li>
+                  <li>Examples: <strong>OFFICE</strong>, <strong>CHEM-01</strong>, <strong>LAB_SET</strong>, or <strong>1</strong>.</li>
               </ul>
             </div>
 
@@ -389,7 +412,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
               <input type="file" class="form-control" name="file"
                      id="bulkCategoryFile" accept=".csv" required>
               <small class="text-muted d-block mt-2">
-                CSV format: Category Name, Code (optional digits).
+                CSV format: Category Name, Code (optional custom or auto-generated).
               </small>
             </div>
 
@@ -480,44 +503,20 @@ function absUrl(path){
 function escHtml(s){
     return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 }
-function extractDigits(code){
-  let s = String(code ?? '').trim();
-  if(!s) return '';
-  s = s.toUpperCase().replace(/[\s\-]/g,'');
-  if(s.startsWith('CSM')) s = s.slice(3);
-  s = s.replace(/\D/g,'');
-  if(!s) return '';
-  s = s.replace(/^0+/, '');
-  return s ? s : '';
-}
-function padForDisplay(digits){
-  let d = String(digits ?? '').trim().replace(/\D/g,'');
-  if(!d) return '';
-  d = d.replace(/^0+/, '');
-  if(!d) return '';
-  if(d.length < 4) d = d.padStart(4,'0');
-  return d;
-}
-function digitsOnly(el){
-  if(!el) return;
-  let v = String(el.value ?? '');
-  v = v.replace(/\D/g,'');
-  el.value = v;
-}
 function displayCode(codeAny){
-  const d = extractDigits(codeAny);
-  const shown = padForDisplay(d);
-  return shown ? ('CSM-' + shown) : '';
-}
-function getNextCodeDigitsFromData(arr){
-    let maxNum = 0;
-    (arr || []).forEach(r => {
-        const d = extractDigits(r.item_category_code);
-        const n = parseInt(d || '0', 10);
-        if (!isNaN(n) && n > maxNum) maxNum = n;
-    });
-    const next = String(maxNum + 1);
-    return padForDisplay(next);
+    const raw = String(codeAny ?? '').trim();
+    if(!raw) return '';
+
+    const compact = raw.toUpperCase().replace(/\s+/g, '');
+    const numeric = compact.match(/^CSM(\d+)$/);
+    if (numeric) {
+        let digits = String(numeric[1] || '').replace(/^0+/, '');
+        if (!digits) digits = '0';
+        if (digits.length < 4) digits = digits.padStart(4, '0');
+        return 'CSM-' + digits;
+    }
+
+    return raw;
 }
 function formatDate(val){
     if(!val) return '';
@@ -528,14 +527,19 @@ function formatDate(val){
 function renderMainThumb(row){
     const thumb = row.primary_image ? absUrl(row.primary_image) : '';
     const full = thumb;
-    const name = row.item_category_name || '';
 
     if (thumb) {
-        return `<div class="thumb-wrap"><img src="${thumb}" data-full="${full}" class="item-thumb js-thumb-preview" alt="Category photo" loading="lazy"></div>`;
+        return `
+            <div class="inv-thumb-click js-thumb-preview" data-full="${escHtml(full)}" title="Click to view">
+                <div class="inv-thumb-wrap">
+                    <img src="${escHtml(thumb)}" alt="Category photo" loading="lazy"
+                         onerror="this.remove(); this.parentNode.innerHTML='<i class=&quot;bi bi-image inv-thumb-fallback&quot;></i>';">
+                </div>
+            </div>
+        `;
     }
 
-    const initials = (String(name).trim().split(/\s+/).map(w => w.charAt(0)).filter(Boolean).slice(0,2).join('') || 'CT').toUpperCase();
-    return `<div class="thumb-wrap"><div class="item-badge" title="${escHtml(name)}">${initials}</div></div>`;
+    return `<div class="inv-thumb-wrap"><i class="bi bi-image inv-thumb-fallback"></i></div>`;
 }
 function openViewModalFromRow(row){
     if(!row || !row.primary_image) return;
@@ -681,18 +685,14 @@ function addCategoryRow(name = '', code = '') {
 
                 <div class="col-12 col-md-3">
                     <label class="form-label fw-semibold small mb-1">Code (optional)</label>
-                    <div class="input-group input-group-sm">
-                        <span class="input-group-text fw-semibold">CSM-</span>
-                        <input
-                            type="text"
-                            class="form-control add-code-input"
-                            name="bulk_codes[]"
-                            value="${escHtml(code)}"
-                            inputmode="numeric"
-                            autocomplete="off"
-                            placeholder="Auto if blank"
-                        >
-                    </div>
+                    <input
+                        type="text"
+                        class="form-control form-control-sm add-code-input"
+                        name="bulk_codes[]"
+                        value="${escHtml(code)}"
+                        autocomplete="off"
+                        placeholder="Auto if blank or enter custom code"
+                    >
                 </div>
 
                 <div class="col-12 col-md-4">
@@ -725,7 +725,7 @@ $(function(){
 });
 
 /* main image preview click */
-$('#categoryTable').on('click', '.js-thumb-preview, .item-badge', function() {
+$('#categoryTable').on('click', '.js-thumb-preview', function() {
     const full = $(this).data('full') || $(this).attr('src');
     if (!full) return;
     $('#viewImageTitle').text('Category Image');
@@ -751,10 +751,6 @@ $('#addCategoryRows').on('click', '.btn-remove-category-row', function() {
     }
 });
 
-$('#addCategoryRows').on('input', '.add-code-input', function() {
-    digitsOnly(this);
-});
-
 $('#addCategoryRows').on('change', '.add-photo-input', function() {
     const file = this.files && this.files[0] ? this.files[0] : null;
     const wrap = $(this).siblings('.row-photo-preview');
@@ -766,10 +762,6 @@ $('#addCategoryRows').on('change', '.add-photo-input', function() {
 $('#addCategoryForm').off('submit').on('submit', function(e) {
     e.preventDefault();
     $('#addMsg').html('');
-
-    $('#addCategoryRows .add-code-input').each(function() {
-        digitsOnly(this);
-    });
 
     const fd = new FormData(this);
     fd.append('action', 'bulk_add_categories');
@@ -865,13 +857,12 @@ function populateCategoryManager(res, focusImages){
     $('#img_category_id').val(d.category_id);
     $('#edit_item_category_name').val(d.item_category_name || '');
 
-    const digits = extractDigits(d.item_category_code || '');
-    $('#edit_item_category_code').val(padForDisplay(digits));
+    $('#edit_item_category_code').val(displayCode(d.item_category_code || ''));
 
     if (row && row.primary_image) {
         $('#currentPhotoDisplay').html(`<img src="${absUrl(row.primary_image)}" class="preview-image" alt="Current image">`);
     } else {
-        $('#currentPhotoDisplay').html('<div class="text-muted small">No image uploaded</div>');
+        $('#currentPhotoDisplay').html('<div class="inv-thumb-wrap"><i class="bi bi-image inv-thumb-fallback"></i></div><div class="text-muted small mt-2">No image uploaded</div>');
     }
 
     $('#imgCatTitle').text(row ? `${displayCode(row.item_category_code)} - ${row.item_category_name}` : `Category #${d.category_id}`);
@@ -1115,7 +1106,8 @@ function renderInvAssignRows(items, images){
 
   let html = '';
   items.forEach(it => {
-    const currentUrl = it.assigned_image_url ? absUrl(it.assigned_image_url) : '';
+    const currentImage = it.display_image || it.assigned_image_url || '';
+    const currentUrl = currentImage ? absUrl(currentImage) : '';
     const invCode = escHtml(it.inventory_code || '');
     const invName = escHtml(it.item_name || '');
     const invLabel = (invCode && invName) ? `${invCode} - ${invName}` : (invCode || invName || `Inventory #${escHtml(it.inventory_id)}`);

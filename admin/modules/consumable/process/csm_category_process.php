@@ -30,49 +30,46 @@ function json_out($arr, $code = 200){
 }
 
 /**
- * Normalize any provided code into DB format:
- * - Always returns "CSM" + digits (variable length)
- * - Pads to at least 4 digits (1 => CSM0001)
- * - Keeps longer numbers (10000 => CSM10000)
- *
- * Accepts examples:
- * - "CSM0001", "csm0001", "CSM-0001", "CSM 0001"
- * - "0001", "1"
- * - "CSM10000", "CSM-00000025"
- *
- * Returns '' if invalid (no digits, non-digits, or all zeros).
+ * Normalize category code into DB format.
+ * - Numeric input still auto-normalizes to legacy "CSM0001" style.
+ * - Custom codes may now be alphanumeric with "-" / "_".
+ * - Blank remains blank so auto-generation can still happen.
  */
 function normalize_category_code_db($raw, $minDigits = 4) {
     $raw = strtoupper(trim((string)$raw));
     if ($raw === '') return '';
 
-    $raw = preg_replace('/[\s\-]/', '', $raw);
+    $raw = preg_replace('/\s+/', '', $raw);
 
-    if (strpos($raw, 'CSM') === 0) {
-        $raw = substr($raw, 3);
+    if (preg_match('/^CSM(\d+)$/', $raw, $m) || preg_match('/^(\d+)$/', $raw, $m)) {
+        $digits = ltrim((string)$m[1], '0');
+        if ($digits === '') return '';
+
+        $minDigits = max(1, (int)$minDigits);
+        if (strlen($digits) < $minDigits) {
+            $digits = str_pad($digits, $minDigits, '0', STR_PAD_LEFT);
+        }
+
+        return 'CSM' . $digits;
     }
 
-    if ($raw === '' || !ctype_digit($raw)) return '';
-
-    $digits = ltrim($raw, '0');
-    if ($digits === '') return '';
-
-    $minDigits = max(1, (int)$minDigits);
-    if (strlen($digits) < $minDigits) {
-        $digits = str_pad($digits, $minDigits, '0', STR_PAD_LEFT);
+    if (preg_match('/^CSM[-_](.+)$/', $raw, $m)) {
+        $raw = (string)$m[1];
     }
 
-    return 'CSM' . $digits;
+    if ($raw === '' || strpos($raw, 'CSM') === 0) return '';
+    if (!preg_match('/^[A-Z0-9][A-Z0-9_-]*$/', $raw)) return '';
+
+    return $raw;
 }
 
 /**
- * Normalize any stored code for comparison (removes dash/space, upper).
- * "CSM-0001" -> "CSM0001"
+ * Normalize any stored code for comparison.
+ * - Legacy numeric codes compare as "CSM0001"
+ * - Custom codes compare as exact uppercase code without spaces
  */
 function normalize_catcode_php($code) {
-    $code = strtoupper(trim((string)$code));
-    $code = str_replace([' ', '-'], '', $code);
-    return $code;
+    return strtoupper(preg_replace('/\s+/', '', trim((string)$code)));
 }
 
 /**
@@ -94,6 +91,11 @@ function code_db_digits($dbCode) {
 
     $digits = ltrim($digits, '0');
     return ($digits === '') ? '' : $digits;
+}
+
+function is_legacy_numeric_category_code($code) {
+    $code = normalize_catcode_php($code);
+    return ($code !== '' && preg_match('/^CSM\d+$/', $code));
 }
 
 /** Concurrency-safe lock */
@@ -144,26 +146,37 @@ function get_next_category_digits_locked() {
  */
 function category_code_exists_any_format($dbCode) {
     $dbCodeNorm = normalize_catcode_php($dbCode);
-    if ($dbCodeNorm === '' || strpos($dbCodeNorm, 'CSM') !== 0) return false;
+    if ($dbCodeNorm === '') return false;
 
-    $digits = code_db_digits($dbCodeNorm);
-    if ($digits === '') return false;
+    if (is_legacy_numeric_category_code($dbCodeNorm)) {
+        $digits = code_db_digits($dbCodeNorm);
+        if ($digits === '') return false;
 
-    $dbCodeEsc = _esc($dbCodeNorm);
-    $digitsEsc = _esc($digits);
+        $dbCodeEsc = _esc(preg_replace('/[\s\-]/', '', $dbCodeNorm));
+        $digitsEsc = _esc($digits);
 
-    $sql = "
-      SELECT category_id
-      FROM csm_inventory_category
-      WHERE
-        REPLACE(REPLACE(UPPER(TRIM(item_category_code)), ' ', ''), '-', '') = '{$dbCodeEsc}'
-        OR
-        (
-          TRIM(item_category_code) REGEXP '^[0-9]+$'
-          AND CAST(TRIM(item_category_code) AS UNSIGNED) = CAST('{$digitsEsc}' AS UNSIGNED)
-        )
-      LIMIT 1
-    ";
+        $sql = "
+          SELECT category_id
+          FROM csm_inventory_category
+          WHERE
+            REPLACE(REPLACE(UPPER(TRIM(item_category_code)), ' ', ''), '-', '') = '{$dbCodeEsc}'
+            OR
+            (
+              TRIM(item_category_code) REGEXP '^[0-9]+$'
+              AND CAST(TRIM(item_category_code) AS UNSIGNED) = CAST('{$digitsEsc}' AS UNSIGNED)
+            )
+          LIMIT 1
+        ";
+    } else {
+        $dbCodeEsc = _esc($dbCodeNorm);
+        $sql = "
+          SELECT category_id
+          FROM csm_inventory_category
+          WHERE UPPER(REPLACE(TRIM(item_category_code), ' ', '')) = '{$dbCodeEsc}'
+          LIMIT 1
+        ";
+    }
+
     $res = call_mysql_query($sql);
     return ($res && call_mysql_fetch_array($res)) ? true : false;
 }
@@ -322,7 +335,7 @@ try {
 
             if ($rawInputCode !== '' && $providedDbCode === '') {
                 http_response_code(422);
-                echo "Invalid Category Code. Use digits or CSM formats (e.g., 1 / 0001 / CSM0001 / CSM-0001) or leave blank.";
+                echo "Invalid Category Code. Use letters, numbers, '-' or '_' (for example OFFICE, CHEM-01, LAB_SET) or leave blank to auto-generate.";
                 exit();
             }
 
@@ -466,7 +479,7 @@ try {
                 $name = preg_replace('/\s+/', ' ', trim($nameRaw));
 
                 $codeRaw = isset($bulkCodes[$i]) ? trim((string)$bulkCodes[$i]) : '';
-                $codeForReturn = preg_replace('/\D/', '', $codeRaw);
+                    $codeForReturn = strtoupper(preg_replace('/\s+/', '', $codeRaw));
 
                 if ($name === '') {
                     $skipped++;
@@ -519,7 +532,7 @@ try {
 
                     $normalizedKey = normalize_catcode_php($normalized);
                     $digitsOnly = code_db_digits($normalizedKey);
-                    $codeForReturn = $digitsOnly !== '' ? ((strlen($digitsOnly) < 4) ? str_pad($digitsOnly, 4, '0', STR_PAD_LEFT) : $digitsOnly) : $codeForReturn;
+                    $codeForReturn = $digitsOnly !== '' ? ('CSM-' . ((strlen($digitsOnly) < 4) ? str_pad($digitsOnly, 4, '0', STR_PAD_LEFT) : $digitsOnly)) : $normalizedKey;
 
                     if (isset($seenCodes[$normalizedKey])) {
                         $skipped++;
@@ -562,9 +575,9 @@ try {
 
                     $finalDbCode = $candidateKey;
                     $digitsOnly = code_db_digits($finalDbCode);
-                    $codeForReturn = ($digitsOnly !== '' && strlen($digitsOnly) < 4)
-                        ? str_pad($digitsOnly, 4, '0', STR_PAD_LEFT)
-                        : $digitsOnly;
+                    $codeForReturn = ($digitsOnly !== '')
+                        ? ('CSM-' . ((strlen($digitsOnly) < 4) ? str_pad($digitsOnly, 4, '0', STR_PAD_LEFT) : $digitsOnly))
+                        : $finalDbCode;
                 }
 
                 $ok = call_mysql_query("
@@ -588,7 +601,7 @@ try {
                     $find = call_mysql_query("
                         SELECT category_id
                         FROM csm_inventory_category
-                        WHERE REPLACE(REPLACE(UPPER(TRIM(item_category_code)), ' ', ''), '-', '') = '" . _esc($finalDbCode) . "'
+                        WHERE UPPER(REPLACE(TRIM(item_category_code), ' ', '')) = '" . _esc(normalize_catcode_php($finalDbCode)) . "'
                         LIMIT 1
                     ");
                     $frow = $find ? call_mysql_fetch_array($find) : null;
@@ -827,6 +840,12 @@ try {
             $catCode = normalize_catcode_php($cat['item_category_code'] ?? '');
             if ($catCode === '') json_out(['success'=>false,'message'=>'Category code missing.'], 422);
 
+            if (is_legacy_numeric_category_code($catCode)) {
+                $whereCategory = "REPLACE(REPLACE(UPPER(TRIM(i.item_category_code)), ' ', ''), '-', '') = '" . _esc(preg_replace('/[\s\-]/', '', $catCode)) . "'";
+            } else {
+                $whereCategory = "UPPER(REPLACE(TRIM(i.item_category_code), ' ', '')) = '" . _esc($catCode) . "'";
+            }
+
             $sql = "
                 SELECT
                     i.inventory_id,
@@ -845,10 +864,30 @@ try {
                         LIMIT 1
                       )
                       ELSE CONCAT('upload/category/', i.item_category_img)
-                    END AS assigned_image_url
+                    END AS assigned_image_url,
+                    COALESCE(
+                      CASE
+                        WHEN i.item_category_img IS NULL OR i.item_category_img = '' THEN NULL
+                        WHEN i.item_category_img LIKE 'upload/%' THEN i.item_category_img
+                        WHEN i.item_category_img LIKE '%/%' THEN i.item_category_img
+                        WHEN i.item_category_img REGEXP '^[0-9]+$' THEN (
+                          SELECT ci.file_url
+                          FROM csm_inventory_category_images ci
+                          WHERE ci.image_id = CAST(i.item_category_img AS UNSIGNED)
+                          LIMIT 1
+                        )
+                        ELSE CONCAT('upload/category/', i.item_category_img)
+                      END,
+                      (
+                        SELECT ci_primary.file_url
+                        FROM csm_inventory_category_images ci_primary
+                        WHERE ci_primary.category_id = {$category_id}
+                        ORDER BY (CASE WHEN IFNULL(ci_primary.is_primary,0)=1 THEN 0 ELSE 1 END), ci_primary.image_id ASC
+                        LIMIT 1
+                      )
+                    ) AS display_image
                 FROM csm_inventory i
-                WHERE REPLACE(REPLACE(UPPER(TRIM(i.item_category_code)), ' ', ''), '-', '') =
-                      '"._esc($catCode)."'
+                WHERE {$whereCategory}
                 ORDER BY i.inventory_id DESC
             ";
 
