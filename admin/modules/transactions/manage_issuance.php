@@ -34,6 +34,7 @@ if (!(role_has("ADMIN") || $staffAccess)) {
         .facility-code { font-family: monospace; font-weight: 700; }
         .floor-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
         .floor-badge { background: #eef5ff; color: #1e3a8a; border: 1px dashed #a5b4fc; border-radius: 999px; font-size: 0.75rem; padding: 2px 8px; }
+        .floor-empty { color: #e9f2ff; font-weight: 600; }
         .floor-group { margin-top: 8px; border-left: 3px solid #e2e8f0; padding-left: 8px; }
         .floor-header { font-weight: 600; font-size: 0.85rem; color: #334155; display: flex; align-items: center; gap: 6px; margin: 6px 0; cursor: pointer; user-select: none; }
         .floor-header .chevron { margin-left: auto; transition: transform 0.15s ease; }
@@ -56,8 +57,9 @@ if (!(role_has("ADMIN") || $staffAccess)) {
         .img-preview { max-width: 100%; max-height: 70vh; border-radius: 8px; }
         .tabulator { font-size: 0.875rem; }
         .select2-container .select2-selection--single { min-height: 38px; }
-        .select2-container--default .select2-selection--single .select2-selection__rendered { line-height: 36px; }
+        .select2-container--default .select2-selection--single .select2-selection__rendered { line-height: 1.2; padding-top: 6px; padding-bottom: 6px; white-space: normal; }
         .select2-container--default .select2-selection--single .select2-selection__arrow { height: 36px; }
+        #assignModal .select2-container--default .select2-selection--single { height: auto; min-height: 38px; }
     </style>
 </head>
 
@@ -166,7 +168,23 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                     </div>
                     <div class="col-12">
                         <label class="form-label fw-semibold">Selected Item</label>
-                        <input type="text" id="assignSelected" class="form-control" readonly>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered align-middle mb-0" id="assignPreviewTable">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width:60px;">Image</th>
+                                        <th>Item</th>
+                                        <th style="width:160px;">Category</th>
+                                        <th style="width:90px;">Unit</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="assignPreviewBody">
+                                    <tr>
+                                        <td colspan="4" class="text-muted small">No item selected.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                     <div class="col-12 col-md-4">
                         <label class="form-label fw-semibold">Quantity</label>
@@ -306,6 +324,49 @@ function escapeHtml(value){
         .replace(/'/g, '&#39;');
 }
 
+function getInitials(value){
+    const text = String(value || '').trim();
+    if (!text) return 'NA';
+    const parts = text.split(/\s+/).slice(0, 2);
+    return parts.map(p => p.charAt(0)).join('').toUpperCase();
+}
+
+function renderAssignPreview(item){
+    const $body = $('#assignPreviewBody');
+    if (!item) {
+        $body.html('<tr><td colspan="4" class="text-muted small">No item selected.</td></tr>');
+        return;
+    }
+    const img = item.category_photo_thumb_url || item.category_photo_url || '';
+    const cat = item.item_category_name || '';
+    const initials = getInitials(cat || item.item_code || '');
+    const imgHtml = img
+        ? `<div class="thumb-wrap"><img class="item-thumb" src="${escapeHtml(img)}" loading="lazy" alt="Item image"></div>`
+        : `<div class="thumb-wrap"><div class="item-badge" title="${escapeHtml(cat)}">${escapeHtml(initials)}</div></div>`;
+
+    const code = escapeHtml(item.item_code || '-');
+    const desc = escapeHtml(item.item_description || '-');
+    const module = item.module_type ? `<span class="badge bg-light text-dark border ms-1">${escapeHtml(item.module_type)}</span>` : '';
+    const prop = item.property_number ? `<div class="small text-muted">Property No: ${escapeHtml(item.property_number)}</div>` : '';
+    const serial = item.serial_number ? `<div class="small text-muted">Serial: ${escapeHtml(item.serial_number)}</div>` : '';
+
+    const unit = escapeHtml(item.unit || '-');
+
+    $body.html(`
+        <tr>
+            <td>${imgHtml}</td>
+            <td>
+                <div class="fw-semibold">${code}${module}</div>
+                <div>${desc}</div>
+                ${prop}
+                ${serial}
+            </td>
+            <td>${escapeHtml(cat || '-')}</td>
+            <td>${unit}</td>
+        </tr>
+    `);
+}
+
 function normalizeFloorList(list){
     const out = [];
     (list || []).forEach(function(item){
@@ -399,7 +460,7 @@ function renderFacilities(){
         const floors = Array.isArray(f.floors) ? f.floors : [];
         const floorBadges = floors.length
             ? floors.map(function(fl){ return `<span class="floor-badge">${escapeHtml(fl)}</span>`; }).join('')
-            : '<span class="small-muted">No floors set</span>';
+            : '<span class="floor-empty">No floors set</span>';
         wrap.append(`
             <div class="facility-group">
                 <div class="facility-header ${isActive ? 'active' : ''}" data-id="${f.facility_id}">
@@ -517,6 +578,7 @@ function renderUnits(){
         container.html('<div class="small-muted">No units yet for this facility.</div>');
         return;
     }
+    const singleFloor = orderedKeys.length === 1;
     orderedKeys.forEach(function(key){
         const rows = groups[key] || [];
         const floorKey = normalizeFloorKey(key);
@@ -524,6 +586,7 @@ function renderUnits(){
         const isActiveFloor = selectedFloor && normalizeFloorKey(selectedFloor) === floorKey;
         let isCollapsed = Object.prototype.hasOwnProperty.call(collapseMap, floorKey) ? !!collapseMap[floorKey] : true;
         if (isActiveFloor) isCollapsed = false;
+        if (singleFloor) isCollapsed = false;
         let html = `
             <div class="floor-group" data-floor-key="${safeKey}">
                 <div class="floor-header ${isCollapsed ? 'collapsed' : ''} ${isActiveFloor ? 'active' : ''}" data-floor="${encodeURIComponent(floorKey)}"><i class="bi bi-layers"></i> ${safeKey} <span class="chevron"><i class="bi bi-chevron-down"></i></span></div>
@@ -646,7 +709,7 @@ function applyPickedItem(item){
     if (!item) return;
     $('#assignSourceItemId').val(item.source_item_id || '');
     $('#assignItemCode').val(item.item_code || '');
-    $('#assignSelected').val((item.item_code || '') + ' - ' + (item.item_description || ''));
+    renderAssignPreview(item);
     if ($('#assignModule').val() === 'AST') {
         $('#assignQty').val(1).prop('readonly', true);
     } else {
@@ -700,7 +763,7 @@ function initAssignableItemSelect2(){
     $sel.off('select2:clear').on('select2:clear', function(){
         $('#assignSourceItemId').val('');
         $('#assignItemCode').val('');
-        $('#assignSelected').val('');
+        renderAssignPreview(null);
     });
 }
 
@@ -942,7 +1005,7 @@ $(document).ready(function(){
 
     $('#btnAssignItem').on('click', function(){
         if (!selectedFacility || !selectedUnit) return;
-        $('#assignSelected').val('');
+        renderAssignPreview(null);
         $('#assignSourceItemId').val('');
         $('#assignItemCode').val('');
         $('#assignSearch').val('');
@@ -961,7 +1024,7 @@ $(document).ready(function(){
     });
 
     $('#assignModule').on('change', function(){
-        $('#assignSelected').val('');
+        renderAssignPreview(null);
         $('#assignSourceItemId').val('');
         $('#assignItemCode').val('');
         $('#assignSearch').val('');

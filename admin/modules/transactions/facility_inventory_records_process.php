@@ -485,6 +485,7 @@ try {
                 $codeCol = fr_first_existing_col('csm_inventory', array('inventory_system_item_code', 'item_code'), 'inventory_system_item_code');
                 $qtyCol = fr_first_existing_col('csm_inventory', array('current_quantity', 'current_unit_quantity'), '');
                 $unitCol = fr_first_existing_col('csm_inventory', array('unit'), '');
+                $catCodeCol = fr_first_existing_col('csm_inventory', array('item_category_code'), '');
                 $hasStatus = fr_column_exists('csm_inventory', 'status');
 
                 $where = "WHERE 1=1";
@@ -502,18 +503,25 @@ try {
                         OR CONCAT_WS(' ', c.{$codeCol}, c.item_description) LIKE '{$s}'
                     )";
                 }
+                $joinCat = ($catCodeCol !== '') ? "LEFT JOIN csm_inventory_category ccat ON c.{$catCodeCol} = ccat.item_category_code" : "LEFT JOIN csm_inventory_category ccat ON 1=0";
                 $sql = "SELECT
                             c.inventory_id AS source_item_id,
                             c.{$codeCol} AS item_code,
                             c.item_description,
                             " . ($qtyCol !== '' ? "c.{$qtyCol}" : "NULL") . " AS available_qty,
-                            " . ($unitCol !== '' ? "c.{$unitCol}" : "''") . " AS unit
+                            " . ($unitCol !== '' ? "c.{$unitCol}" : "''") . " AS unit,
+                            c.item_category_img AS csm_category_img,
+                            ccat.item_category_name AS csm_category_name
                         FROM csm_inventory c
+                        {$joinCat}
                         {$where}
                         ORDER BY c.{$codeCol} ASC";
             } else {
                 $module_type = 'AST';
                 $codeCol = fr_first_existing_col('ast_inventory', array('property_code', 'item_code'), 'property_code');
+                $catIdCol = fr_first_existing_col('ast_inventory', array('category_id'), 'category_id');
+                $propCol = fr_first_existing_col('ast_inventory', array('property_number'), '');
+                $serialCol = fr_first_existing_col('ast_inventory', array('serial_number'), '');
                 $hasAvailFlag = fr_column_exists('ast_inventory', 'is_available');
                 $availQtyCol = fr_first_existing_col('ast_inventory', array('available_qty'), '');
 
@@ -536,8 +544,13 @@ try {
                             a.item_id AS source_item_id,
                             a.{$codeCol} AS item_code,
                             a.item_description,
-                            a.unit
+                            a.unit,
+                            " . ($propCol !== '' ? "a.{$propCol}" : "''") . " AS property_number,
+                            " . ($serialCol !== '' ? "a.{$serialCol}" : "''") . " AS serial_number,
+                            ast_cat.category_photo AS ast_category_photo,
+                            ast_cat.item_category_name AS ast_category_name
                         FROM ast_inventory a
+                        LEFT JOIN ast_inventory_category ast_cat ON ast_cat.category_id = a.{$catIdCol}
                         {$where}
                         ORDER BY a.{$codeCol} ASC";
             }
@@ -545,6 +558,7 @@ try {
             if ($res) {
                 while ($row = call_mysql_fetch_array($res)) {
                     $row['module_type'] = $module_type;
+                    fr_resolve_row_images($row);
                     $rows[] = $row;
                 }
             }

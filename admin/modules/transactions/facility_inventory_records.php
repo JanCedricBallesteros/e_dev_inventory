@@ -34,6 +34,7 @@ if (!(role_has("ADMIN") || $staffAccess)) {
         .facility-code { font-family: monospace; font-weight: 700; }
         .floor-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
         .floor-badge { background: #eef5ff; color: #1e3a8a; border: 1px dashed #a5b4fc; border-radius: 999px; font-size: 0.75rem; padding: 2px 8px; }
+        .floor-empty { color: #e9f2ff; font-weight: 600; }
         .floor-group { margin-top: 8px; border-left: 3px solid #e2e8f0; padding-left: 8px; }
         .floor-header { font-weight: 600; font-size: 0.85rem; color: #334155; display: flex; align-items: center; gap: 6px; margin: 6px 0; cursor: pointer; user-select: none; }
         .floor-header .chevron { margin-left: auto; transition: transform 0.15s ease; }
@@ -203,13 +204,18 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
             <div class="modal-body">
                 <input type="hidden" id="unitId">
                 <div class="mb-2">
-                    <label class="form-label fw-semibold">Unit Type</label>
+                    <label class="form-label fw-semibold">Unit Type
+                        <span class="text-muted ms-1" data-bs-toggle="tooltip" data-bs-placement="top" title="Type a unit type (e.g., ROOM, OFFICE) and press Enter to add it if it is not listed.">
+                            <i class="bi bi-info-circle"></i>
+                        </span>
+                    </label>
                     <select id="unitType" class="form-select">
+                        <option value="">Select existing or type a new unit type</option>
                         <option value="ROOM">ROOM</option>
                         <option value="OFFICE">OFFICE</option>
                         <option value="LABORATORY">LABORATORY</option>
-                        <option value="OTHER">OTHER</option>
                     </select>
+                    <div class="small text-muted mt-1">Tip: type a unit type and press Enter to add it.</div>
                 </div>
                 <div class="mb-2">
                     <label class="form-label fw-semibold">Unit Code</label>
@@ -516,7 +522,7 @@ function renderFacilities(){
         const floors = Array.isArray(f.floors) ? f.floors : [];
         const floorBadges = floors.length
             ? floors.map(function(fl){ return `<span class="floor-badge">${escapeHtml(fl)}</span>`; }).join('')
-            : '<span class="small-muted">No floors set</span>';
+            : '<span class="floor-empty">No floors set</span>';
         wrap.append(`
             <div class="facility-group">
                 <div class="facility-header ${isActive ? 'active' : ''}" data-id="${f.facility_id}">
@@ -668,6 +674,20 @@ function initUserSelect2(){
 
 }
 
+function initUnitTypeSelect2(){
+    if (!$.fn.select2) return;
+    if ($('#unitType').hasClass('select2-hidden-accessible')) {
+        $('#unitType').select2('destroy');
+    }
+    $('#unitType').select2({
+        placeholder: 'Select existing or type a new unit type',
+        allowClear: true,
+        tags: true,
+        width: '100%',
+        dropdownParent: $('#unitModal')
+    });
+}
+
 function renderUnits(){
     if (!selectedFacility) return;
     const container = $(`.facility-units[data-facility-id="${selectedFacility.facility_id}"]`);
@@ -692,6 +712,7 @@ function renderUnits(){
         container.html('<div class="small-muted">No units yet for this facility.</div>');
         return;
     }
+    const singleFloor = orderedKeys.length === 1;
     orderedKeys.forEach(function(key){
         const rows = groups[key] || [];
         const floorKey = normalizeFloorKey(key);
@@ -699,6 +720,7 @@ function renderUnits(){
         const isActiveFloor = selectedFloor && normalizeFloorKey(selectedFloor) === floorKey;
         let isCollapsed = Object.prototype.hasOwnProperty.call(collapseMap, floorKey) ? !!collapseMap[floorKey] : true;
         if (isActiveFloor) isCollapsed = false;
+        if (singleFloor) isCollapsed = false;
         const dataFloor = encodeURIComponent(floorKey);
         let html = `
             <div class="floor-group" data-floor-key="${safeKey}">
@@ -859,10 +881,18 @@ function initAssignmentTable(){
 $(document).ready(function(){
     initAssignmentTable();
     initUserSelect2();
+    initUnitTypeSelect2();
     loadFacilities(applyInitialSelectionFromQuery);
 
     if (!$('#floorRows .floor-row').length) {
         resetFloorRows([]);
+    }
+
+    if (typeof bootstrap !== 'undefined') {
+        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        tooltipTriggerList.forEach(function (tooltipTriggerEl) {
+            new bootstrap.Tooltip(tooltipTriggerEl);
+        });
     }
 
     $('#facilityList').on('click', '.facility-header', function(e){
@@ -998,7 +1028,7 @@ $(document).ready(function(){
         loadFacilityItems();
         if (!selectedFacility) return;
         $('#unitId').val('');
-        $('#unitType').val('ROOM');
+        $('#unitType').val('ROOM').trigger('change');
         $('#unitCode').val('');
         $('#unitName').val('');
         $('#unitFloor').html(buildFloorOptions(selectedFacility, ''));
@@ -1032,7 +1062,7 @@ $(document).ready(function(){
         const u = unitList.find(x => String(x.unit_id) === String(id));
         if (!u) return;
         $('#unitId').val(u.unit_id || '');
-        $('#unitType').val(u.unit_type || 'ROOM');
+        $('#unitType').val(u.unit_type || 'ROOM').trigger('change');
         $('#unitCode').val(u.unit_code || '');
         $('#unitName').val(u.unit_name || '');
         $('#unitFloor').html(buildFloorOptions(selectedFacility, u.floor_label || ''));
