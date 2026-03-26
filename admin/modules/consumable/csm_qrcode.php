@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 // csm_qrcode.php
 require_once dirname(__DIR__, 3) . '/config/config.php';
 require GLOBAL_FUNC;
@@ -27,7 +27,56 @@ if (!(
     include_once DOMAIN_PATH . '/global/include_top.php';
     ?>
     <style>
-        .qr-topbar .input-group { max-width:380px; }
+        .qr-topbar{
+            align-items: stretch;
+        }
+        .qr-search-wrap{
+            flex: 1 1 380px;
+            min-width: 260px;
+        }
+        .qr-topbar .input-group{
+            width: 100%;
+            max-width: 460px;
+        }
+        .qr-actions{
+            display:flex;
+            flex-wrap:wrap;
+            align-items:center;
+            justify-content:flex-end;
+            gap:.5rem;
+            flex: 1 1 520px;
+        }
+        .qr-actions > *{
+            flex: 0 0 auto;
+        }
+        .qr-actions .form-check{
+            min-height: 38px;
+            display:flex;
+            align-items:center;
+            padding-left: 1.75rem;
+            margin: 0;
+        }
+        .qr-actions .btn,
+        .qr-actions .form-select{
+            min-height: 38px;
+        }
+        .qr-meta-bar{
+            display:flex;
+            flex-wrap:wrap;
+            align-items:center;
+            justify-content:space-between;
+            gap:.75rem;
+        }
+        .qr-meta-actions{
+            display:flex;
+            flex-wrap:wrap;
+            align-items:center;
+            justify-content:flex-end;
+            gap:.5rem;
+        }
+        .qr-meta-actions .form-select{
+            min-width: 88px;
+        }
 
         .qr-preview-item{
             position:relative;
@@ -94,6 +143,11 @@ if (!(
             --tag-header:#b9d4ea;
             --tag-sub:#cfe3f5;
             --tag-text:#111;
+            --detailed-border:#1E3A8A;
+            --detailed-grid:#1E3A8A;
+            --detailed-header:#1E3A8A;
+            --detailed-sub:#FFFFFF;
+            --detailed-text:#1E3A8A;
 
             --detailed-w: 100mm;
             --detailed-h: 48mm;
@@ -113,7 +167,7 @@ if (!(
             width: var(--detailed-w);
             height: auto;
             min-height: var(--detailed-h);
-            border: 2px solid var(--tag-border);
+            border: 2px solid var(--detailed-border);
             border-radius: 1mm;
             overflow: visible;
             display:flex;
@@ -125,19 +179,23 @@ if (!(
             grid-template-columns: 18mm 1fr 14mm;
             min-height: 12mm;
             align-items:stretch;
-            border-bottom: 2px solid var(--tag-border);
+            border-bottom: 2px solid var(--detailed-border);
             box-sizing:border-box;
         }
 
         .tag-ccc{
-            background: var(--tag-header);
-            border-right: 2px solid var(--tag-border);
+            background: var(--detailed-header);
+            border-right: 2px solid var(--detailed-border);
             display:flex;
             align-items:center;
             justify-content:center;
-            font-weight:800;
-            letter-spacing:.6px;
-            font-size: 10pt;
+            padding: 1mm;
+        }
+        .tag-ccc img{
+            width: 13mm;
+            height: 10mm;
+            object-fit: contain;
+            display:block;
         }
 
         .tag-agency{
@@ -147,30 +205,27 @@ if (!(
         .tag-agency .agency{
             font-weight:700;
             font-size: 7.5pt;
+            color:var(--detailed-text);
         }
         .tag-agency .subtitle{
-            color:#b02a37;
+            color:var(--detailed-text);
             font-weight:800;
             font-size: 7pt;
             margin-top: .6mm;
         }
 
         .tag-logo{
-            border-left: 2px solid var(--tag-border);
+            border-left: 2px solid var(--detailed-border);
             display:flex;
             align-items:center;
             justify-content:center;
+            padding: 1mm;
         }
-        .tag-logo .logo-circle{
-            width: 9mm; height: 9mm;
-            border-radius: 50%;
-            border: 2px solid #b02a37;
-            display:flex;
-            align-items:center;
-            justify-content:center;
-            font-size: 7pt;
-            font-weight:800;
-            color:#b02a37;
+        .tag-logo img{
+            width: 10mm;
+            height: 10mm;
+            object-fit: contain;
+            display:block;
         }
 
         .tag-body{
@@ -180,7 +235,7 @@ if (!(
         }
 
         .tag-form{
-            border-right: 2px solid var(--tag-border);
+            border-right: 2px solid var(--detailed-border);
             height:auto;
             box-sizing:border-box;
             display:block;
@@ -189,19 +244,19 @@ if (!(
         .tag-row{
             display:grid;
             grid-template-columns: 20mm 1fr;
-            border-bottom: 1px solid var(--tag-grid);
+            border-bottom: 1px solid var(--detailed-grid);
             box-sizing:border-box;
             min-height: 5.2mm;
         }
         .tag-row:last-child{ border-bottom:none; }
 
         .tag-label{
-            background:#fafafa;
-            border-right:1px solid var(--tag-grid);
+            background:var(--detailed-sub);
+            border-right:1px solid var(--detailed-grid);
             padding: 0.9mm 1.2mm;
             font-size: 6.6pt;
             font-style: italic;
-            color:#333;
+            color:var(--detailed-text);
             display:flex;
             align-items:center;
             box-sizing:border-box;
@@ -211,6 +266,7 @@ if (!(
             padding: 0.9mm 1.2mm;
             font-size: 6.8pt;
             font-weight: 600;
+            color:var(--detailed-text);
             display:block;
             box-sizing:border-box;
             white-space: normal;
@@ -251,20 +307,20 @@ if (!(
         .tag-remarks{
             min-height: 9mm;
             height:auto;
-            border-top: 2px solid var(--tag-border);
+            border-top: 2px solid var(--detailed-border);
             display:grid;
             grid-template-columns: 32mm 1fr;
             box-sizing:border-box;
         }
         .tag-remarks .tag-label{
-            background: var(--tag-sub);
-            border-right: 1px solid var(--tag-border);
+            background: var(--detailed-sub);
+            border-right: 1px solid var(--detailed-border);
             font-size: 6.6pt;
         }
         .tag-remarks .tag-value{
-            background: var(--tag-sub);
+            background: var(--detailed-sub);
             font-weight: 700;
-            color:#111;
+            color:var(--detailed-text);
             font-size: 6.8pt;
             white-space: normal;
             overflow: visible;
@@ -329,6 +385,35 @@ if (!(
             .qr-preview-stage .simple-sticker{ transform:scale(.96); transform-origin: top center; margin-bottom:-6px; }
         }
         @media (max-width: 768px){
+            .qr-search-wrap,
+            .qr-actions,
+            .qr-meta-bar > *,
+            .qr-meta-actions{
+                width:100%;
+            }
+            .qr-actions{
+                justify-content:flex-start;
+            }
+            .qr-actions .btn,
+            .qr-actions .dropdown,
+            .qr-actions .form-select{
+                width:100%;
+            }
+            .qr-actions .form-check{
+                width:100%;
+                min-height:auto;
+                padding-top:.45rem;
+                padding-bottom:.45rem;
+                border:1px solid #dee2e6;
+                border-radius:.5rem;
+                background:#fff;
+            }
+            .qr-meta-actions{
+                justify-content:flex-start;
+            }
+            .qr-meta-actions #qrPagination{
+                width:100%;
+            }
             .qr-preview-stage .tag-sticker{ transform:scale(.86); transform-origin: top center; margin-bottom:-26px; }
             .qr-preview-stage .simple-sticker{ transform:scale(.92); transform-origin: top center; margin-bottom:-10px; }
         }
@@ -349,13 +434,15 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
             </div>
 
             <div class="card-body mt-3 bg-white">
-                <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3 qr-topbar">
-                    <div class="input-group">
-                        <span class="input-group-text"><i class="bi bi-search"></i></span>
-                        <input type="text" id="qrSearch" class="form-control" placeholder="Search item code, description, category, source of funds, or QR verification">
+                <div class="d-flex flex-wrap gap-2 justify-content-between mb-3 qr-topbar">
+                    <div class="qr-search-wrap">
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="bi bi-search"></i></span>
+                            <input type="text" id="qrSearch" class="form-control" placeholder="Search item code, description, category, source of funds, or QR verification">
+                        </div>
                     </div>
 
-                    <div class="d-flex align-items-center flex-wrap gap-2">
+                    <div class="qr-actions">
                         <div class="dropdown">
                             <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" id="btnDateBatch" data-bs-toggle="dropdown" aria-expanded="false">
                                 <i class="bi bi-calendar3"></i>&ensp;Select by Date
@@ -387,9 +474,9 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                     </div>
                 </div>
 
-                <div class="d-flex flex-wrap align-items-center justify-content-between mb-2 gap-2">
+                <div class="qr-meta-bar mb-2">
                     <div id="qrPageInfo" class="text-muted small"></div>
-                    <div class="d-flex align-items-center gap-2">
+                    <div class="qr-meta-actions">
                         <label class="mb-0 small text-muted">Per page:</label>
                         <select id="qrPageSize" class="form-select form-select-sm" style="width:auto;">
                             <option value="20">20</option>
@@ -439,7 +526,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 
         <div class="mt-2 small">
           <span class="text-muted">Last scanned:</span>
-          <span id="lastScanned" class="fw-semibold">—</span>
+          <span id="lastScanned" class="fw-semibold">-</span>
         </div>
 
         <div id="scanError" class="text-danger small mt-1" style="display:none;"></div>
@@ -459,6 +546,8 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 const BASE_URL = <?php echo json_encode(BASE_URL); ?>;
 const PROCESS_URL = BASE_URL + 'admin/modules/consumable/process/csm_inventory_process.php';
 const QR_GENERATOR_URL = BASE_URL + 'admin/modules/tools/qr_image.php';
+const LOGO_URL = BASE_URL + 'upload/img/ccc-display.png';
+const INVENTORY_LOGO_URL = BASE_URL + 'upload/img/inventory-logo.png';
 
 let qrItems = [];
 let qrMsgTimeout = null;
@@ -520,13 +609,15 @@ function buildDetailedTag({ code, desc, catLine, acq, cost, notes, qrUrl }) {
   return `
     <div class="tag-sticker">
       <div class="tag-top">
-        <div class="tag-ccc">CCC</div>
+        <div class="tag-ccc">
+          <img src="${LOGO_URL}" alt="CCC logo">
+        </div>
         <div class="tag-agency">
           <div class="agency">CITY COLLEGE OF CALAMBA</div>
           <div class="subtitle">Property Inventory Tag</div>
         </div>
         <div class="tag-logo">
-          <div class="logo-circle">CG</div>
+          <img src="${INVENTORY_LOGO_URL}" alt="Inventory logo">
         </div>
       </div>
 
@@ -741,6 +832,11 @@ const TAG_PRINT_CSS = `
     --tag-header:#b9d4ea;
     --tag-sub:#cfe3f5;
     --tag-text:#111;
+    --detailed-border:#1E3A8A;
+    --detailed-grid:#1E3A8A;
+    --detailed-header:#1E3A8A;
+    --detailed-sub:#FFFFFF;
+    --detailed-text:#1E3A8A;
 
     --detailed-w: 100mm;
     --detailed-h: 48mm;
@@ -791,7 +887,7 @@ const TAG_PRINT_CSS = `
     width: var(--detailed-w);
     height: auto;
     min-height: var(--detailed-h);
-    border: 2px solid var(--tag-border);
+    border: 2px solid var(--detailed-border);
     border-radius: 1mm;
     overflow: visible;
     display:flex;
@@ -803,19 +899,23 @@ const TAG_PRINT_CSS = `
     grid-template-columns: 18mm 1fr 14mm;
     min-height: 12mm;
     align-items:stretch;
-    border-bottom: 2px solid var(--tag-border);
+    border-bottom: 2px solid var(--detailed-border);
     box-sizing:border-box;
   }
 
   .tag-ccc{
-    background: var(--tag-header);
-    border-right: 2px solid var(--tag-border);
+    background: var(--detailed-header);
+    border-right: 2px solid var(--detailed-border);
     display:flex;
     align-items:center;
     justify-content:center;
-    font-weight:800;
-    letter-spacing:.6px;
-    font-size: 10pt;
+    padding: 1mm;
+  }
+  .tag-ccc img{
+    width: 13mm;
+    height: 10mm;
+    object-fit: contain;
+    display:block;
   }
 
   .tag-agency{
@@ -825,30 +925,27 @@ const TAG_PRINT_CSS = `
   .tag-agency .agency{
     font-weight:700;
     font-size: 7.5pt;
+    color:var(--detailed-text);
   }
   .tag-agency .subtitle{
-    color:#b02a37;
+    color:var(--detailed-text);
     font-weight:800;
     font-size: 7pt;
     margin-top: .6mm;
   }
 
   .tag-logo{
-    border-left: 2px solid var(--tag-border);
+    border-left: 2px solid var(--detailed-border);
     display:flex;
     align-items:center;
     justify-content:center;
+    padding: 1mm;
   }
-  .tag-logo .logo-circle{
-    width: 9mm; height: 9mm;
-    border-radius: 50%;
-    border: 2px solid #b02a37;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    font-size: 7pt;
-    font-weight:800;
-    color:#b02a37;
+  .tag-logo img{
+    width: 10mm;
+    height: 10mm;
+    object-fit: contain;
+    display:block;
   }
 
   .tag-body{
@@ -858,7 +955,7 @@ const TAG_PRINT_CSS = `
   }
 
   .tag-form{
-    border-right: 2px solid var(--tag-border);
+    border-right: 2px solid var(--detailed-border);
     height:auto;
     box-sizing:border-box;
     display:block;
@@ -867,19 +964,19 @@ const TAG_PRINT_CSS = `
   .tag-row{
     display:grid;
     grid-template-columns: 20mm 1fr;
-    border-bottom: 1px solid var(--tag-grid);
+    border-bottom: 1px solid var(--detailed-grid);
     box-sizing:border-box;
     min-height: 5.2mm;
   }
   .tag-row:last-child{ border-bottom:none; }
 
   .tag-label{
-    background:#fafafa;
-    border-right:1px solid var(--tag-grid);
+    background:var(--detailed-sub);
+    border-right:1px solid var(--detailed-grid);
     padding: 0.9mm 1.2mm;
     font-size: 6.6pt;
     font-style: italic;
-    color:#333;
+    color:var(--detailed-text);
     display:flex;
     align-items:center;
     box-sizing:border-box;
@@ -889,6 +986,7 @@ const TAG_PRINT_CSS = `
     padding: 0.9mm 1.2mm;
     font-size: 6.8pt;
     font-weight: 600;
+    color:var(--detailed-text);
     display:block;
     box-sizing:border-box;
     white-space: normal;
@@ -929,20 +1027,20 @@ const TAG_PRINT_CSS = `
   .tag-remarks{
     min-height: 9mm;
     height:auto;
-    border-top: 2px solid var(--tag-border);
+    border-top: 2px solid var(--detailed-border);
     display:grid;
     grid-template-columns: 32mm 1fr;
     box-sizing:border-box;
   }
   .tag-remarks .tag-label{
-    background: var(--tag-sub);
-    border-right: 1px solid var(--tag-border);
+    background: var(--detailed-sub);
+    border-right: 1px solid var(--detailed-border);
     font-size: 6.6pt;
   }
   .tag-remarks .tag-value{
-    background: var(--tag-sub);
+    background: var(--detailed-sub);
     font-weight: 700;
-    color:#111;
+    color:var(--detailed-text);
     font-size: 6.8pt;
     white-space: normal;
     overflow: visible;
@@ -1404,7 +1502,7 @@ $(document).ready(function(){
   $('#scanQrModal').on('shown.bs.modal', function(){
     loadCameras();
     setRunning(false);
-    document.getElementById('lastScanned').textContent = '—';
+    document.getElementById('lastScanned').textContent = '-';
     document.getElementById('preview').innerHTML = '';
   });
 
