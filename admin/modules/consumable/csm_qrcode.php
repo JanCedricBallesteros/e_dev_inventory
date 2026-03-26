@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 // csm_qrcode.php
 require_once dirname(__DIR__, 3) . '/config/config.php';
 require GLOBAL_FUNC;
@@ -27,7 +27,56 @@ if (!(
     include_once DOMAIN_PATH . '/global/include_top.php';
     ?>
     <style>
-        .qr-topbar .input-group { max-width:380px; }
+        .qr-topbar{
+            align-items: stretch;
+        }
+        .qr-search-wrap{
+            flex: 1 1 380px;
+            min-width: 260px;
+        }
+        .qr-topbar .input-group{
+            width: 100%;
+            max-width: 460px;
+        }
+        .qr-actions{
+            display:flex;
+            flex-wrap:wrap;
+            align-items:center;
+            justify-content:flex-end;
+            gap:.5rem;
+            flex: 1 1 520px;
+        }
+        .qr-actions > *{
+            flex: 0 0 auto;
+        }
+        .qr-actions .form-check{
+            min-height: 38px;
+            display:flex;
+            align-items:center;
+            padding-left: 1.75rem;
+            margin: 0;
+        }
+        .qr-actions .btn,
+        .qr-actions .form-select{
+            min-height: 38px;
+        }
+        .qr-meta-bar{
+            display:flex;
+            flex-wrap:wrap;
+            align-items:center;
+            justify-content:space-between;
+            gap:.75rem;
+        }
+        .qr-meta-actions{
+            display:flex;
+            flex-wrap:wrap;
+            align-items:center;
+            justify-content:flex-end;
+            gap:.5rem;
+        }
+        .qr-meta-actions .form-select{
+            min-width: 88px;
+        }
 
         .qr-preview-item{
             position:relative;
@@ -336,6 +385,35 @@ if (!(
             .qr-preview-stage .simple-sticker{ transform:scale(.96); transform-origin: top center; margin-bottom:-6px; }
         }
         @media (max-width: 768px){
+            .qr-search-wrap,
+            .qr-actions,
+            .qr-meta-bar > *,
+            .qr-meta-actions{
+                width:100%;
+            }
+            .qr-actions{
+                justify-content:flex-start;
+            }
+            .qr-actions .btn,
+            .qr-actions .dropdown,
+            .qr-actions .form-select{
+                width:100%;
+            }
+            .qr-actions .form-check{
+                width:100%;
+                min-height:auto;
+                padding-top:.45rem;
+                padding-bottom:.45rem;
+                border:1px solid #dee2e6;
+                border-radius:.5rem;
+                background:#fff;
+            }
+            .qr-meta-actions{
+                justify-content:flex-start;
+            }
+            .qr-meta-actions #qrPagination{
+                width:100%;
+            }
             .qr-preview-stage .tag-sticker{ transform:scale(.86); transform-origin: top center; margin-bottom:-26px; }
             .qr-preview-stage .simple-sticker{ transform:scale(.92); transform-origin: top center; margin-bottom:-10px; }
         }
@@ -356,13 +434,15 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
             </div>
 
             <div class="card-body mt-3 bg-white">
-                <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3 qr-topbar">
-                    <div class="input-group">
-                        <span class="input-group-text"><i class="bi bi-search"></i></span>
-                        <input type="text" id="qrSearch" class="form-control" placeholder="Search item code, description, category, source of funds, or QR verification">
+                <div class="d-flex flex-wrap gap-2 justify-content-between mb-3 qr-topbar">
+                    <div class="qr-search-wrap">
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="bi bi-search"></i></span>
+                            <input type="text" id="qrSearch" class="form-control" placeholder="Search item code, description, category, source of funds, or QR verification">
+                        </div>
                     </div>
 
-                    <div class="d-flex align-items-center flex-wrap gap-2">
+                    <div class="qr-actions">
                         <div class="dropdown">
                             <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" id="btnDateBatch" data-bs-toggle="dropdown" aria-expanded="false">
                                 <i class="bi bi-calendar3"></i>&ensp;Select by Date
@@ -394,9 +474,9 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                     </div>
                 </div>
 
-                <div class="d-flex flex-wrap align-items-center justify-content-between mb-2 gap-2">
+                <div class="qr-meta-bar mb-2">
                     <div id="qrPageInfo" class="text-muted small"></div>
-                    <div class="d-flex align-items-center gap-2">
+                    <div class="qr-meta-actions">
                         <label class="mb-0 small text-muted">Per page:</label>
                         <select id="qrPageSize" class="form-select form-select-sm" style="width:auto;">
                             <option value="20">20</option>
@@ -446,7 +526,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 
         <div class="mt-2 small">
           <span class="text-muted">Last scanned:</span>
-          <span id="lastScanned" class="fw-semibold">—</span>
+          <span id="lastScanned" class="fw-semibold">-</span>
         </div>
 
         <div id="scanError" class="text-danger small mt-1" style="display:none;"></div>
@@ -1422,7 +1502,7 @@ $(document).ready(function(){
   $('#scanQrModal').on('shown.bs.modal', function(){
     loadCameras();
     setRunning(false);
-    document.getElementById('lastScanned').textContent = '—';
+    document.getElementById('lastScanned').textContent = '-';
     document.getElementById('preview').innerHTML = '';
   });
 
