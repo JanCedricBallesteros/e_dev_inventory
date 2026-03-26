@@ -283,7 +283,7 @@ if (!(
 
         .tag-body{
             display:grid;
-            grid-template-columns: 1fr 24mm;
+            grid-template-columns: 1fr 27mm;
             height:auto;
         }
 
@@ -335,26 +335,18 @@ if (!(
             display:flex;
             flex-direction:column;
             align-items:center;
-            justify-content:flex-start;
-            padding: 2mm 1.5mm 1.5mm;
+            justify-content:center;
+            padding: 2mm 1.5mm;
             box-sizing:border-box;
-            gap: 1mm;
         }
         .tag-qr img{
-            width: 18mm;
-            height: 18mm;
+            width: 21mm;
+            height: 21mm;
             object-fit:contain;
             border:1px solid #c9c9c9;
             padding: 1mm;
             background:#fff;
             box-sizing:border-box;
-        }
-        .tag-code{
-            font-size: 6.2pt;
-            font-weight:900;
-            text-align:center;
-            line-height:1.05;
-            word-break:break-word;
         }
 
         .tag-remarks{
@@ -794,7 +786,6 @@ function buildDetailedTag({ code, desc, catLine, acq, cost, notes, qrUrl }) {
 
         <div class="tag-qr">
           <img src="${qrUrl}" alt="QR ${escapeHtml(code)}">
-          <div class="tag-code">${escapeHtml(code)}</div>
         </div>
       </div>
 
@@ -1101,7 +1092,7 @@ const TAG_PRINT_CSS = `
 
   .tag-body{
     display:grid;
-    grid-template-columns: 1fr 24mm;
+    grid-template-columns: 1fr 27mm;
     height:auto;
   }
 
@@ -1153,26 +1144,18 @@ const TAG_PRINT_CSS = `
     display:flex;
     flex-direction:column;
     align-items:center;
-    justify-content:flex-start;
-    padding: 2mm 1.5mm 1.5mm;
+    justify-content:center;
+    padding: 2mm 1.5mm;
     box-sizing:border-box;
-    gap: 1mm;
   }
   .tag-qr img{
-    width: 18mm;
-    height: 18mm;
+    width: 21mm;
+    height: 21mm;
     object-fit:contain;
     border:1px solid #c9c9c9;
     padding: 1mm;
     background:#fff;
     box-sizing:border-box;
-  }
-  .tag-code{
-    font-size: 6.2pt;
-    font-weight:900;
-    text-align:center;
-    line-height:1.05;
-    word-break:break-word;
   }
 
   .tag-remarks{

@@ -30,41 +30,36 @@ function json_out($arr, $code = 200){
 }
 
 /**
- * Normalize any provided code into DB format:
- * - Always returns "CSM" + digits (variable length)
- * - Pads to at least 4 digits (1 => CSM0001)
- * - Keeps longer numbers (10000 => CSM10000)
- *
- * Accepts:
- * - "CSM0001", "csm0001", "CSM-0001", "CSM 0001"
- * - "0001", "1"
- * - "CSM10000", "CSM-00000025"
+ * Normalize category code into DB format.
+ * - Numeric input still normalizes to legacy "CSM0001" style.
+ * - Custom codes may be alphanumeric with "-" / "_".
  */
 function normalize_category_code_db($raw, $minDigits = 4) {
     $raw = strtoupper(trim((string)$raw));
     if ($raw === '') return '';
 
-    // Remove spaces and hyphens
-    $raw = preg_replace('/[\s\-]/', '', $raw);
+    $raw = preg_replace('/\s+/', '', $raw);
 
-    // Strip prefix if present
-    if (strpos($raw, 'CSM') === 0) {
-        $raw = substr($raw, 3);
+    if (preg_match('/^CSM(\d+)$/', $raw, $m) || preg_match('/^(\d+)$/', $raw, $m)) {
+        $digits = ltrim((string)$m[1], '0');
+        if ($digits === '') return '';
+
+        $minDigits = max(1, (int)$minDigits);
+        if (strlen($digits) < $minDigits) {
+            $digits = str_pad($digits, $minDigits, '0', STR_PAD_LEFT);
+        }
+
+        return 'CSM' . $digits;
     }
 
-    // Must now be digits only
-    if ($raw === '' || !ctype_digit($raw)) return '';
-
-    // Remove leading zeros but keep at least one digit
-    $digits = ltrim($raw, '0');
-    if ($digits === '') return ''; // all zeros not allowed
-
-    $minDigits = max(1, (int)$minDigits);
-    if (strlen($digits) < $minDigits) {
-        $digits = str_pad($digits, $minDigits, '0', STR_PAD_LEFT);
+    if (preg_match('/^CSM[-_](.+)$/', $raw, $m)) {
+        $raw = (string)$m[1];
     }
 
-    return 'CSM' . $digits;
+    if ($raw === '' || strpos($raw, 'CSM') === 0) return '';
+    if (!preg_match('/^[A-Z0-9][A-Z0-9_-]*$/', $raw)) return '';
+
+    return $raw;
 }
 
 /**
@@ -75,7 +70,7 @@ function normalize_category_code_db($raw, $minDigits = 4) {
  */
 function code_db_digits($dbCode) {
     $dbCode = strtoupper(trim((string)$dbCode));
-    $dbCode = preg_replace('/[\s\-]/', '', $dbCode);
+    $dbCode = preg_replace('/\s+/', '', $dbCode);
 
     if (strpos($dbCode, 'CSM') === 0) {
         $digits = substr($dbCode, 3);
@@ -87,6 +82,15 @@ function code_db_digits($dbCode) {
 
     $digits = ltrim($digits, '0');
     return ($digits === '') ? '' : $digits;
+}
+
+function normalize_catcode_php($code) {
+    return strtoupper(preg_replace('/\s+/', '', trim((string)$code)));
+}
+
+function is_legacy_numeric_category_code($code) {
+    $code = normalize_catcode_php($code);
+    return ($code !== '' && preg_match('/^CSM\d+$/', $code));
 }
 
 /** Concurrency-safe lock */
@@ -135,24 +139,35 @@ function code_exists_any_format($dbCode) {
     $normalized = normalize_category_code_db($dbCode);
     if ($normalized === '') return false;
 
-    $digits = code_db_digits($normalized);
-    if ($digits === '') return false;
+    if (is_legacy_numeric_category_code($normalized)) {
+        $digits = code_db_digits($normalized);
+        if ($digits === '') return false;
 
-    $normEsc  = _esc(strtoupper(preg_replace('/[\s\-]/', '', $normalized))); // CSM...
-    $digitsEsc = _esc($digits);
+        $normEsc = _esc(strtoupper(preg_replace('/[\s\-]/', '', $normalized)));
+        $digitsEsc = _esc($digits);
 
-    $sql = "
-      SELECT category_id
-      FROM csm_inventory_category
-      WHERE
-        REPLACE(REPLACE(UPPER(TRIM(item_category_code)), ' ', ''), '-', '') = '{$normEsc}'
-        OR
-        (
-          TRIM(item_category_code) REGEXP '^[0-9]+$'
-          AND CAST(TRIM(item_category_code) AS UNSIGNED) = CAST('{$digitsEsc}' AS UNSIGNED)
-        )
-      LIMIT 1
-    ";
+        $sql = "
+          SELECT category_id
+          FROM csm_inventory_category
+          WHERE
+            REPLACE(REPLACE(UPPER(TRIM(item_category_code)), ' ', ''), '-', '') = '{$normEsc}'
+            OR
+            (
+              TRIM(item_category_code) REGEXP '^[0-9]+$'
+              AND CAST(TRIM(item_category_code) AS UNSIGNED) = CAST('{$digitsEsc}' AS UNSIGNED)
+            )
+          LIMIT 1
+        ";
+    } else {
+        $normEsc = _esc(normalize_catcode_php($normalized));
+        $sql = "
+          SELECT category_id
+          FROM csm_inventory_category
+          WHERE UPPER(REPLACE(TRIM(item_category_code), ' ', '')) = '{$normEsc}'
+          LIMIT 1
+        ";
+    }
+
     $res = call_mysql_query($sql);
     return ($res && call_mysql_fetch_array($res)) ? true : false;
 }
@@ -192,8 +207,8 @@ try {
                 "Cleaning Supplies,\n" .
                 "Electrical,1\n" .
                 "Plumbing,CSM0003\n" .
-                "Hardware,CSM-0004\n" .
-                "Large Code Example,CSM10000\n";
+                "Office Supplies,OFFICE\n" .
+                "Chemistry Set,CHEM-01\n";
             json_out(['success'=>true,'filename'=>$filename,'content'=>$content]);
         }
 
@@ -259,7 +274,7 @@ try {
                     $dbCode = normalize_category_code_db($codeRaw);
                     if ($dbCode === '') {
                         $skipped++;
-                        $errors[] = "Row {$rowIndex}: Invalid Code '{$codeRaw}'. Use digits / CSM formats or leave blank.";
+                        $errors[] = "Row {$rowIndex}: Invalid Code '{$codeRaw}'. Use letters, numbers, '-' or '_' or leave blank.";
                         continue;
                     }
                 } else {
@@ -272,7 +287,9 @@ try {
                 }
 
                 // CSV duplicate code detection (normalized)
-                $dbCodeKey = strtoupper(preg_replace('/[\s\-]/', '', $dbCode));
+                $dbCodeKey = is_legacy_numeric_category_code($dbCode)
+                    ? strtoupper(preg_replace('/[\s\-]/', '', $dbCode))
+                    : normalize_catcode_php($dbCode);
                 if (isset($seenCodes[$dbCodeKey])) {
                     $skipped++;
                     $errors[] = "Row {$rowIndex}: Duplicate code in CSV: {$dbCode}";
