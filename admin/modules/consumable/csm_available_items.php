@@ -281,7 +281,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                     </select>
                                 </div>
 
-                                <div class="col-md-4">
+                                <!--<div class="col-md-4">
                                     <label class="form-label fw-semibold">Item Code Number (optional)</label>
                                     <input type="text"
                                            class="form-control"
@@ -294,7 +294,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                     <div class="small text-muted mt-1">
                                         Numbers only. Full code becomes <span id="codePatternText">CSM-[CATEGORY]-0001</span>
                                     </div>
-                                </div>
+                                </div>-->
 
                                 <div class="col-md-4">
                                     <label class="form-label fw-semibold">Full Item Code Preview</label>
@@ -312,6 +312,11 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                 </div>
 
                                 <div class="col-md-4">
+                                    <label class="form-label fw-semibold">Actual Qty</label>
+                                    <input type="number" min="0" class="form-control" name="quantity" id="unitQuantity" value="0" required>
+                                </div>
+
+                                <div class="col-md-4">
                                     <label class="form-label fw-semibold">Unit (measurement)</label>
                                     <select class="form-select" name="unit" id="unitSelect" required>
                                         <option value="">Select existing or type a new unit</option>
@@ -319,6 +324,11 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                             <option value="<?= htmlspecialchars($unit) ?>"><?= htmlspecialchars($unit) ?></option>
                                         <?php endforeach; ?>
                                     </select>
+                                </div>
+                                
+                                <div class="col-md-4">
+                                    <label class="form-label fw-semibold">Critical Level</label>
+                                    <input type="number" min="0" class="form-control" name="qty_crit_level" id="unitCritLevel" value="0" required>
                                 </div>
 
                                 <div class="col-md-4">
@@ -331,20 +341,10 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                     <input type="number" step="0.01" min="0" class="form-control" name="cost_value" id="itemCost" value="0.00" required>
                                 </div>
 
-                                <div class="col-md-4">
-                                    <label class="form-label fw-semibold">Actual Qty</label>
-                                    <input type="number" min="0" class="form-control" name="quantity" id="unitQuantity" value="0" required>
-                                </div>
-
-                                <div class="col-md-4">
+                                <!--<div class="col-md-4">
                                     <label class="form-label fw-semibold">Available to Issue</label>
                                     <input type="number" min="0" class="form-control" name="current_quantity" id="currentUnitQuantity" value="0" required>
-                                </div>
-
-                                <div class="col-md-4">
-                                    <label class="form-label fw-semibold">Critical Level</label>
-                                    <input type="number" min="0" class="form-control" name="qty_crit_level" id="unitCritLevel" value="0" required>
-                                </div>
+                                </div>-->
 
                                 <div class="col-12">
                                     <label class="form-label fw-semibold">QR Code Preview</label>
@@ -436,7 +436,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                 <div class="card section-card h-100">
                     <div class="card-header">
                         <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-md-between gap-2">
-                            <span><i class="bi bi-table"></i>&ensp;Recently Added Inventory</span>
+                            <span><i class="bi bi-table"></i>&ensp;Recently Added</span>
                             <div class="input-group" style="max-width:360px;">
                                 <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
                                 <input type="text" class="form-control form-control-sm" id="tableSearch" placeholder="Search item code, category, or description">
@@ -821,12 +821,32 @@ function extractNumericSuffix(fullCode) {
     return m ? String(parseInt(m[1], 10)) : '';
 }
 
+function getNextItemCodeNumber(categoryCode) {
+    const cat = normalizeCategoryCodeForItemCode(categoryCode);
+    if (!cat) return '1';
+
+    let maxSuffix = 0;
+
+    (inventoryCache || []).forEach(item => {
+        const itemCategory = normalizeCategoryCodeForItemCode(item.item_category_code || '');
+        if (itemCategory !== cat) return;
+
+        const suffix = parseInt(extractNumericSuffix(item.inventory_system_item_code), 10);
+        if (!isNaN(suffix) && suffix > maxSuffix) {
+            maxSuffix = suffix;
+        }
+    });
+
+    return String(maxSuffix + 1);
+}
+
 function buildItemCodePreview(categoryCode, numericInput) {
     const cat = normalizeCategoryCodeForItemCode(categoryCode);
-    const num = String(numericInput || '').trim();
+    const rawNum = String(numericInput || '').trim();
 
     if (!cat) return '';
 
+    const num = rawNum || getNextItemCodeNumber(categoryCode);
     if (!num) return `CSM-${cat}-0001`;
 
     const digits = num.replace(/\D/g, '');
@@ -900,6 +920,7 @@ function loadInventoryForDropdown() {
     $.post(PROCESS_URL, { action: 'list_inventory' }, function(res) {
         if (res && res.success) {
             inventoryCache = res.data || [];
+            updateCodePreview();
 
             const options = ['<option value="">Select item code</option>'];
             inventoryCache.forEach(item => {
@@ -963,12 +984,12 @@ function validateAddItemDraft(draft) {
     if (!draft.item_category_code) return 'Category is required.';
     if (!draft.item_description) return 'Itemized description is required.';
     if (!draft.unit) return 'Unit is required.';
-    if (draft.inventory_system_item_code && !/^\d+$/.test(draft.inventory_system_item_code)) return 'Item code number must contain digits only.';
+    //if (draft.inventory_system_item_code && !/^\d+$/.test(draft.inventory_system_item_code)) return 'Item code number must contain digits only.';
     if (draft.quantity === '' || parseInt(draft.quantity, 10) < 0) return 'Actual Qty must be 0 or higher.';
-    if (draft.current_quantity === '' || parseInt(draft.current_quantity, 10) < 0) return 'Available to Issue must be 0 or higher.';
+    // if (draft.current_quantity === '' || parseInt(draft.current_quantity, 10) < 0) return 'Available to Issue must be 0 or higher.';
     if (draft.qty_crit_level === '' || parseInt(draft.qty_crit_level, 10) < 0) return 'Critical Level must be 0 or higher.';
-    if (draft.cost_value === '' || parseFloat(draft.cost_value) < 0) return 'Item Cost must be 0 or higher.';
-    if (parseInt(draft.current_quantity, 10) > parseInt(draft.quantity, 10)) return 'Available to Issue cannot exceed Actual Qty.';
+    // if (draft.cost_value === '' || parseFloat(draft.cost_value) < 0) return 'Item Cost must be 0 or higher.';
+    // if (parseInt(draft.current_quantity, 10) > parseInt(draft.quantity, 10)) return 'Available to Issue cannot exceed Actual Qty.';
     return '';
 }
 
@@ -1193,38 +1214,38 @@ function initTable() {
                 formatter: function(cell){
                     return cell.getValue() || '-';
                 }
-            },
-            {
-                title: 'QR',
-                field: 'inventory_system_item_code',
-                width: 92,
-                hozAlign: 'center',
-                headerSort: false,
-                formatter: function(cell) {
-                    const code = cell.getValue();
-                    if (!code) return '';
-                    const u = `${QR_GENERATOR_URL}?v=${encodeURIComponent(code)}`;
-                    return `<img src="${u}" data-code="${escHtml(code)}" class="qr-thumb" style="height:56px;width:56px;object-fit:contain;border:1px solid #dee2e6;border-radius:8px;background:#fff;padding:4px;cursor:pointer;" alt="QR">`;
-                }
-            },
-            {
-                title: 'Actions',
-                field: 'inventory_id',
-                width: 200,
-                hozAlign: 'center',
-                headerSort: false,
-                formatter: function(cell){
-                    const id = cell.getValue();
-                    return `
-                        <button type="button" class="btn btn-sm btn-primary me-1 btn-edit" data-id="${id}">
-                            <i class="bi bi-pencil-square"></i>
-                        </button>
-                        <button type="button" class="btn btn-sm btn-outline-primary btn-available" data-id="${id}">
-                            <i class="bi bi-box-arrow-in-down"></i>
-                        </button>
-                    `;
-                }
             }
+//            {
+//                title: 'QR',
+//                field: 'inventory_system_item_code',
+//                width: 92,
+//                hozAlign: 'center',
+//                headerSort: false,
+//                formatter: function(cell) {
+//                    const code = cell.getValue();
+//                    if (!code) return '';
+//                    const u = `${QR_GENERATOR_URL}?v=${encodeURIComponent(code)}`;
+//                    return `<img src="${u}" data-code="${escHtml(code)}" class="qr-thumb" style="height:56px;width:56px;object-fit:contain;border:1px solid #dee2e6;border-radius:8px;background:#fff;padding:4px;cursor:pointer;" alt="QR">`;
+//                }
+//            },
+//            {
+//                title: 'Actions',
+//                field: 'inventory_id',
+//                width: 200,
+//                hozAlign: 'center',
+//                headerSort: false,
+//                formatter: function(cell){
+//                    const id = cell.getValue();
+//                    return `
+//                        <button type="button" class="btn btn-sm btn-primary me-1 btn-edit" data-id="${id}">
+//                            <i class="bi bi-pencil-square"></i>
+//                        </button>
+//                        <button type="button" class="btn btn-sm btn-outline-primary btn-available" data-id="${id}">
+//                            <i class="bi bi-box-arrow-in-down"></i>
+//                        </button>
+//                    `;
+//                }
+//            }
         ]
     });
 }

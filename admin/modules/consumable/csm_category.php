@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 // csm_category.php
 // AST-style Add Category modal with Add Row
 // CSM functions preserved
@@ -140,6 +140,19 @@ $categories = getAllCSMCategoriesWithPrimary();
             background: #f8f9fa;
         }
 
+        #addCategoryModal .modal-body {
+            max-height: calc(100vh - 210px);
+            overflow-y: auto;
+        }
+        #addCategoryRows {
+            max-height: calc(100vh - 380px);
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+        #addCategoryModal .category-row {
+            background: #fff;
+        }
+
         .tabulator .tabulator-header .tabulator-col {
             background: #f8f9fa;
         }
@@ -183,7 +196,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 
 <!-- ADD CATEGORY MODAL (AST-STYLE ROW ADD) -->
 <div class="modal fade" id="addCategoryModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title"><i class="bi bi-plus-circle"></i>&ensp;Add Categories</h5>
@@ -221,46 +234,99 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 
 <!-- EDIT CATEGORY MODAL -->
 <div class="modal fade" id="editCategoryModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title"><i class="bi bi-pencil-square"></i>&ensp;Edit Category</h5>
+                <h5 class="modal-title"><i class="bi bi-pencil-square"></i>&ensp;Category Manager</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
 
-            <form id="editCategoryForm">
-                <input type="hidden" name="category_id" id="edit_category_id">
+            <div class="modal-body">
+                <input type="hidden" id="img_category_id">
 
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label fw-semibold">Category Name <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" name="item_category_name" id="edit_item_category_name" required>
+                <div class="row g-4">
+                    <div class="col-12 col-lg-4">
+                        <form id="editCategoryForm">
+                            <input type="hidden" name="category_id" id="edit_category_id">
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">Category Name <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" name="item_category_name" id="edit_item_category_name" required>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">Category Code</label>
+                                <div class="input-group">
+                                    <span class="input-group-text fw-semibold">CSM-</span>
+                                    <input type="text" class="form-control" id="edit_item_category_code" readonly>
+                                </div>
+                                <small class="text-muted d-block mt-2">Locked.</small>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">Current Primary Image</label>
+                                <div id="currentPhotoDisplay" class="mt-1 text-muted small">No image uploaded</div>
+                            </div>
+
+                            <div id="editMsg"></div>
+                        </form>
                     </div>
 
-                    <div class="mb-3">
-                        <label class="form-label fw-semibold">Category Code</label>
-                        <div class="input-group">
-                            <span class="input-group-text fw-semibold">CSM-</span>
-                            <input type="text" class="form-control" id="edit_item_category_code" readonly>
+                        <div class="col-12 col-lg-8" id="categoryImagesSection">
+                            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+                                <div>
+                                    <div class="fw-semibold"><i class="bi bi-images"></i>&ensp;Category Images</div>
+                                    <div class="small text-muted" id="imgCatTitle">-</div>
+                                </div>
+
+                                <form id="addImagesForm" enctype="multipart/form-data" class="d-flex align-items-center gap-2 flex-wrap">
+                                    <input type="file" class="form-control form-control-sm" name="images[]" id="moreImages" accept="image/*" multiple required>
+                                    <button type="submit" class="btn btn-sm btn-primary">
+                                        <i class="bi bi-upload"></i> Upload
+                                    </button>
+                                </form>
+                            </div>
+
+                            <div id="imgMsg" class="mb-2"></div>
+                            <div id="imgGrid" class="img-grid"></div>
+
+                            <hr class="my-3">
+
+                            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                                <div class="fw-semibold">
+                                    <i class="bi bi-box-seam"></i>&ensp;Assign Images to Inventory Items (same category)
+                                </div>
+                                <button type="button" class="btn btn-sm btn-outline-primary" id="btnReloadInvAssign">
+                                    <i class="bi bi-arrow-clockwise"></i> Reload
+                                </button>
+                            </div>
+
+                            <div id="invAssignMsg" class="mb-2"></div>
+
+                            <div class="table-responsive">
+                                <table class="table table-sm align-middle inv-assign-table">
+                                    <thead>
+                                    <tr>
+                                        <th style="width:90px;">Current</th>
+                                        <th>Inventory</th>
+                                        <th style="width:260px;">Assign Image</th>
+                                        <th style="width:140px;">Action</th>
+                                    </tr>
+                                    </thead>
+                                    <tbody id="invAssignTbody">
+                                        <tr><td colspan="4" class="text-muted">Load a category first.</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
-                        <small class="text-muted d-block mt-2">Locked.</small>
                     </div>
-
-                    <div class="mb-3">
-                        <label class="form-label fw-semibold">Current Primary Image</label>
-                        <div id="currentPhotoDisplay" class="mt-1 text-muted small">No image uploaded</div>
-                    </div>
-
-                    <div id="editMsg"></div>
                 </div>
 
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">
-                        <i class="bi bi-save"></i> Update Category
-                    </button>
-                </div>
-            </form>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-primary" form="editCategoryForm">
+                    <i class="bi bi-save"></i> Update Category
+                </button>
+            </div>
         </div>
     </div>
 </div>
@@ -277,7 +343,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
       </div>
 
       <div class="modal-body">
-        <div class="small text-muted mb-2" id="viewImageTitle">—</div>
+        <div class="small text-muted mb-2" id="viewImageTitle">-</div>
         <div id="viewImageBodyMsg" class="mb-2"></div>
 
         <div class="view-img-wrap">
@@ -290,69 +356,6 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
       </div>
     </div>
   </div>
-</div>
-
-<!-- IMAGES MODAL -->
-<div class="modal fade" id="categoryImagesModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title fw-semibold"><i class="bi bi-images"></i>&ensp;Category Images</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-
-            <div class="modal-body">
-                <input type="hidden" id="img_category_id">
-
-                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-                    <div class="small text-muted" id="imgCatTitle">—</div>
-
-                    <form id="addImagesForm" enctype="multipart/form-data" class="d-flex align-items-center gap-2">
-                        <input type="file" class="form-control form-control-sm" name="images[]" id="moreImages" accept="image/*" multiple required>
-                        <button type="submit" class="btn btn-sm btn-primary">
-                            <i class="bi bi-upload"></i> Upload
-                        </button>
-                    </form>
-                </div>
-
-                <div id="imgMsg" class="mb-2"></div>
-                <div id="imgGrid" class="img-grid"></div>
-
-                <hr class="my-3">
-
-                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
-                    <div class="fw-semibold">
-                        <i class="bi bi-box-seam"></i>&ensp;Assign Images to Inventory Items (same category)
-                    </div>
-                    <button type="button" class="btn btn-sm btn-outline-primary" id="btnReloadInvAssign">
-                        <i class="bi bi-arrow-clockwise"></i> Reload
-                    </button>
-                </div>
-
-                <div id="invAssignMsg" class="mb-2"></div>
-
-                <div class="table-responsive">
-                    <table class="table table-sm align-middle inv-assign-table">
-                        <thead>
-                        <tr>
-                            <th style="width:90px;">Current</th>
-                            <th>Inventory</th>
-                            <th style="width:260px;">Assign Image</th>
-                            <th style="width:140px;">Action</th>
-                        </tr>
-                        </thead>
-                        <tbody id="invAssignTbody">
-                            <tr><td colspan="4" class="text-muted">Load a category first.</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
-            </div>
-        </div>
-    </div>
 </div>
 
 <!-- BULK CSV MODAL -->
@@ -424,7 +427,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
             <div class="modal-body">
                 <div class="mb-2">
                     Delete this category?
-                    <div class="small text-muted mt-1" id="deleteCatInfo">—</div>
+                    <div class="small text-muted mt-1" id="deleteCatInfo">-</div>
                 </div>
                 <div class="alert alert-warning mb-0">This action cannot be undone.</div>
                 <div id="deleteMsg" class="mt-2"></div>
@@ -537,7 +540,7 @@ function renderMainThumb(row){
 function openViewModalFromRow(row){
     if(!row || !row.primary_image) return;
     const src = absUrl(row.primary_image);
-    const title = `${displayCode(row.item_category_code)} — ${row.item_category_name}`;
+    const title = `${displayCode(row.item_category_code)} - ${row.item_category_name}`;
 
     $('#viewImageTitle').text(title);
     $('#viewImageBodyMsg').html('');
@@ -560,6 +563,9 @@ function buildTabulator(data){
         layout: "fitColumns",
         responsiveLayout: "collapse",
         placeholder: "No categories found",
+        initialSort: [
+            { column: "created_at", dir: "desc" }
+        ],
         pagination: "local",
         paginationSize: 20,
         paginationSizeSelector: [20, 100, 500, 1000, true],
@@ -593,25 +599,22 @@ function buildTabulator(data){
                 }
             },
             {
-                title: "Date Modified",
-                field: "updated_at",
+                title: "Date Created",
+                field: "created_at",
                 width: 150,
                 formatter: function(cell) {
-                    return formatDate(cell.getValue() || cell.getRow().getData().created_at || '');
+                    return formatDate(cell.getValue() || '');
                 }
             },
             {
                 title: "Actions",
                 field: "category_id",
-                width: 260,
+                width: 140,
                 headerSort: false,
                 formatter: function(cell) {
                     const id = cell.getValue();
                     return `
-                        <button class="btn btn-sm btn-info text-white me-1 btn-images-cat" data-id="${id}" title="Images">
-                            <i class="bi bi-images"></i> Images
-                        </button>
-                        <button class="btn btn-sm btn-warning me-1 btn-edit-cat" data-id="${id}" title="Edit">
+                        <button class="btn btn-sm btn-warning btn-edit-cat" data-id="${id}" title="Edit">
                             <i class="bi bi-pencil"></i> Edit
                         </button>
                     `;
@@ -846,47 +849,68 @@ $('#addCategoryForm').off('submit').on('submit', function(e) {
 });
 
 /* Edit category */
+function populateCategoryManager(res, focusImages){
+    if(!res || !res.success){
+        alert(res && res.message ? res.message : 'Record not found.');
+        return;
+    }
+
+    const d = res.data || {};
+    const row = (categoryData || []).find(x => String(x.category_id) === String(d.category_id));
+
+    $('#editMsg').html('');
+    $('#imgMsg').html('');
+    $('#invAssignMsg').html('');
+    $('#edit_category_id').val(d.category_id);
+    $('#img_category_id').val(d.category_id);
+    $('#edit_item_category_name').val(d.item_category_name || '');
+
+    const digits = extractDigits(d.item_category_code || '');
+    $('#edit_item_category_code').val(padForDisplay(digits));
+
+    if (row && row.primary_image) {
+        $('#currentPhotoDisplay').html(`<img src="${absUrl(row.primary_image)}" class="preview-image" alt="Current image">`);
+    } else {
+        $('#currentPhotoDisplay').html('<div class="text-muted small">No image uploaded</div>');
+    }
+
+    $('#imgCatTitle').text(row ? `${displayCode(row.item_category_code)} - ${row.item_category_name}` : `Category #${d.category_id}`);
+    $('#moreImages').val('');
+    $('#imgGrid').html('');
+    $('#invAssignTbody').html('<tr><td colspan="4" class="text-muted">Loading...</td></tr>');
+    $('#editCategoryModal').modal('show');
+    loadCategoryImages(d.category_id);
+
+    if (focusImages) {
+        setTimeout(() => {
+            const section = document.getElementById('categoryImagesSection');
+            if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 250);
+    }
+}
+
+function openCategoryManager(categoryId, focusImages){
+    $.ajax({
+        url: PROCESS_URL,
+        type: 'POST',
+        dataType: 'json',
+        data: { action: 'get_category', category_id: categoryId },
+        success: function(res){
+            populateCategoryManager(res, focusImages);
+        },
+        error: function(xhr){
+            console.error(xhr.responseText);
+            alert('Error loading record.');
+        }
+    });
+}
+
 $(document)
   .off('click', '.btn-edit-cat')
   .on('click', '.btn-edit-cat', function(e){
       e.preventDefault();
       e.stopPropagation();
-      $('#editMsg').html('');
-
-      const id = $(this).data('id');
-
-      $.ajax({
-          url: PROCESS_URL,
-          type: 'POST',
-          dataType: 'json',
-          data: { action: 'get_category', category_id: id },
-          success: function(res){
-              if(!res || !res.success){
-                  alert(res && res.message ? res.message : 'Record not found.');
-                  return;
-              }
-
-              const d = res.data;
-              $('#edit_category_id').val(d.category_id);
-              $('#edit_item_category_name').val(d.item_category_name || '');
-
-              const digits = extractDigits(d.item_category_code || '');
-              $('#edit_item_category_code').val(padForDisplay(digits));
-
-              const row = (categoryData || []).find(x => String(x.category_id) === String(d.category_id));
-              if (row && row.primary_image) {
-                  $('#currentPhotoDisplay').html(`<img src="${absUrl(row.primary_image)}" class="preview-image" alt="Current image">`);
-              } else {
-                  $('#currentPhotoDisplay').html('<div class="text-muted small">No image uploaded</div>');
-              }
-
-              $('#editCategoryModal').modal('show');
-          },
-          error: function(xhr){
-              console.error(xhr.responseText);
-              alert('Error loading record.');
-          }
-      });
+      openCategoryManager($(this).data('id'), false);
   });
 
 $('#editCategoryForm').off('submit').on('submit', function(e){
@@ -926,7 +950,7 @@ $(document)
       pendingDeleteCatId = $(this).data('id');
 
       const row = (categoryData || []).find(x => String(x.category_id) === String(pendingDeleteCatId));
-      const info = row ? `${displayCode(row.item_category_code)} — ${row.item_category_name}` : `ID #${pendingDeleteCatId}`;
+      const info = row ? `${displayCode(row.item_category_code)} - ${row.item_category_name}` : `ID #${pendingDeleteCatId}`;
       $('#deleteCatInfo').text(info);
 
       $('#deleteCategoryModal').modal('show');
@@ -1094,7 +1118,7 @@ function renderInvAssignRows(items, images){
     const currentUrl = it.assigned_image_url ? absUrl(it.assigned_image_url) : '';
     const invCode = escHtml(it.inventory_code || '');
     const invName = escHtml(it.item_name || '');
-    const invLabel = (invCode && invName) ? `${invCode} — ${invName}` : (invCode || invName || `Inventory #${escHtml(it.inventory_id)}`);
+    const invLabel = (invCode && invName) ? `${invCode} - ${invName}` : (invCode || invName || `Inventory #${escHtml(it.inventory_id)}`);
 
     html += `
       <tr>
@@ -1110,7 +1134,7 @@ function renderInvAssignRows(items, images){
         <td>
           <div class="fw-semibold">${invLabel}</div>
           <div class="small text-muted">Category: ${escHtml(displayCode(it.item_category_code || ''))}</div>
-          <div class="small text-muted">Current image_id: ${it.category_image_id ? escHtml(it.category_image_id) : '—'}</div>
+          <div class="small text-muted">Current image_id: ${it.category_image_id ? escHtml(it.category_image_id) : '-'}</div>
         </td>
 
         <td>
@@ -1137,7 +1161,7 @@ function renderInvAssignRows(items, images){
 
 function loadInvAssign(categoryId){
   $('#invAssignMsg').html('');
-  $('#invAssignTbody').html('<tr><td colspan="4" class="text-muted">Loading…</td></tr>');
+  $('#invAssignTbody').html('<tr><td colspan="4" class="text-muted">Loading...</td></tr>');
 
   $.ajax({
     url: PROCESS_URL,
@@ -1188,27 +1212,6 @@ function loadCategoryImages(categoryId){
         }
     });
 }
-
-$(document)
-  .off('click', '.btn-images-cat')
-  .on('click', '.btn-images-cat', function(e){
-      e.preventDefault();
-      e.stopPropagation();
-
-      const id = $(this).data('id');
-      $('#img_category_id').val(id);
-
-      const row = (categoryData || []).find(x => String(x.category_id) === String(id));
-      $('#imgCatTitle').text(row ? `${displayCode(row.item_category_code)} — ${row.item_category_name}` : `Category #${id}`);
-
-      $('#moreImages').val('');
-      $('#imgGrid').html('');
-      $('#invAssignMsg').html('');
-      $('#invAssignTbody').html('<tr><td colspan="4" class="text-muted">Loading…</td></tr>');
-
-      $('#categoryImagesModal').modal('show');
-      loadCategoryImages(id);
-  });
 
 $('#addImagesForm').off('submit').on('submit', function(e){
     e.preventDefault();
@@ -1361,8 +1364,16 @@ $('#addCategoryModal').on('hidden.bs.modal', function() {
 
 $('#editCategoryModal').on('hidden.bs.modal', function() {
     $('#editCategoryForm')[0].reset();
+    $('#addImagesForm')[0].reset();
+    $('#img_category_id').val('');
     $('#currentPhotoDisplay').html('No image uploaded');
     $('#editMsg').html('');
+    $('#imgCatTitle').text('-');
+    $('#imgMsg').html('');
+    $('#imgGrid').html('');
+    $('#invAssignMsg').html('');
+    $('#invAssignTbody').html('<tr><td colspan="4" class="text-muted">Load a category first.</td></tr>');
+    _categoryImagesCache = [];
 });
 
 $('#bulkModal').on('hidden.bs.modal', function() {

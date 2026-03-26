@@ -34,6 +34,19 @@ if (!(
             padding: 12px 14px;
             background: #fff;
         }
+        .summary-card.is-clickable {
+            cursor: pointer;
+            transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+        }
+        .summary-card.is-clickable:hover {
+            border-color: #93c5fd;
+            box-shadow: 0 4px 14px rgba(30, 58, 138, 0.08);
+            transform: translateY(-1px);
+        }
+        .summary-card.is-active {
+            border-color: #1d4ed8;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+        }
         .summary-label {
             font-size: 12px;
             color: #6c757d;
@@ -268,7 +281,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                         </div>
                     </div>
                     <div class="col-sm-3">
-                        <div class="summary-card">
+                        <div class="summary-card is-clickable" id="criticalOutCard" title="Show only stock critical and out of stock items">
                             <div class="summary-label">Critical / Out</div>
                             <div class="summary-value" id="sumCritical">0 / 0</div>
                         </div>
@@ -413,6 +426,7 @@ let employmentStatuses = [];
 const NONE_STATUS_VALUE = 'NONE';
 let availStatusLock = false;
 let isBulkAvailMode = false;
+let statusSummaryFilter = '';
 
 function showInvMessage(message) {
     const el = $('#invMsg');
@@ -500,6 +514,59 @@ function updateSummary(rows) {
     $('#sumQty').text(totalQty);
     $('#sumAvailQty').text(totalAvailQty);
     $('#sumCritical').text(totalCritical + ' / ' + totalOut);
+    $('#criticalOutCard').toggleClass('is-active', statusSummaryFilter === 'critical_out');
+}
+
+function applyInventoryFilters() {
+    if (!inventoryTable) return;
+
+    const search = ($('#invSearch').val() || '').toLowerCase().trim();
+    const range = parseDateRangeInput($('#dateRange').val());
+    const fromDate = range.from;
+    const toDate = range.to;
+    if (toDate) toDate.setHours(23, 59, 59, 999);
+
+    const hasStatusFilter = statusSummaryFilter === 'critical_out';
+
+    if (!search && !fromDate && !toDate && !hasStatusFilter) {
+        inventoryTable.clearFilter(true);
+        inventoryTable.setSort('created_at', 'desc');
+        updateSummary(inventoryTable.getData() || []);
+        return;
+    }
+
+    inventoryTable.setFilter(function(data) {
+        if (hasStatusFilter) {
+            const status = parseInt(data.status, 10) || 0;
+            if (status !== 2 && status !== 3) return false;
+        }
+
+        if (search) {
+            const hay = [
+                data.inventory_system_item_code,
+                data.item_description,
+                data.item_category_code,
+                data.item_category_name,
+                data.unit,
+                data.source_of_funds
+            ].join(' ').toLowerCase();
+
+            if (hay.indexOf(search) === -1) return false;
+        }
+
+        if (fromDate || toDate) {
+            const basisDate = data.created_at || data.last_updated || data.acquisition_date || '';
+            const d = parseDate(basisDate);
+            if (!d) return false;
+            if (fromDate && d < fromDate) return false;
+            if (toDate && d > toDate) return false;
+        }
+
+        return true;
+    });
+
+    inventoryTable.setSort('created_at', 'desc');
+    updateSummary(inventoryTable.getData('active') || []);
 }
 
 function initAvailabilitySelect() {
@@ -915,47 +982,8 @@ function initTable() {
 function refreshTable() {
     if (!inventoryTable) return;
 
-    const search = ($('#invSearch').val() || '').toLowerCase().trim();
-    const range = parseDateRangeInput($('#dateRange').val());
-    const fromDate = range.from;
-    const toDate = range.to;
-    if (toDate) toDate.setHours(23, 59, 59, 999);
-
     inventoryTable.setData(PROCESS_URL, { action: 'list_recent_added' }, 'POST').then(function() {
-        if (!search && !fromDate && !toDate) {
-            inventoryTable.clearFilter(true);
-            inventoryTable.setSort('created_at', 'desc');
-            updateSummary(inventoryTable.getData() || []);
-            return;
-        }
-
-        inventoryTable.setFilter(function(data) {
-            if (search) {
-                const hay = [
-                    data.inventory_system_item_code,
-                    data.item_description,
-                    data.item_category_code,
-                    data.item_category_name,
-                    data.unit,
-                    data.source_of_funds
-                ].join(' ').toLowerCase();
-
-                if (hay.indexOf(search) === -1) return false;
-            }
-
-            if (fromDate || toDate) {
-                const basisDate = data.created_at || data.last_updated || data.acquisition_date || '';
-                const d = parseDate(basisDate);
-                if (!d) return false;
-                if (fromDate && d < fromDate) return false;
-                if (toDate && d > toDate) return false;
-            }
-
-            return true;
-        });
-
-        inventoryTable.setSort('created_at', 'desc');
-        updateSummary(inventoryTable.getData('active') || []);
+        applyInventoryFilters();
     }).catch(function(err) {
         showInvMessage('Server error while loading inventory.');
         console.error(err);
@@ -972,6 +1000,11 @@ $(document).ready(function() {
 
     $('#dateRange').on('change keyup', function() {
         refreshTable();
+    });
+
+    $('#criticalOutCard').on('click', function() {
+        statusSummaryFilter = (statusSummaryFilter === 'critical_out') ? '' : 'critical_out';
+        applyInventoryFilters();
     });
 
     if (typeof $.fn.daterangepicker === 'function') {
