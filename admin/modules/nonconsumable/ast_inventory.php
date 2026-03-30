@@ -204,11 +204,11 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                         <label class="form-label fw-semibold">Allowed Employment Status</label>
                         <div class="small text-muted mb-2">Choose allowed status per position. "None" means no one can request.</div>
                         <div class="mb-2">
-                            <div class="fw-semibold small text-muted">Teaching Personnel</div>
+                            <div class="fw-semibold small text-muted">Academic Personnel</div>
                             <select id="availTeachingStatus" class="form-select" multiple></select>
                         </div>
                         <div>
-                            <div class="fw-semibold small text-muted">Non-Teaching Personnel</div>
+                            <div class="fw-semibold small text-muted">Administrative</div>
                             <select id="availNonTeachingStatus" class="form-select" multiple></select>
                         </div>
                     </div>
@@ -573,7 +573,7 @@ function formatPeso(value) {
     if (value === null || value === undefined || value === '') return '';
     const num = Number(value);
     if (!isFinite(num)) return '';
-    return 'â‚±' + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return String.fromCharCode(8369) + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function twoLineText(value, fallback = '-') {
@@ -764,7 +764,7 @@ function initTable() {
                 const parts = [];
                 if (src) parts.push(src);
                 if (cost) parts.push(formatPeso(cost));
-                return parts.length ? `<span class="two-line-cell">${parts.join(' â€¢ ')}</span>` : '<span class="text-muted">-</span>';
+                return parts.length ? `<span class="two-line-cell">${parts.join(' &#8226; ')}</span>` : '<span class="text-muted">-</span>';
             }},
             { title: "Issued To", field: "issued_to_name", width: 160, headerFilter: "input", headerFilterPlaceholder: "Filter...", formatter: function(cell){
                 const v = cell.getValue();
@@ -955,7 +955,7 @@ $(document).ready(function() {
             "Description": r.item_description || '',
             "Qty / Unit": `${r.quantity ?? ''}${r.unit ? ' ' + r.unit : ''}`,
             "Allowed Status": r.allowed_status_names || '',
-            "Source / Cost": `${r.source_of_fund || ''}${(r.cost_value !== null && r.cost_value !== undefined && r.cost_value !== '') ? ' â€¢ ' + formatPeso(r.cost_value) : ''}`,
+            "Source / Cost": `${r.source_of_fund || ''}${(r.cost_value !== null && r.cost_value !== undefined && r.cost_value !== '') ? ' | ' + formatPeso(r.cost_value) : ''}`,
             "Issued To": r.issued_to_name || '',
             "Location": r.location_label || '',
             "Date Modified": r.created_at || ''
@@ -1010,4 +1010,5 @@ $(document).ready(function() {
 });
 </script>
 </html>
+
 

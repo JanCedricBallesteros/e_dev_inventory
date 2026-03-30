@@ -1,4 +1,4 @@
--- phpMyAdmin SQL Dump
+﻿-- phpMyAdmin SQL Dump
 -- version 5.1.3
 -- https://www.phpmyadmin.net/
 --
@@ -77,7 +77,7 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`user_id`, `general_id`, `img`, `f_name`, `m_name`, `l_name`, `suffix`, `sex`, `birth_date`, `user_role`, `username`, `password`, `email_address`, `recovery_email`, `position`, `assigned_access`, `status`, `locked`, `last_signin`) VALUES
-(1, 'CGC-08626', '', 'Marlon', 'Llanes', 'Reolo', '', 'male', '2000-11-04', '[\"1\",\"2\"]', 'mlreolo@ccc.edu.ph', '779a8d6c3c12a58398e76f3146ae3874454e97c5', 'mlreolo@ccc.edu.ph', 'mlreolo@ccc.edu.ph', 'Non-Teaching Personnel', 'DTE', 0, 0, '0000-00-00 00:00:00');
+(1, 'CGC-08626', '', 'Marlon', 'Llanes', 'Reolo', '', 'male', '2000-11-04', '[\"1\",\"2\"]', 'mlreolo@ccc.edu.ph', '779a8d6c3c12a58398e76f3146ae3874454e97c5', 'mlreolo@ccc.edu.ph', 'mlreolo@ccc.edu.ph', 'Administrative', 'DTE', 0, 0, '0000-00-00 00:00:00');
 
 -- --------------------------------------------------------
 
@@ -204,3 +204,4 @@ COMMIT;
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+

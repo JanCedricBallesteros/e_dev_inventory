@@ -1,4 +1,4 @@
--- phpMyAdmin SQL Dump
+﻿-- phpMyAdmin SQL Dump
 -- version 5.2.1
 -- https://www.phpmyadmin.net/
 --
@@ -626,19 +626,19 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`user_id`, `general_id`, `img`, `f_name`, `m_name`, `l_name`, `suffix`, `sex`, `birth_date`, `user_role`, `username`, `password`, `email_address`, `recovery_email`, `position`, `employment_status_id`, `assigned_access`, `status`, `locked`, `last_signin`) VALUES
-(1, 'CGC-08626', '', 'Marlon', 'Llanes', 'Reolo', '', 'male', '2000-11-04', '[\"1\",\"2\"]', 'mlreolo@ccc.edu.ph', '779a8d6c3c12a58398e76f3146ae3874454e97c5', 'mlreolo@ccc.edu.ph', 'mlreolo@ccc.edu.ph', 'Non-Teaching Personnel', 1, 'DTE', 0, 0, '0000-00-00 00:00:00'),
-(2, 'po_as', '', 'PO', 'PO', 'PO', '', 'male', '2011-03-04', '[\"3\"]', 'po_as', '6380d71637c7aa7cc3b34474d08e97b139ad0d32', 'asdfasdfasdf@gmail.com', '', 'Non-Teaching Personnel', 1, NULL, 0, 0, '0000-00-00 00:00:00'),
-(3, 'user', '', 'USER', 'USER', 'USER', '', 'male', '2011-03-05', '[\"4\"]', 'user', '9842d454dfa08a3a957c56bdbe5bc01746e21424', 'user@gmail.com', '', 'Teaching Personnel', 1, NULL, 0, 0, '0000-00-00 00:00:00'),
-(4, '2026-0001', '', 'ANNA', 'MARIA', 'REYES', '', 'female', '1980-01-15', '[\"4\"]', 'teachuser1', 'passwrd1', 'anna.reyes@ccc.edu.ph', '', 'Teaching Personnel', 1, NULL, 0, 0, '0000-00-00 00:00:00'),
-(5, '2026-0002', '', 'JUAN', 'CRUZ', 'SANTOS', '', 'male', '1978-03-22', '[\"4\"]', 'teachuser2', 'passwrd2', 'juan.santos@ccc.edu.ph', '', 'Teaching Personnel', 1, NULL, 0, 0, '0000-00-00 00:00:00'),
-(6, '2026-0003', '', 'EMILY', 'GRACE', 'LOPEZ', '', 'female', '1985-07-09', '[\"4\"]', 'teachuser3', 'passwrd3', 'emily.lopez@ccc.edu.ph', '', 'Teaching Personnel', 1, NULL, 0, 0, '0000-00-00 00:00:00'),
-(7, '2026-0004', '', 'MICHAEL', 'JAMES', 'GARCIA', '', 'male', '1975-11-30', '[\"4\"]', 'teachuser4', 'passwrd4', 'michael.garcia@ccc.edu.ph', '', 'Teaching Personnel', 1, NULL, 0, 0, '0000-00-00 00:00:00'),
-(8, '2026-0005', '', 'SOPHIA', 'ANNE', 'RAMOS', '', 'female', '1990-05-18', '[\"4\"]', 'teachuser5', 'passwrd5', 'sophia.ramos@ccc.edu.ph', '', 'Teaching Personnel', 1, NULL, 0, 0, '0000-00-00 00:00:00'),
-(9, '2026-0006', '', 'DAVID', 'LEE', 'MENDOZA', '', 'male', '1982-09-25', '[\"4\"]', 'teachuser6', 'passwrd6', 'david.mendoza@ccc.edu.ph', '', 'Teaching Personnel', 1, NULL, 0, 0, '0000-00-00 00:00:00'),
-(10, '2026-0007', '', 'ISABELLA', 'MARIE', 'CASTRO', '', 'female', '1988-12-12', '[\"4\"]', 'teachuser7', 'passwrd7', 'isabella.castro@ccc.edu.ph', '', 'Teaching Personnel', 1, NULL, 0, 0, '0000-00-00 00:00:00'),
-(11, '2026-0008', '', 'MARK', 'ANTHONY', 'DELOS SANTOS', '', 'male', '1979-04-03', '[\"4\"]', 'teachuser8', 'passwrd8', 'mark.delossantos@ccc.edu.ph', '', 'Teaching Personnel', 1, NULL, 0, 0, '0000-00-00 00:00:00'),
-(12, '2026-0009', '', 'PATRICIA', 'JOY', 'NAVARRO', '', 'female', '1983-08-27', '[\"4\"]', 'teachuser9', 'passwrd9', 'patricia.navarro@ccc.edu.ph', '', 'Teaching Personnel', 1, NULL, 0, 0, '0000-00-00 00:00:00'),
-(13, '2026-0010', '', 'ROBERT', 'JOHN', 'LIM', '', 'male', '1977-02-14', '[\"4\"]', 'teachuser10', 'passwrdA', 'robert.lim@ccc.edu.ph', '', 'Teaching Personnel', 1, NULL, 0, 0, '0000-00-00 00:00:00');
+(1, 'CGC-08626', '', 'Marlon', 'Llanes', 'Reolo', '', 'male', '2000-11-04', '[\"1\",\"2\"]', 'mlreolo@ccc.edu.ph', '779a8d6c3c12a58398e76f3146ae3874454e97c5', 'mlreolo@ccc.edu.ph', 'mlreolo@ccc.edu.ph', 'Administrative', 1, 'DTE', 0, 0, '0000-00-00 00:00:00'),
+(2, 'po_as', '', 'PO', 'PO', 'PO', '', 'male', '2011-03-04', '[\"3\"]', 'po_as', '6380d71637c7aa7cc3b34474d08e97b139ad0d32', 'asdfasdfasdf@gmail.com', '', 'Administrative', 1, NULL, 0, 0, '0000-00-00 00:00:00'),
+(3, 'user', '', 'USER', 'USER', 'USER', '', 'male', '2011-03-05', '[\"4\"]', 'user', '9842d454dfa08a3a957c56bdbe5bc01746e21424', 'user@gmail.com', '', 'Academic Personnel', 1, NULL, 0, 0, '0000-00-00 00:00:00'),
+(4, '2026-0001', '', 'ANNA', 'MARIA', 'REYES', '', 'female', '1980-01-15', '[\"4\"]', 'teachuser1', 'passwrd1', 'anna.reyes@ccc.edu.ph', '', 'Academic Personnel', 1, NULL, 0, 0, '0000-00-00 00:00:00'),
+(5, '2026-0002', '', 'JUAN', 'CRUZ', 'SANTOS', '', 'male', '1978-03-22', '[\"4\"]', 'teachuser2', 'passwrd2', 'juan.santos@ccc.edu.ph', '', 'Academic Personnel', 1, NULL, 0, 0, '0000-00-00 00:00:00'),
+(6, '2026-0003', '', 'EMILY', 'GRACE', 'LOPEZ', '', 'female', '1985-07-09', '[\"4\"]', 'teachuser3', 'passwrd3', 'emily.lopez@ccc.edu.ph', '', 'Academic Personnel', 1, NULL, 0, 0, '0000-00-00 00:00:00'),
+(7, '2026-0004', '', 'MICHAEL', 'JAMES', 'GARCIA', '', 'male', '1975-11-30', '[\"4\"]', 'teachuser4', 'passwrd4', 'michael.garcia@ccc.edu.ph', '', 'Academic Personnel', 1, NULL, 0, 0, '0000-00-00 00:00:00'),
+(8, '2026-0005', '', 'SOPHIA', 'ANNE', 'RAMOS', '', 'female', '1990-05-18', '[\"4\"]', 'teachuser5', 'passwrd5', 'sophia.ramos@ccc.edu.ph', '', 'Academic Personnel', 1, NULL, 0, 0, '0000-00-00 00:00:00'),
+(9, '2026-0006', '', 'DAVID', 'LEE', 'MENDOZA', '', 'male', '1982-09-25', '[\"4\"]', 'teachuser6', 'passwrd6', 'david.mendoza@ccc.edu.ph', '', 'Academic Personnel', 1, NULL, 0, 0, '0000-00-00 00:00:00'),
+(10, '2026-0007', '', 'ISABELLA', 'MARIE', 'CASTRO', '', 'female', '1988-12-12', '[\"4\"]', 'teachuser7', 'passwrd7', 'isabella.castro@ccc.edu.ph', '', 'Academic Personnel', 1, NULL, 0, 0, '0000-00-00 00:00:00'),
+(11, '2026-0008', '', 'MARK', 'ANTHONY', 'DELOS SANTOS', '', 'male', '1979-04-03', '[\"4\"]', 'teachuser8', 'passwrd8', 'mark.delossantos@ccc.edu.ph', '', 'Academic Personnel', 1, NULL, 0, 0, '0000-00-00 00:00:00'),
+(12, '2026-0009', '', 'PATRICIA', 'JOY', 'NAVARRO', '', 'female', '1983-08-27', '[\"4\"]', 'teachuser9', 'passwrd9', 'patricia.navarro@ccc.edu.ph', '', 'Academic Personnel', 1, NULL, 0, 0, '0000-00-00 00:00:00'),
+(13, '2026-0010', '', 'ROBERT', 'JOHN', 'LIM', '', 'male', '1977-02-14', '[\"4\"]', 'teachuser10', 'passwrdA', 'robert.lim@ccc.edu.ph', '', 'Academic Personnel', 1, NULL, 0, 0, '0000-00-00 00:00:00');
 
 -- --------------------------------------------------------
 
@@ -1167,3 +1167,4 @@ COMMIT;
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+

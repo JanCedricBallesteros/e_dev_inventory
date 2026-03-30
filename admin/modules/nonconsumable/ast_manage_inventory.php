@@ -216,7 +216,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                 <div class="col-md-4">
                                     <label class="form-label fw-semibold">Cost Value (optional)</label>
                                     <div class="input-group">
-                                        <span class="input-group-text">â‚±</span>
+                                        <span class="input-group-text">&#8369;</span>
                                         <input type="number" step="0.01" min="0" class="form-control" name="cost_value" id="costValue" placeholder="0.00" inputmode="decimal" oninput="this.value=this.value.replace(/[^0-9.]/g,'').replace(/(\\..*)\\./g,'$1');">
                                     </div>
                                 </div>
@@ -231,11 +231,11 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                     </div>
                                     <div class="row g-2">
                                         <div class="col-md-6">
-                                            <div class="fw-semibold small text-muted">Teaching Personnel</div>
+                                            <div class="fw-semibold small text-muted">Academic Personnel</div>
                                             <select id="availTeachingStatus" class="form-select" multiple></select>
                                         </div>
                                         <div class="col-md-6">
-                                            <div class="fw-semibold small text-muted">Non-Teaching Personnel</div>
+                                            <div class="fw-semibold small text-muted">Administrative</div>
                                             <select id="availNonTeachingStatus" class="form-select" multiple></select>
                                         </div>
                                     </div>
@@ -313,7 +313,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                 <div class="col-6">
                                     <label class="form-label fw-semibold">Cost Value</label>
                                     <div class="input-group">
-                                        <span class="input-group-text">â‚±</span>
+                                        <span class="input-group-text">&#8369;</span>
                                         <input type="number" step="0.01" min="0" class="form-control" name="cost_value" id="addQtyCost" inputmode="decimal" oninput="this.value=this.value.replace(/[^0-9.]/g,'').replace(/(\\..*)\\./g,'$1');">
                                     </div>
                                 </div>
@@ -908,7 +908,7 @@ function formatPeso(value) {
     if (value === null || value === undefined || value === '') return '';
     const num = Number(value);
     if (!isFinite(num)) return '';
-    return 'â‚±' + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return String.fromCharCode(8369) + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function threeLineText(value, fallback = '-') {
@@ -1291,13 +1291,13 @@ function initTable() {
             { title: 'Description', field: 'item_description', widthGrow: 2, headerFilter: 'input', headerFilterPlaceholder: 'Filter...', formatter: function(cell){
                 return threeLineText(cell.getValue());
             }},
-            { title: 'Qty / Unit', field: 'quantity', width: 110, hozAlign: 'center', headerFilter: 'number', headerFilterPlaceholder: '<= qty', headerFilterFunc: '<=', formatter: function(cell){
+            { title: 'Qty / Unit', field: 'quantity', width: 70, hozAlign: 'center', headerFilter: 'number', headerFilterPlaceholder: '<= qty', headerFilterFunc: '<=', formatter: function(cell){
                 const row = cell.getRow().getData();
                 const qty = row.quantity !== null && row.quantity !== undefined ? parseInt(row.quantity, 10) : '';
                 const unit = row.unit ? String(row.unit) : '';
                 return `<div class="text-center">${qty}${unit ? ' <span class="text-muted">' + escapeHtml(unit) + '</span>' : ''}</div>`;
             }},
-            { title: 'Allowed Status', field: 'allowed_status_names', width: 180, visible: false, headerFilter: 'input', headerFilterPlaceholder: 'Filter...', formatter: function(cell){
+            { title: 'Allowed Status', field: 'allowed_status_names', width: 225, visible: false, headerFilter: 'input', headerFilterPlaceholder: 'Filter...', formatter: function(cell){
                 const v = cell.getValue();
                 if (!v || v === 'None') return '<span class="text-muted small">None</span>';
                 if (v === 'All') return '<span class="text-success small fw-semibold">All</span>';
@@ -1318,7 +1318,7 @@ function initTable() {
                 const parts = [];
                 if (src) parts.push(src);
                 if (cost) parts.push(formatPeso(cost));
-                return parts.length ? `<span class="two-line-cell">${parts.join(' â€¢ ')}</span>` : '<span class="text-muted">-</span>';
+                return parts.length ? `<span class="two-line-cell">${parts.join(' &#8226; ')}</span>` : '<span class="text-muted">-</span>';
             }},
             { title: 'Date Modified', field: 'created_at', width: 160, formatter: function(cell){
                 const d = new Date(cell.getValue());
@@ -1723,4 +1723,5 @@ function setupSerialScannerModal() {
 </script>
 </body>
 </html>
+
 

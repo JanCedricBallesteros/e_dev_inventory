@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 // csm_manage_inventory.php
 require_once dirname(__DIR__, 3) . '/config/config.php';
 require_once dirname(__DIR__, 3) . '/call_func/phpqrcode/qrlib.php';
@@ -282,7 +282,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
       </div>
 
       <div class="modal-body">
-        <div class="small text-muted mb-2" id="viewInvImageTitle">—</div>
+        <div class="small text-muted mb-2" id="viewInvImageTitle">â€”</div>
         <div id="viewInvImageBodyMsg" class="mb-2"></div>
 
         <div class="view-img-wrap">
@@ -524,7 +524,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
           <input type="hidden" name="inventory_id" id="avail_inventory_id">
           <div class="mb-2">
             <div class="small text-muted">Item</div>
-            <div class="fw-semibold" id="avail_item_label">—</div>
+            <div class="fw-semibold" id="avail_item_label">â€”</div>
           </div>
 
           <label class="form-label">Available Quantity</label>
@@ -584,21 +584,21 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
             </div>
 
             <div class="mb-3">
-              <label class="ast-rule-label">Teaching Personnel</label>
+              <label class="ast-rule-label">Academic Personnel</label>
               <div class="ast-select-wrap">
                 <select id="rules_teaching_status" class="form-select" multiple></select>
               </div>
             </div>
 
             <div class="mb-3">
-              <label class="ast-rule-label">Non-Teaching Personnel</label>
+              <label class="ast-rule-label">Administrative</label>
               <div class="ast-select-wrap">
                 <select id="rules_non_teaching_status" class="form-select" multiple></select>
               </div>
             </div>
 
             <div class="ast-rule-status-wrap">
-              <div class="ast-rule-inline-note">Current Status: <span id="rules_status_text">—</span></div>
+              <div class="ast-rule-inline-note">Current Status: <span id="rules_status_text">â€”</span></div>
               <div class="ast-rule-inline-note mt-1">Critical Level: <span id="rules_crit_level_text">0</span></div>
             </div>
           </div>
@@ -626,7 +626,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body text-center">
-        <div class="small text-muted mb-2" id="qrPreviewCode">—</div>
+        <div class="small text-muted mb-2" id="qrPreviewCode">â€”</div>
         <img id="qrPreviewImg" src="" alt="QR" style="max-width:320px;width:100%;height:auto;border:1px solid #dee2e6;border-radius:12px;background:#fff;padding:10px;">
       </div>
       <div class="modal-footer">
@@ -693,7 +693,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
         </div>
         <div class="mt-2 small">
           <span class="text-muted">Last scanned:</span>
-          <span id="lastScanned" class="fw-semibold">—</span>
+          <span id="lastScanned" class="fw-semibold">â€”</span>
         </div>
         <div id="scanError" class="text-danger small mt-1" style="display:none;"></div>
       </div>
@@ -898,7 +898,7 @@ function groupLabel(code, name){
   const n = String(name ?? '').trim();
   if(!c && !n) return 'Uncategorized';
   const cDisp = c ? normalizeCategoryDisplay(c) : '';
-  if(cDisp && n) return `${cDisp} — ${n}`;
+  if(cDisp && n) return `${cDisp} â€” ${n}`;
   return cDisp || n;
 }
 function badgeStatusHtml(status){
@@ -910,7 +910,7 @@ function badgeStatusHtml(status){
 }
 function formatMoney(v){
   let n = parseFloat(v || 0);
-  return '₱ ' + n.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+  return 'â‚± ' + n.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
 }
 function applyItemCodeSmartFilter(input){
   const raw = String(input ?? '').trim();
@@ -951,7 +951,7 @@ function openInvImageModal(row){
   if(!rel) return;
 
   const src = absUrl(rel);
-  const title = `${row.inventory_system_item_code || ''} — ${String(row.item_description || '').slice(0, 60)}`;
+  const title = `${row.inventory_system_item_code || ''} â€” ${String(row.item_description || '').slice(0, 60)}`;
 
   $('#viewInvImageTitle').text(title);
   $('#viewInvImageBodyMsg').html('');
@@ -1086,7 +1086,7 @@ function resetRulesModalState(){
   $('#rules_total_qty_text').text('-');
   $('#rules_unit_text').text('-');
   $('#rules_crit_level_text').text('0');
-  $('#rules_status_text').html('—');
+  $('#rules_status_text').html('â€”');
   if ($('#rules_teaching_status').hasClass('select2-hidden-accessible')) {
     $('#rules_teaching_status').val([]).trigger('change');
   }
@@ -1471,7 +1471,7 @@ function openAvailableModal(id){
     success: function(res){
       if(res && res.success){
         const d = res.data || {};
-        $('#avail_item_label').text(`${d.inventory_system_item_code || ''} — ${String(d.item_description || '').slice(0, 60)} (${d.unit || '-'})`);
+        $('#avail_item_label').text(`${d.inventory_system_item_code || ''} â€” ${String(d.item_description || '').slice(0, 60)} (${d.unit || '-'})`);
         $('#avail_current_unit_quantity').val(d.current_quantity ?? 0);
       }else{
         $('#avail_item_label').text(`ID #${id}`);
@@ -1726,7 +1726,7 @@ async function loadCameras() {
     const cameras = await Html5Qrcode.getCameras();
     if (!cameras || cameras.length === 0) {
       cameraSelect.innerHTML = `<option value="">No cameras found</option>`;
-      showError('No cameras found. Ensure:\n• Camera is connected\n• Browser has permission to access camera\n• HTTPS is enabled (or localhost)\n• No other app is using the camera');
+      showError('No cameras found. Ensure:\nâ€¢ Camera is connected\nâ€¢ Browser has permission to access camera\nâ€¢ HTTPS is enabled (or localhost)\nâ€¢ No other app is using the camera');
       return;
     }
 
@@ -1808,7 +1808,7 @@ async function stopScanner() {
 $('#scanQrModal').on('shown.bs.modal', function () {
   loadCameras();
   setRunning(false);
-  document.getElementById('lastScanned').textContent = '—';
+  document.getElementById('lastScanned').textContent = 'â€”';
   document.getElementById('preview').innerHTML = '';
 });
 

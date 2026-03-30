@@ -121,9 +121,9 @@ function build_allowed_status_label($norm, $statusMap) {
             $sid = (int)$sid;
             if (isset($statusMap[$sid])) $names[] = $statusMap[$sid];
         }
-        $labels[] = 'Teaching: ' . (!empty($names) ? implode(', ', $names) : 'None');
+        $labels[] = 'Academic Personnel: ' . (!empty($names) ? implode(', ', $names) : 'None');
     } else {
-        $labels[] = 'Teaching: None';
+        $labels[] = 'Academic Personnel: None';
     }
 
     if (!empty($non)) {
@@ -132,9 +132,9 @@ function build_allowed_status_label($norm, $statusMap) {
             $sid = (int)$sid;
             if (isset($statusMap[$sid])) $names[] = $statusMap[$sid];
         }
-        $labels[] = 'Non-Teaching: ' . (!empty($names) ? implode(', ', $names) : 'None');
+        $labels[] = 'Administrative: ' . (!empty($names) ? implode(', ', $names) : 'None');
     } else {
-        $labels[] = 'Non-Teaching: None';
+        $labels[] = 'Administrative: None';
     }
 
     return implode(' | ', $labels);

@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 // admin/modules/consumable/csm_inventory.php
 require_once dirname(__DIR__, 3) . '/config/config.php';
 require GLOBAL_FUNC;
@@ -348,11 +348,11 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                     <div class="row g-3">
                         <div class="col-md-8">
                             <div class="small text-muted">Item</div>
-                            <div class="fw-semibold" id="availItemLabel">—</div>
+                            <div class="fw-semibold" id="availItemLabel">â€”</div>
                         </div>
                         <div class="col-md-4">
                             <div class="small text-muted">Status</div>
-                            <div id="availStatusLabel">—</div>
+                            <div id="availStatusLabel">â€”</div>
                         </div>
 
                         <div class="col-md-4" id="availQtyWrap">
@@ -362,13 +362,13 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                         </div>
 
                         <div class="col-md-8" id="availTeachWrap">
-                            <label class="form-label fw-semibold">Teaching Personnel</label>
+                            <label class="form-label fw-semibold">Academic Personnel</label>
                             <select id="availTeachingStatus" class="form-select" multiple></select>
                             <div class="small text-muted mt-1">Choose allowed teaching status. Select None to block all.</div>
                         </div>
 
                         <div class="col-md-8 offset-md-4" id="availNonTeachWrap">
-                            <label class="form-label fw-semibold">Non-Teaching Personnel</label>
+                            <label class="form-label fw-semibold">Administrative</label>
                             <select id="availNonTeachingStatus" class="form-select" multiple></select>
                             <div class="small text-muted mt-1">Choose allowed non-teaching status. Select None to block all.</div>
                         </div>
@@ -497,7 +497,7 @@ function parseDate(val) {
 function parseDateRangeInput(raw) {
     const text = (raw || '').trim();
     if (!text) return { from: null, to: null };
-    const parts = text.split(/\s+-\s+|\s+–\s+/).filter(Boolean);
+    const parts = text.split(/\s+-\s+|\s+â€“\s+/).filter(Boolean);
     if (parts.length === 1) {
         const d = parseDate(parts[0]);
         return { from: d, to: d };
@@ -719,7 +719,7 @@ function openAvailabilityModal(inventoryId) {
     $('#availNonTeachWrap').removeClass('col-md-12 offset-md-0').addClass('col-md-8 offset-md-4');
 
     $('#availItemLabel').text('Loading...');
-    $('#availStatusLabel').html('—');
+    $('#availStatusLabel').html('â€”');
     $('#availCurrentQty').val('');
     $('#availQtyHint').text('');
 
@@ -736,7 +736,7 @@ function openAvailabilityModal(inventoryId) {
 
             const d = res.data || {};
             const rules = d.allowed_employment_status || {};
-            const label = `${d.inventory_system_item_code || ''} — ${String(d.item_description || '').slice(0, 100)}`;
+            const label = `${d.inventory_system_item_code || ''} â€” ${String(d.item_description || '').slice(0, 100)}`;
 
             $('#availItemLabel').text(label);
             $('#availStatusLabel').html(statusLabel(d.status || 0));
@@ -1259,3 +1259,4 @@ $(document).ready(function() {
 </script>
 </body>
 </html>
+
