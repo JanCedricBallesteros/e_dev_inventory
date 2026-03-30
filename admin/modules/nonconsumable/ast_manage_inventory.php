@@ -222,26 +222,6 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                 </div>
 
                                 <div class="col-12">
-                                    <div class="d-flex align-items-center justify-content-between mb-2">
-                                        <label class="form-label fw-semibold mb-0 d-flex align-items-center gap-1">Set as Available Item
-                                            <span class="text-muted" data-bs-toggle="tooltip" data-bs-placement="top" title="Select who can request this item. If set to None, no one can request it.">
-                                                <i class="bi bi-info-circle"></i>
-                                            </span>
-                                        </label>
-                                    </div>
-                                    <div class="row g-2">
-                                        <div class="col-md-6">
-                                            <div class="fw-semibold small text-muted">Academic Personnel</div>
-                                            <select id="availTeachingStatus" class="form-select" multiple></select>
-                                        </div>
-                                        <div class="col-md-6">
-                                            <div class="fw-semibold small text-muted">Administrative</div>
-                                            <select id="availNonTeachingStatus" class="form-select" multiple></select>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="col-12">
                                     <div class="d-flex align-items-center justify-content-between mb-1">
                                         <label class="form-label fw-semibold mb-0">Quantity Rows</label>
                                         <div class="d-flex align-items-center gap-2">
@@ -530,10 +510,6 @@ let serialScanner = null;
 let serialTargetInput = null;
 let lastSerialScan = '';
 let lastSerialScanAt = 0;
-const NONE_STATUS_VALUE = 'NONE';
-let availTeachingSelect = null;
-let availNonTeachingSelect = null;
-let statusSelectLock = false;
 const ADD_ITEM_DRAFT_KEY = 'ast_add_item_draft_v1';
 let pendingLocalDraft = null;
 let suppressDraftSave = false;
@@ -581,77 +557,6 @@ function showPageMessage(message) {
     pageMsgTimeout = setTimeout(() => {
         el.addClass('d-none').text('');
     }, 4000);
-}
-
-function normalizeStatusSelection($el) {
-    if (statusSelectLock) return;
-    statusSelectLock = true;
-    let vals = $el.val() || [];
-    if (!Array.isArray(vals)) {
-        vals = vals ? String(vals).split(',') : [];
-    }
-    if (vals.length === 0) {
-        $el.val([NONE_STATUS_VALUE]).trigger('change');
-    }
-    statusSelectLock = false;
-}
-
-function initAvailabilitySelects(options) {
-    const baseOptions = ['<option value="' + NONE_STATUS_VALUE + '">None</option>'];
-    (options || []).forEach(function(opt){
-        baseOptions.push('<option value="' + opt.employment_status_id + '">' + escapeHtml(opt.status_name || opt.status_code || '') + '</option>');
-    });
-    $('#availTeachingStatus').html(baseOptions.join(''));
-    $('#availNonTeachingStatus').html(baseOptions.join(''));
-
-    $('#availTeachingStatus').select2({ placeholder: 'Select allowed teaching status', allowClear: true, width: '100%' });
-    $('#availNonTeachingStatus').select2({ placeholder: 'Select allowed non-teaching status', allowClear: true, width: '100%' });
-
-    $('#availTeachingStatus').val([NONE_STATUS_VALUE]).trigger('change');
-    $('#availNonTeachingStatus').val([NONE_STATUS_VALUE]).trigger('change');
-
-    function bindNoneBehavior($el){
-        $el.off('select2:select').on('select2:select', function(e){
-            const id = e.params && e.params.data ? String(e.params.data.id) : '';
-            if (id === NONE_STATUS_VALUE) {
-                $el.val([NONE_STATUS_VALUE]).trigger('change');
-            } else {
-                const vals = ($el.val() || []).filter(v => String(v) !== NONE_STATUS_VALUE);
-                $el.val(vals).trigger('change');
-            }
-        });
-        $el.off('select2:unselect').on('select2:unselect', function(){
-            normalizeStatusSelection($el);
-        });
-    }
-
-    bindNoneBehavior($('#availTeachingStatus'));
-    bindNoneBehavior($('#availNonTeachingStatus'));
-}
-
-function loadEmploymentStatuses() {
-    $.post(PROCESS_URL, { action: 'list_employment_status' }, function(res){
-        if (res && res.success) {
-            initAvailabilitySelects(res.data || []);
-        } else {
-            initAvailabilitySelects([]);
-        }
-        tryRestoreAddItemDraft();
-    }, 'json').fail(function(){
-        initAvailabilitySelects([]);
-        tryRestoreAddItemDraft();
-    });
-}
-
-function buildAllowedStatusPayload() {
-    const teachRaw = $('#availTeachingStatus').val() || [];
-    const nonRaw = $('#availNonTeachingStatus').val() || [];
-    const teachArr = Array.isArray(teachRaw) ? teachRaw : (teachRaw ? String(teachRaw).split(',') : []);
-    const nonArr = Array.isArray(nonRaw) ? nonRaw : (nonRaw ? String(nonRaw).split(',') : []);
-    const teachAllowed = teachArr.filter(v => String(v) !== NONE_STATUS_VALUE);
-    const nonAllowed = nonArr.filter(v => String(v) !== NONE_STATUS_VALUE);
-    const allNone = teachAllowed.length === 0 && nonAllowed.length === 0;
-    return allNone ? { none: true } : { teaching: teachAllowed, non_teaching: nonAllowed };
 }
 
 function saveAddItemDraft() {
@@ -706,19 +611,6 @@ function applyAddItemDraft(draft) {
             $('#unitSelect').append(new Option(draft.unit_label || draft.unit, draft.unit, true, true));
         }
         $('#unitSelect').val(draft.unit).trigger('change');
-    }
-
-    const teachVals = Array.isArray(draft.teaching_status) ? draft.teaching_status : [];
-    const nonVals = Array.isArray(draft.non_teaching_status) ? draft.non_teaching_status : [];
-    if (teachVals.length) {
-        $('#availTeachingStatus').val(teachVals).trigger('change');
-    } else {
-        $('#availTeachingStatus').val([NONE_STATUS_VALUE]).trigger('change');
-    }
-    if (nonVals.length) {
-        $('#availNonTeachingStatus').val(nonVals).trigger('change');
-    } else {
-        $('#availNonTeachingStatus').val([NONE_STATUS_VALUE]).trigger('change');
     }
 
     $('#unitRows').html('');
@@ -948,9 +840,6 @@ function collectAddItemDraft() {
     });
     const categoryLabelRaw = ($('#categorySelect option:selected').text() || '').trim();
     const unitLabelRaw = ($('#unitSelect option:selected').text() || '').trim();
-    const allowedPayload = buildAllowedStatusPayload();
-    const teachVals = $('#availTeachingStatus').val() || [];
-    const nonVals = $('#availNonTeachingStatus').val() || [];
     return {
         category_id: ($('#categorySelect').val() || '').trim(),
         category_label: categoryLabelRaw && categoryLabelRaw !== 'Select category' ? categoryLabelRaw : '',
@@ -961,10 +850,7 @@ function collectAddItemDraft() {
         source_of_fund: ($('#sourceOfFund').val() || '').trim(),
         cost_value: ($('#costValue').val() || '').trim(),
         serial_rows: serialRows,
-        number_of_units: serialRows.length > 0 ? serialRows.length : 1,
-        teaching_status: teachVals,
-        non_teaching_status: nonVals,
-        allowed_status: JSON.stringify(allowedPayload)
+        number_of_units: serialRows.length > 0 ? serialRows.length : 1
     };
 }
 
@@ -1047,7 +933,6 @@ function buildAddItemFormData(draft) {
     fd.set('unit', draft.unit || '');
     fd.set('source_of_fund', draft.source_of_fund || '');
     fd.set('cost_value', draft.cost_value || '');
-    fd.set('allowed_status', draft.allowed_status || JSON.stringify({ none: true }));
     return fd;
 }
 
@@ -1112,8 +997,6 @@ function submitAddItemFromReview() {
             $('#addItemForm')[0].reset();
             $('#categorySelect').val('').trigger('change');
             $('#unitSelect').val('').trigger('change');
-            $('#availTeachingStatus').val([NONE_STATUS_VALUE]).trigger('change');
-            $('#availNonTeachingStatus').val([NONE_STATUS_VALUE]).trigger('change');
             resetUnitRows();
             refreshPropertyCode();
             refreshTable();
@@ -1416,7 +1299,7 @@ function initTable() {
                 const display = parts.length ? parts.join(' | ') : 'None';
                 return threeLineText(display);
             }},
-            { title: 'Source / Cost', field: 'source_of_fund', width: 150, headerFilter: 'input', headerFilterPlaceholder: 'Filter...', formatter: function(cell){
+            { title: 'Source / Cost Value', field: 'source_of_fund', width: 150, headerFilter: 'input', headerFilterPlaceholder: 'Filter...', formatter: function(cell){
                 const row = cell.getRow().getData();
                 const src = row.source_of_fund ? escapeHtml(row.source_of_fund) : '';
                 const costRaw = row.cost_value;
@@ -1681,7 +1564,6 @@ function setupSerialScannerModal() {
         loadCategories();
         loadUnits();
         loadPropertyCodes();
-        loadEmploymentStatuses();
         pendingInitialTableLoad = true;
         initTableLazy();
         resetUnitRows();
@@ -1763,8 +1645,6 @@ function setupSerialScannerModal() {
         $('#addItemForm')[0].reset();
         $('#categorySelect').val('').trigger('change'); // Reset Select2 dropdown
         $('#unitSelect').val('').trigger('change'); // Reset Select2 dropdown
-        $('#availTeachingStatus').val([NONE_STATUS_VALUE]).trigger('change');
-        $('#availNonTeachingStatus').val([NONE_STATUS_VALUE]).trigger('change');
         resetUnitRows();
         refreshPropertyCode();
         $('#addItemMsg').html('');

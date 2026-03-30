@@ -828,7 +828,7 @@ function initTable() {
                 const safeFull = escapeHtml(full);
                 return `<a href="#" class="three-line-cell text-primary small js-open-availability" data-code="${escapeHtml(code)}" title="${safeFull}">${safeDisplay}</a>`;
             }},
-            { title: "Source / Cost", field: "source_of_fund", width: 150, headerFilter: "input", headerFilterPlaceholder: "Filter...", formatter: function(cell){
+            { title: "Source / Cost Value", field: "source_of_fund", width: 150, headerFilter: "input", headerFilterPlaceholder: "Filter...", formatter: function(cell){
                 const row = cell.getRow().getData();
                 const src = row.source_of_fund ? escapeHtml(row.source_of_fund) : '';
                 const costRaw = row.cost_value;
