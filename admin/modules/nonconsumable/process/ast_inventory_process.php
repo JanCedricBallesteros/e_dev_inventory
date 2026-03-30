@@ -446,13 +446,18 @@ try {
             break;
 
         case 'list_items':
-            $limit = _int(_post('limit', 1000));
-            if ($limit <= 0) $limit = 1000;
-            if ($limit > 5000) $limit = 5000;
+            $limit = _int(_post('limit', 200));
+            if ($limit <= 0) $limit = 200;
+            if ($limit > 1000) $limit = 1000;
+            $offset = _int(_post('offset', 0));
+            if ($offset < 0) $offset = 0;
             $search = _post('search');
+            $date_from = _post('date_from');
+            $date_to = _post('date_to');
+            $issued_only = _int(_post('issued_only', 0)) === 1;
             $hasSerial = has_serial_number_column();
 
-            $where = '';
+            $whereParts = [];
             if ($search !== '') {
                 $searchEsc = _esc('%' . $search . '%');
                 $parts = [
@@ -464,7 +469,39 @@ try {
                 if ($hasSerial) {
                     $parts[] = "i.serial_number LIKE '{$searchEsc}'";
                 }
-                $where = "WHERE (" . implode(' OR ', $parts) . ")";
+                $whereParts[] = "(" . implode(' OR ', $parts) . ")";
+            }
+
+            if ($date_from !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_from)) {
+                $whereParts[] = "DATE(i.created_at) >= '" . _esc($date_from) . "'";
+            }
+            if ($date_to !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_to)) {
+                $whereParts[] = "DATE(i.created_at) <= '" . _esc($date_to) . "'";
+            }
+
+            if ($issued_only) {
+                $whereParts[] = "EXISTS (
+                    SELECT 1
+                    FROM facility_records_assignments a_issued
+                    WHERE a_issued.module_type = 'AST'
+                      AND a_issued.item_code = i.property_code
+                      AND a_issued.status <> 'RETURNED'
+                )";
+            }
+
+            $where = '';
+            if (!empty($whereParts)) {
+                $where = 'WHERE ' . implode(' AND ', $whereParts);
+            }
+
+            $total = 0;
+            $countSql = "SELECT COUNT(*) AS cnt
+                         FROM ast_inventory i
+                         LEFT JOIN ast_inventory_category c ON c.category_id = i.category_id
+                         {$where}";
+            $countRes = call_mysql_query($countSql);
+            if ($countRes && ($countRow = call_mysql_fetch_array($countRes))) {
+                $total = (int)($countRow['cnt'] ?? 0);
             }
 
                                 $sql = "SELECT 
@@ -514,7 +551,7 @@ try {
                                         LEFT JOIN ast_inventory_category c ON c.category_id = i.category_id
                                         {$where}
                                         ORDER BY i.created_at DESC
-                                        LIMIT {$limit}";
+                                        LIMIT {$limit} OFFSET {$offset}";
 
             $res = call_mysql_query($sql);
             $items = [];
@@ -543,7 +580,15 @@ try {
                     $items[] = $row;
                 }
             }
-            json_response(['success' => true, 'data' => $items]);
+            $returned = count($items);
+            json_response([
+                'success' => true,
+                'data' => $items,
+                'total' => $total,
+                'offset' => $offset,
+                'limit' => $limit,
+                'has_more' => (($offset + $returned) < $total)
+            ]);
             break;
 
         case 'list_employment_status':

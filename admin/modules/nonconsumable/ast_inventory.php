@@ -290,6 +290,13 @@ let availStatusLock = false;
 let isBulkAvailMode = false;
 let showIssuedOnly = false;
 let lastPageSize = null;
+let loadRequestVersion = 0;
+let loadXhr = null;
+let loadDebounceTimer = null;
+let inventoryTableReady = false;
+let pendingInitialLoad = false;
+const CHUNK_SIZE_ALL = 200;
+const CHUNK_SIZE_PAGED = 300;
 const GROUP_STATE_KEY = 'ast_inventory_group_state_v1';
 
 function loadGroupState() {
@@ -323,7 +330,7 @@ function getGroupOpenState(key) {
 }
 
 function refreshGroupSelectStates() {
-    if (!inventoryTable) return;
+    if (!inventoryTable || !inventoryTableReady) return;
     const groups = inventoryTable.getGroups() || [];
     groups.forEach(function(g){
         const rows = g.getRows ? g.getRows() : [];
@@ -550,7 +557,7 @@ function parseDate(val) {
 function parseDateRangeInput(raw) {
     const text = (raw || '').trim();
     if (!text) return { from: null, to: null };
-    const parts = text.split(/\s+-\s+|\s+â€“\s+/).filter(Boolean);
+    const parts = text.split(/\s+-\s+|\s+–\s+/).filter(Boolean);
     if (parts.length === 1) {
         const d = parseDate(parts[0]);
         return { from: d, to: d };
@@ -599,44 +606,115 @@ function updateSummary(rows) {
     $('#issuedSummaryCard').toggleClass('is-active', showIssuedOnly);
 }
 
-// Apply search and date filters on the client side
-function applyFilters() {
-    const search = ($('#invSearch').val() || '').trim().toLowerCase();
+function isAllPageSize() {
+    if (!inventoryTable || !inventoryTableReady || !inventoryTable.getPageSize) return false;
+    return inventoryTable.getPageSize() === true;
+}
+
+function formatDateYmd(d) {
+    if (!d) return '';
+    const yy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yy}-${mm}-${dd}`;
+}
+
+function getServerFilterParams() {
+    const search = ($('#invSearch').val() || '').trim();
     const range = parseDateRangeInput($('#dateRange').val());
-    const fromDate = range.from;
-    const toDate = range.to;
-    if (toDate) {
-        toDate.setHours(23, 59, 59, 999);
-    }
+    return {
+        search: search,
+        date_from: range.from ? formatDateYmd(range.from) : '',
+        date_to: range.to ? formatDateYmd(range.to) : '',
+        issued_only: showIssuedOnly ? 1 : 0
+    };
+}
 
-    inventoryTable.clearFilter();
-    inventoryTable.setFilter(function(data) {
-        // Text search across key fields
-        if (search) {
-            const hay = `${data.property_code || ''} ${data.property_number || ''} ${data.serial_number || ''} ${data.item_description || ''} ${data.item_category_name || ''} ${data.location_label || ''}`.toLowerCase();
-            if (!hay.includes(search)) return false;
+function showProgressMessage(loaded, total) {
+    const el = $('#invMsg');
+    el.removeClass('d-none').text(`Loading ${Number(loaded || 0).toLocaleString()} / ${Number(total || 0).toLocaleString()}...`);
+}
+
+function scheduleInventoryReload(delayMs) {
+    if (loadDebounceTimer) clearTimeout(loadDebounceTimer);
+    loadDebounceTimer = setTimeout(function() {
+        loadInventory(true);
+    }, typeof delayMs === 'number' ? delayMs : 250);
+}
+
+function applyFilters() {
+    scheduleInventoryReload(250);
+}
+
+function fetchInventoryChunk(params) {
+    const payload = {
+        action: 'list_items',
+        offset: params.offset,
+        limit: params.limit,
+        search: params.filters.search,
+        date_from: params.filters.date_from,
+        date_to: params.filters.date_to,
+        issued_only: params.filters.issued_only
+    };
+
+    loadXhr = $.ajax({
+        url: PROCESS_URL,
+        type: 'POST',
+        dataType: 'json',
+        data: payload,
+        global: false
+    }).done(function(res) {
+        if (params.version !== loadRequestVersion) return;
+        if (!(res && res.success)) {
+            rawRows = [];
+            inventoryTable.replaceData([]);
+            updateSummary([]);
+            showInvMessage((res && res.message) ? res.message : 'Failed to load inventory.');
+            return;
         }
 
-        // Date range filter on created_at
-        if (fromDate || toDate) {
-            const d = parseDate(data.created_at);
-            if (!d) return false;
-            if (fromDate && d < fromDate) return false;
-            if (toDate && d > toDate) return false;
+        const chunk = Array.isArray(res.data) ? res.data : [];
+        const total = Number(res.total || 0);
+        const hasMore = !!res.has_more;
+
+        if (params.offset === 0) {
+            rawRows = chunk.slice();
+            inventoryTable.replaceData(rawRows);
+        } else if (chunk.length > 0) {
+            rawRows = rawRows.concat(chunk);
+            inventoryTable.addData(chunk);
         }
-        if (showIssuedOnly) {
-            const issuedCount = parseInt(data.issued_count, 10) || 0;
-            if (issuedCount <= 0) return false;
+
+        updateSummary(rawRows);
+        refreshGroupSelectStates();
+
+        if (params.allMode && hasMore && chunk.length > 0) {
+            showProgressMessage(rawRows.length, total);
+            fetchInventoryChunk({
+                version: params.version,
+                offset: params.offset + chunk.length,
+                limit: params.limit,
+                allMode: true,
+                filters: params.filters
+            });
+            return;
         }
-        return true;
+
+        loadXhr = null;
+        if (!params.allMode && hasMore) {
+            showInvMessage(`Showing first ${rawRows.length.toLocaleString()} of ${total.toLocaleString()} items. Select All to load all matching items.`);
+        } else {
+            showInvMessage('');
+        }
+        inventoryTable.setPage(1);
+    }).fail(function(xhr, status) {
+        if (status === 'abort') return;
+        if (params.version !== loadRequestVersion) return;
+        rawRows = [];
+        inventoryTable.replaceData([]);
+        updateSummary([]);
+        showInvMessage('Server error while loading inventory.');
     });
-    // Reset to first page after filtering to avoid page/scroll mismatch.
-    inventoryTable.setPage(1);
-
-    // Update summary based on filtered rows
-    const activeRows = inventoryTable.getData("active") || [];
-    updateSummary(activeRows);
-    refreshGroupSelectStates();
 }
 
 function scheduleInventoryRedraw() {
@@ -654,13 +732,7 @@ function toggleGroupSelection(groupKey, isChecked) {
     if (!match) return;
     const rows = match.getRows ? match.getRows() : [];
     if (!rows.length) return;
-    if (isChecked) {
-        const currentSize = inventoryTable.getPageSize();
-        if (currentSize !== true) {
-            lastPageSize = currentSize;
-            inventoryTable.setPageSize(true);
-            showInvMessage('Showing all rows so you can see the full group selection.');
-        }
+    if (isChecked && rows[0]) {
         inventoryTable.scrollToRow(rows[0]);
     }
     if (isChecked) {
@@ -800,35 +872,58 @@ function initTable() {
     inventoryTable.on('groupClosed', function(group){
         setGroupOpenState(group.getKey(), false);
     });
+    inventoryTable.on('tableBuilt', function(){
+        inventoryTableReady = true;
+        if (pendingInitialLoad) {
+            pendingInitialLoad = false;
+            loadInventory(true);
+        }
+    });
+    inventoryTable.on('pageSizeChanged', function(){
+        if (!inventoryTableReady) return;
+        loadInventory(true);
+    });
 }
 
-function loadInventory() {
-    $.post(PROCESS_URL, { action: 'list_items', limit: 5000 }, function(res) {
-        if (res && res.success) {
-            rawRows = res.data || [];
-            inventoryTable.setData(rawRows);
-            applyFilters();
-            showInvMessage('');
-        } else {
-            rawRows = [];
-            inventoryTable.setData([]);
-            updateSummary([]);
-            showInvMessage(res && res.message ? res.message : 'Failed to load inventory.');
-        }
-    }, 'json').fail(function() {
-        rawRows = [];
-        inventoryTable.setData([]);
-        updateSummary([]);
-        showInvMessage('Server error while loading inventory.');
+function loadInventory(restart) {
+    if (!inventoryTable) return;
+    if (!inventoryTableReady) {
+        pendingInitialLoad = true;
+        return;
+    }
+    if (restart !== false) {
+        loadRequestVersion += 1;
+    }
+    const version = loadRequestVersion;
+    if (loadXhr && typeof loadXhr.abort === 'function') {
+        loadXhr.abort();
+        loadXhr = null;
+    }
+
+    rawRows = [];
+    inventoryTable.replaceData([]);
+    updateSummary([]);
+    refreshGroupSelectStates();
+
+    const allMode = isAllPageSize();
+    const limit = allMode ? CHUNK_SIZE_ALL : CHUNK_SIZE_PAGED;
+    const filters = getServerFilterParams();
+
+    fetchInventoryChunk({
+        version: version,
+        offset: 0,
+        limit: limit,
+        allMode: allMode,
+        filters: filters
     });
 }
 
 $(document).ready(function() {
     initTable();
-    loadInventory();
+    pendingInitialLoad = true;
     loadEmploymentStatuses();
 
-    $('#invSearch').on('keyup', applyFilters);
+    $('#invSearch').on('input', applyFilters);
     $('#dateRange').on('change keyup', applyFilters);
 
     if (typeof $.fn.daterangepicker === 'function') {
@@ -844,12 +939,12 @@ $(document).ready(function() {
         $('#dateRange').on('apply.daterangepicker', function(ev, picker) {
             const value = picker.startDate.format('YYYY-MM-DD') + ' - ' + picker.endDate.format('YYYY-MM-DD');
             $(this).val(value);
-            applyFilters();
+            loadInventory(true);
         });
 
         $('#dateRange').on('cancel.daterangepicker', function() {
             $(this).val('');
-            applyFilters();
+            loadInventory(true);
         });
     }
 
@@ -871,7 +966,7 @@ $(document).ready(function() {
 
     $('#issuedSummaryCard').on('click', function() {
         showIssuedOnly = !showIssuedOnly;
-        applyFilters();
+        loadInventory(true);
     });
 
     // Keep columns fitted when sidebar toggles or window resizes

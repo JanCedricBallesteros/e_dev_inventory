@@ -538,6 +538,14 @@ const ADD_ITEM_DRAFT_KEY = 'ast_add_item_draft_v1';
 let pendingLocalDraft = null;
 let suppressDraftSave = false;
 let saveDraftTimer = null;
+let inventoryRows = [];
+let tableLoadVersion = 0;
+let tableLoadXhr = null;
+let tableLoadDebounce = null;
+let inventoryTableReady = false;
+let pendingInitialTableLoad = false;
+const TABLE_CHUNK_SIZE_ALL = 200;
+const TABLE_CHUNK_SIZE_PAGED = 300;
 
 function playSerialBeep(kind) {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -1260,12 +1268,113 @@ function updateQrPreview(codes) {
     });
 }
 
+function isAllTablePageSize() {
+    if (!inventoryTable || !inventoryTableReady || !inventoryTable.getPageSize) return false;
+    return inventoryTable.getPageSize() === true;
+}
+
+function getTableFilterParams() {
+    return {
+        search: ($('#tableSearch').val() || '').trim()
+    };
+}
+
+function fetchInventoryChunk(params) {
+    const payload = {
+        action: 'list_items',
+        offset: params.offset,
+        limit: params.limit,
+        search: params.filters.search
+    };
+
+    tableLoadXhr = $.ajax({
+        url: PROCESS_URL,
+        type: 'POST',
+        dataType: 'json',
+        data: payload,
+        global: false
+    }).done(function(res) {
+        if (params.version !== tableLoadVersion) return;
+        if (!(res && res.success)) {
+            inventoryRows = [];
+            inventoryTable.replaceData([]);
+            return;
+        }
+
+        const chunk = Array.isArray(res.data) ? res.data : [];
+        const hasMore = !!res.has_more;
+
+        if (params.offset === 0) {
+            inventoryRows = chunk.slice();
+            inventoryTable.replaceData(inventoryRows);
+        } else if (chunk.length > 0) {
+            inventoryRows = inventoryRows.concat(chunk);
+            inventoryTable.addData(chunk);
+        }
+
+        if (params.allMode && hasMore && chunk.length > 0) {
+            fetchInventoryChunk({
+                version: params.version,
+                offset: params.offset + chunk.length,
+                limit: params.limit,
+                allMode: true,
+                filters: params.filters
+            });
+            return;
+        }
+
+        tableLoadXhr = null;
+        inventoryTable.setPage(1);
+    }).fail(function(xhr, status) {
+        if (status === 'abort') return;
+        if (params.version !== tableLoadVersion) return;
+        inventoryRows = [];
+        inventoryTable.replaceData([]);
+    });
+}
+
+function loadInventoryTable(restart) {
+    if (!inventoryTable) return;
+    if (!inventoryTableReady) {
+        pendingInitialTableLoad = true;
+        return;
+    }
+    if (restart !== false) {
+        tableLoadVersion += 1;
+    }
+    const version = tableLoadVersion;
+
+    if (tableLoadXhr && typeof tableLoadXhr.abort === 'function') {
+        tableLoadXhr.abort();
+        tableLoadXhr = null;
+    }
+
+    inventoryRows = [];
+    inventoryTable.replaceData([]);
+
+    const allMode = isAllTablePageSize();
+    const limit = allMode ? TABLE_CHUNK_SIZE_ALL : TABLE_CHUNK_SIZE_PAGED;
+    const filters = getTableFilterParams();
+
+    fetchInventoryChunk({
+        version: version,
+        offset: 0,
+        limit: limit,
+        allMode: allMode,
+        filters: filters
+    });
+}
+
+function scheduleTableReload(delayMs) {
+    if (tableLoadDebounce) clearTimeout(tableLoadDebounce);
+    tableLoadDebounce = setTimeout(function() {
+        loadInventoryTable(true);
+    }, typeof delayMs === 'number' ? delayMs : 250);
+}
+
 function initTable() {
     inventoryTable = new Tabulator('#inventoryTable', {
         height: "auto",
-        ajaxURL: PROCESS_URL,
-        ajaxParams: { action: 'list_items', limit: 200 },
-        ajaxConfig: 'POST',
         layout: 'fitColumns',
         responsiveLayout: 'collapse',
         placeholder: 'No items found',
@@ -1273,9 +1382,6 @@ function initTable() {
         paginationSize: 10,
         paginationSizeSelector: [5, 10, 20, 50, true],
         paginationCounter: 'rows',
-        ajaxResponse: function(url, params, response) {
-            return response.data || [];
-        },
         columns: [
             { title: 'Property Tag', field: 'property_code', width: 200, headerFilter: 'input', headerFilterPlaceholder: 'Filter...', formatter: function(cell){
                 return twoLineText(cell.getValue());
@@ -1326,6 +1432,19 @@ function initTable() {
             }}
         ]
     });
+
+    inventoryTable.on('tableBuilt', function() {
+        inventoryTableReady = true;
+        if (pendingInitialTableLoad) {
+            pendingInitialTableLoad = false;
+            loadInventoryTable(true);
+        }
+    });
+
+    inventoryTable.on('pageSizeChanged', function() {
+        if (!inventoryTableReady) return;
+        loadInventoryTable(true);
+    });
 }
 
 function initTableLazy() {
@@ -1351,10 +1470,8 @@ function initTableLazy() {
 }
 
 function refreshTable() {
-    const search = $('#tableSearch').val();
-    if (inventoryTable) {
-        inventoryTable.setData(PROCESS_URL, { action: 'list_items', search: search, limit: 200 }, 'POST');
-    }
+    if (!inventoryTable) return;
+    scheduleTableReload(200);
 }
 
 function loadItemByCode(code) {
@@ -1565,6 +1682,7 @@ function setupSerialScannerModal() {
         loadUnits();
         loadPropertyCodes();
         loadEmploymentStatuses();
+        pendingInitialTableLoad = true;
         initTableLazy();
         resetUnitRows();
         refreshPropertyCode();
@@ -1683,7 +1801,7 @@ function setupSerialScannerModal() {
         });
     });
 
-    $('#tableSearch').on('keyup', function() {
+    $('#tableSearch').on('input', function() {
         refreshTable();
     });
 
