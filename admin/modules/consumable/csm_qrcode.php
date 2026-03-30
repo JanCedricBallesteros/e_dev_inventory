@@ -204,8 +204,11 @@ if (!(
 
             --detailed-w: 100mm;
             --detailed-h: 48mm;
+            --detailed-qr-size: 21mm;
             --simple-w: 70mm;
             --simple-h: 38mm;
+            --simple-qr-column: 26mm;
+            --simple-qr-size: 22mm;
 
             --gap: 6mm;
         }
@@ -340,8 +343,8 @@ if (!(
             box-sizing:border-box;
         }
         .tag-qr img{
-            width: 21mm;
-            height: 21mm;
+            width: var(--detailed-qr-size);
+            height: var(--detailed-qr-size);
             object-fit:contain;
             border:1px solid #c9c9c9;
             padding: 1mm;
@@ -378,7 +381,7 @@ if (!(
             border-radius: 1mm;
             padding: 2mm;
             display:grid;
-            grid-template-columns: 1fr 22mm;
+            grid-template-columns: 1fr var(--simple-qr-column);
             gap: 2mm;
             align-items:center;
             overflow:hidden;
@@ -416,8 +419,8 @@ if (!(
             text-align:center;
         }
         .simple-qr img{
-            width: 18mm;
-            height: 18mm;
+            width: var(--simple-qr-size);
+            height: var(--simple-qr-size);
             object-fit:contain;
             border:1px solid #c9c9c9;
             padding: 1mm;
@@ -982,8 +985,11 @@ const TAG_PRINT_CSS = `
 
     --detailed-w: 100mm;
     --detailed-h: 48mm;
+    --detailed-qr-size: 21mm;
     --simple-w: 70mm;
     --simple-h: 38mm;
+    --simple-qr-column: 26mm;
+    --simple-qr-size: 22mm;
 
   }
 
@@ -1149,8 +1155,8 @@ const TAG_PRINT_CSS = `
     box-sizing:border-box;
   }
   .tag-qr img{
-    width: 21mm;
-    height: 21mm;
+    width: var(--detailed-qr-size);
+    height: var(--detailed-qr-size);
     object-fit:contain;
     border:1px solid #c9c9c9;
     padding: 1mm;
@@ -1187,7 +1193,7 @@ const TAG_PRINT_CSS = `
     border-radius: 1mm;
     padding: 2mm;
     display:grid;
-    grid-template-columns: 1fr 22mm;
+    grid-template-columns: 1fr var(--simple-qr-column);
     gap: 2mm;
     align-items:center;
     overflow:hidden;
@@ -1215,7 +1221,8 @@ const TAG_PRINT_CSS = `
   }
   .simple-qr{ text-align:center; }
   .simple-qr img{
-    width: 18mm; height: 18mm;
+    width: var(--simple-qr-size);
+    height: var(--simple-qr-size);
     object-fit:contain;
     border:1px solid #c9c9c9;
     padding: 1mm;
