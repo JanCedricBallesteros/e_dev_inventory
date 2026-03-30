@@ -467,6 +467,16 @@ $('#categoryTable').on('click', '.js-thumb-preview, .item-badge', function() {
             </div>
         `;
         $('#bulkRows').append(row);
+        syncBulkRemoveState();
+    }
+
+    function syncBulkRemoveState() {
+        const rowCount = $('#bulkRows .bulk-row').length;
+        const disableRemove = rowCount <= 1;
+        $('#bulkRows .btn-bulk-remove')
+            .prop('disabled', disableRemove)
+            .toggleClass('disabled', disableRemove)
+            .attr('title', disableRemove ? 'At least one row is required' : 'Remove row');
     }
 
     $('#bulkAddRow').on('click', function() {
@@ -474,11 +484,15 @@ $('#categoryTable').on('click', '.js-thumb-preview, .item-badge', function() {
     });
 
     $('#bulkRows').on('click', '.btn-bulk-remove', function() {
+        if ($('#bulkRows .bulk-row').length <= 1) {
+            return;
+        }
         $(this).closest('.bulk-row').remove();
         // Re-index file inputs to keep backend mapping consistent
         $('#bulkRows .bulk-row').each(function(i) {
             $(this).find('input[type="file"]').attr('name', 'bulk_photo_' + i);
         });
+        syncBulkRemoveState();
     });
 
     $('#bulkAddForm').on('submit', function(e) {
