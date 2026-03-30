@@ -244,6 +244,92 @@ if (!(
         .select2-container--default .select2-selection--multiple .select2-selection__choice {
             margin-top: 4px;
         }
+        .floating-notice-stack {
+            position: fixed;
+            top: 86px;
+            right: 18px;
+            z-index: 1095;
+            width: min(360px, calc(100vw - 24px));
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            pointer-events: none;
+        }
+        .floating-notice {
+            pointer-events: auto;
+            box-shadow: 0 18px 40px rgba(15, 23, 42, 0.16);
+            border-radius: 16px;
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            margin: 0;
+            position: relative;
+            padding: .95rem 2.75rem .95rem 1rem;
+            overflow: hidden;
+            backdrop-filter: blur(8px);
+            animation: floatingNoticeIn .22s ease-out;
+        }
+        .floating-notice::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 5px;
+            height: 100%;
+            background: #64748b;
+        }
+        .floating-notice.alert-success {
+            background: rgba(236, 253, 245, 0.97);
+            color: #065f46;
+        }
+        .floating-notice.alert-success::before { background: #10b981; }
+        .floating-notice.alert-danger {
+            background: rgba(254, 242, 242, 0.97);
+            color: #991b1b;
+        }
+        .floating-notice.alert-danger::before { background: #ef4444; }
+        .floating-notice.alert-warning {
+            background: rgba(255, 251, 235, 0.98);
+            color: #92400e;
+        }
+        .floating-notice.alert-warning::before { background: #f59e0b; }
+        .floating-notice.alert-primary,
+        .floating-notice.alert-info {
+            background: rgba(239, 246, 255, 0.97);
+            color: #1d4ed8;
+        }
+        .floating-notice.alert-primary::before,
+        .floating-notice.alert-info::before { background: #2563eb; }
+        .floating-notice div {
+            line-height: 1.4;
+            font-size: .94rem;
+        }
+        .floating-notice .btn-close {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            transform: scale(.88);
+            opacity: .62;
+        }
+        .floating-notice .btn-close:hover {
+            opacity: 1;
+        }
+        @keyframes floatingNoticeIn {
+            from {
+                opacity: 0;
+                transform: translate3d(0, -10px, 0) scale(.98);
+            }
+            to {
+                opacity: 1;
+                transform: translate3d(0, 0, 0) scale(1);
+            }
+        }
+        @media (max-width: 576px) {
+            .floating-notice-stack {
+                top: 74px;
+                right: 12px;
+                left: 12px;
+                width: auto;
+            }
+        }
     </style>
 </head>
 
@@ -252,6 +338,8 @@ if (!(
 include_once DOMAIN_PATH . '/global/header.php';
 include_once DOMAIN_PATH . '/global/sidebar.php';
 ?>
+
+<div id="floatingNoticeStack" class="floating-notice-stack"></div>
 
 <main id="main" class="main">
     <div class="pagetitle">
@@ -454,21 +542,87 @@ let availStatusLock = false;
 let isBulkAvailMode = false;
 let statusSummaryFilter = '';
 
+function showFloatingNotice(type, content, opts = {}) {
+    const settings = Object.assign({ html: false, delay: 4000 }, opts || {});
+    const id = 'notice-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+    const body = settings.html ? String(content || '') : escHtml(String(content || ''));
+    const html = `
+        <div class="alert alert-${type} floating-notice" data-notice-id="${id}">
+            <button type="button" class="btn-close" aria-label="Close"></button>
+            <div>${body}</div>
+        </div>
+    `;
+
+    const $stack = $('#floatingNoticeStack');
+    $stack.append(html);
+
+    const closeNotice = () => {
+        $stack.find(`[data-notice-id="${id}"]`).fadeOut(160, function() {
+            $(this).remove();
+        });
+    };
+
+    $stack.find(`[data-notice-id="${id}"] .btn-close`).on('click', closeNotice);
+    window.setTimeout(closeNotice, settings.delay);
+}
+
+function observeFloatingTargets(selectors) {
+    (selectors || []).forEach(selector => {
+        document.querySelectorAll(selector).forEach(target => {
+            const flushNotice = () => {
+                if (target.dataset.noticeSync === '1') return;
+
+                const rawHtml = target.innerHTML || '';
+                const rawText = (target.textContent || '').trim();
+                if (!rawHtml.trim() && !rawText) return;
+
+                const $tmp = $('<div>').html(rawHtml);
+                const $alert = $tmp.find('.alert').first();
+
+                let type = 'info';
+                let content = rawText;
+                let asHtml = false;
+
+                if ($alert.length) {
+                    asHtml = true;
+                    content = $alert.html();
+                    if ($alert.hasClass('alert-danger')) type = 'danger';
+                    else if ($alert.hasClass('alert-success')) type = 'success';
+                    else if ($alert.hasClass('alert-warning')) type = 'warning';
+                    else if ($alert.hasClass('alert-primary')) type = 'primary';
+                    else if ($alert.hasClass('alert-info')) type = 'info';
+                } else if (target.classList.contains('text-danger') || /error/i.test(target.id || '')) {
+                    type = 'danger';
+                }
+
+                if (!String(content || '').trim()) return;
+
+                target.dataset.noticeSync = '1';
+                showFloatingNotice(type, content, { html: asHtml });
+                $(target).html('').addClass('d-none');
+                target.dataset.noticeSync = '0';
+            };
+
+            new MutationObserver(flushNotice).observe(target, {
+                childList: true,
+                subtree: true,
+                characterData: true,
+                attributes: true,
+                attributeFilter: ['class', 'style']
+            });
+        });
+    });
+}
+
 function showInvMessage(message) {
-    const el = $('#invMsg');
     if (!message) {
-        el.addClass('d-none').text('');
         return;
     }
-    el.removeClass('d-none').text(message);
-    if (invMsgTimeout) clearTimeout(invMsgTimeout);
-    invMsgTimeout = setTimeout(() => {
-        el.addClass('d-none').text('');
-    }, 4000);
+    showFloatingNotice('danger', message);
 }
 
 function showAvailMessage(type, text) {
-    $('#availMsg').html(`<div class="alert alert-${type} mb-0">${text}</div>`);
+    showFloatingNotice(type, text);
 }
 
 function escHtml(str) {
@@ -1018,6 +1172,7 @@ function refreshTable() {
 }
 
 $(document).ready(function() {
+    observeFloatingTargets(['#invMsg', '#availMsg', '#searchScanError']);
     initTable();
     loadEmploymentStatuses();
 
