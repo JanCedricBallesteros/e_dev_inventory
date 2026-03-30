@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 // admin/modules/nonconsumable/process/ast_physical_checking_process.php
 require_once dirname(__DIR__, 4) . '/config/config.php';
 require GLOBAL_FUNC;
@@ -158,7 +158,7 @@ try {
         case 'get_item_by_code': {
             $property_code = _post('property_code');
             if ($property_code === '') {
-                json_response(['success' => false, 'message' => 'Property code is required.'], 422);
+                json_response(['success' => false, 'message' => 'Property Tag is required.'], 422);
             }
             $sql = "SELECT i.*, c.item_category_name, c.category_photo
                     FROM ast_inventory i
@@ -195,7 +195,7 @@ try {
             $date_issued = _post('date_issued');
 
             if ($session_id <= 0 || $property_code === '') {
-                json_response(['success' => false, 'message' => 'Session and property code are required.'], 422);
+                json_response(['success' => false, 'message' => 'Session and Property Tag are required.'], 422);
             }
 
             $resSession = call_mysql_query("SELECT status FROM ast_audit_sessions WHERE id = {$session_id} LIMIT 1");
@@ -333,3 +333,4 @@ try {
     error_log($e->getMessage());
     json_response(['success' => false, 'message' => 'Server error occurred.'], 500);
 }
+

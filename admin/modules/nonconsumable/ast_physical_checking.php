@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 // admin/modules/nonconsumable/ast_physical_checking.php
 require_once dirname(__DIR__, 3) . '/config/config.php';
 require GLOBAL_FUNC;
@@ -127,9 +127,9 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                 <select class="form-select" id="activeSession"></select>
                             </div>
                             <div class="col-md-5">
-                                <div class="filter-label">Property Code</div>
+                                <div class="filter-label">Property Tag</div>
                                 <div class="input-group">
-                                    <input type="text" class="form-control" id="propertyCodeInput" placeholder="Scan or search property code">
+                                    <input type="text" class="form-control" id="propertyCodeInput" placeholder="Scan or search Property Tag">
                                     <button class="btn btn-outline-secondary" type="button" id="openSearchScanner" title="Scan QR">
                                         <i class="bi bi-qr-code-scan"></i>
                                     </button>
@@ -150,7 +150,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                             <div class="col-md-8">
                                 <div class="row g-2">
                                     <div class="col-md-6">
-                                        <div class="info-label">Property Code</div>
+                                        <div class="info-label">Property Tag</div>
                                         <div class="info-value" id="infoPropertyCode">-</div>
                                     </div>
                                     <div class="col-md-6">
@@ -244,7 +244,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                         <span><i class="bi bi-table"></i>&ensp;Checked Items</span>
                         <div class="table-toolbar">
                             <select class="form-select form-select-sm" id="filterSession"></select>
-                            <input type="text" class="form-control form-control-sm" id="checkSearch" placeholder="Search property code or description" style="max-width:260px;">
+                            <input type="text" class="form-control form-control-sm" id="checkSearch" placeholder="Search Property Tag or description" style="max-width:260px;">
                             <button class="btn btn-outline-light btn-sm" id="exportChecksCsv">CSV</button>
                             <button class="btn btn-outline-light btn-sm" id="exportChecksXlsx">XLSX</button>
                             <button class="btn btn-outline-light btn-sm" id="exportChecksJson">JSON</button>
@@ -284,7 +284,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                 </div>
                 <div class="mt-2 small">
                     <span class="text-muted">Last scanned:</span>
-                    <span id="searchLastScanned" class="fw-semibold">—</span>
+                    <span id="searchLastScanned" class="fw-semibold">â€”</span>
                 </div>
                 <div id="searchScanError" class="text-danger small mt-1" style="display:none;"></div>
             </div>
@@ -318,7 +318,7 @@ function showMessage(target, type, text) {
 function parseDateRangeStrings(raw) {
     const text = (raw || '').trim();
     if (!text) return { start: '', end: '' };
-    const parts = text.split(/\s+-\s+|\s+–\s+/).filter(Boolean);
+    const parts = text.split(/\s+-\s+|\s+â€“\s+/).filter(Boolean);
     if (parts.length === 1) return { start: parts[0], end: parts[0] };
     return { start: parts[0], end: parts[1] };
 }
@@ -428,7 +428,7 @@ function initChecksTable() {
         },
         columns: [
             { title: 'Series', field: 'series_code', width: 140 },
-            { title: 'Property Code', field: 'property_code', width: 150 },
+            { title: 'Property Tag', field: 'property_code', width: 150 },
             { title: 'Item Description', field: 'item_description', widthGrow: 2, formatter: function(cell){
                 return threeLineText(cell.getValue());
             }},
@@ -686,3 +686,4 @@ $(document).ready(function() {
 </script>
 </body>
 </html>
+

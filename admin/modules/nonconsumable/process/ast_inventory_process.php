@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 // admin/modules/nonconsumable/process/ast_inventory_process.php
 require_once dirname(__DIR__, 4) . '/config/config.php';
 require_once dirname(__DIR__, 4) . '/call_func/phpqrcode/qrlib.php';
@@ -564,7 +564,7 @@ try {
         case 'get_availability_settings':
             $property_code = _post('property_code');
             if ($property_code === '') {
-                json_response(['success' => false, 'message' => 'Property code is required.'], 422);
+                json_response(['success' => false, 'message' => 'Property Tag is required.'], 422);
             }
             $sql = "SELECT property_code, quantity, allowed_employment_status
                     FROM ast_inventory
@@ -588,7 +588,7 @@ try {
             $allowed_status = _post('allowed_status', '');
             $allowed_norm = normalize_allowed_payload($allowed_status);
             if ($property_code === '') {
-                json_response(['success' => false, 'message' => 'Property code is required.'], 422);
+                json_response(['success' => false, 'message' => 'Property Tag is required.'], 422);
             }
             $sql = "SELECT item_id, property_code, allowed_employment_status, is_available FROM ast_inventory WHERE property_code = '" . _esc($property_code) . "' LIMIT 1";
             $res = call_mysql_query($sql);
@@ -762,7 +762,7 @@ try {
                 $existsRes = call_mysql_query($existsSql);
                 if ($existsRes && call_mysql_fetch_array($existsRes)) {
                     $failed = true;
-                    $failMessage = 'Property code already exists. Please refresh and try again.';
+                    $failMessage = 'Property Tag already exists. Please refresh and try again.';
                     $failCode = 409;
                     break;
                 }
@@ -974,7 +974,7 @@ try {
                         if (count($parts) >= 3) {
                             $property_number = sanitize_property_number($parts[1]);
                             if ($property_number !== '' && !is_valid_property_number($property_number)) {
-                                $errors[] = 'Invalid property number in property code at row ' . ($inserted + $updated + $skipped + 2);
+                                $errors[] = 'Invalid property number in Property Tag at row ' . ($inserted + $updated + $skipped + 2);
                                 $skipped++;
                                 continue;
                             }
@@ -1072,7 +1072,7 @@ try {
         case 'get_item_by_code':
             $property_code = _post('property_code');
             if ($property_code === '') {
-                json_response(['success' => false, 'message' => 'Property code is required.'], 422);
+                json_response(['success' => false, 'message' => 'Property Tag is required.'], 422);
             }
             $sql = "SELECT i.*, c.item_category_name
                     FROM ast_inventory i
@@ -1099,7 +1099,7 @@ try {
         case 'add_quantity':
             json_response([
                 'success' => false,
-                'message' => 'Add quantity is disabled for AST. Use Add New Item unit rows so each unit gets its own property code and QR.'
+                'message' => 'Add quantity is disabled for AST. Use Add New Item unit rows so each unit gets its own Property Tag and QR.'
             ], 410);
             break;
 
@@ -1107,7 +1107,7 @@ try {
             $property_code = _post('property_code');
             $is_available = _int(_post('is_available')) ? 1 : 0;
             if ($property_code === '') {
-                json_response(['success' => false, 'message' => 'Property code is required.'], 422);
+                json_response(['success' => false, 'message' => 'Property Tag is required.'], 422);
             }
             $sql = "UPDATE ast_inventory SET is_available = {$is_available} WHERE property_code = '" . _esc($property_code) . "' LIMIT 1";
             $ok = call_mysql_query($sql);
@@ -1127,3 +1127,4 @@ try {
 } catch (Exception $ex) {
     json_response(['success' => false, 'message' => 'Server error: ' . $ex->getMessage()], 500);
 }
+

@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once dirname(__DIR__, 2) . '/config/config.php';
 require GLOBAL_FUNC;
 require CL_SESSION_PATH;
@@ -347,7 +347,7 @@ try {
 
             if ($type === 'AST') {
                 if ($qty !== 1) {
-                    json_response(['success' => false, 'message' => 'AST requests must be exactly 1 per property code.'], 422);
+                    json_response(['success' => false, 'message' => 'AST requests must be exactly 1 per Property Tag.'], 422);
                 }
                 $itemCodeEsc = _esc($itemCode);
                 $invRes = call_mysql_query("SELECT property_code, item_description, is_available, allowed_employment_status 
@@ -601,4 +601,5 @@ try {
 } catch (Throwable $e) {
     json_response(['success' => false, 'message' => 'Server error occurred.'], 500);
 }
+
 

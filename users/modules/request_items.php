@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once dirname(__DIR__, 2) . '/config/config.php';
 require GLOBAL_FUNC;
 require CL_SESSION_PATH;
@@ -279,7 +279,7 @@ function syncRequestQtyUI() {
     if (currentType === 'AST') {
         $('#reqAvailLabel').text('Availability');
         $('#reqQtyLabel').text('Quantity to request (fixed)');
-        $('#reqQtyHelp').text('AST uses one property code per unit. Quantity is always 1.');
+        $('#reqQtyHelp').text('AST uses one Property Tag per unit. Quantity is always 1.');
         $('#reqQtyInput').val(1).prop('readonly', true);
         return;
     }
@@ -553,5 +553,6 @@ $(document).ready(function() {
 });
 </script>
 </html>
+
 
 

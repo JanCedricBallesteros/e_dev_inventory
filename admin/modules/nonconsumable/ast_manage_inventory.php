@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 // admin/modules/nonconsumable/ast_manage_inventory.php
 require_once dirname(__DIR__, 3) . '/config/config.php';
 require GLOBAL_FUNC;
@@ -49,6 +49,24 @@ if (!(
         .select2-container--default .select2-selection--single .select2-selection__arrow {
             height: 36px;
         }
+        .select2-container--default .select2-selection--multiple {
+            min-height: 38px;
+            border: 1px solid #ced4da;
+            border-radius: 0.375rem;
+            height: auto;
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .select2-container--default .select2-selection--multiple .select2-selection__rendered {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            padding: 2px 8px;
+        }
+        .select2-container--default .select2-selection--multiple .select2-search__field {
+            min-width: 80px;
+        }
         /* Fix Select2 with button alignment */
         .select2-with-button {
             display: flex;
@@ -63,7 +81,7 @@ if (!(
             margin-left: -1px;
         }
         .select2-with-button .select2-container .select2-selection {
-/* SIX SEVEN SAIS SYETE ANIM PITO */
+
             border-top-right-radius: 0;
             border-bottom-right-radius: 0;
         }
@@ -170,7 +188,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                 </div>
 
                                 <div class="col-md-4">
-                                    <label class="form-label fw-semibold">Property Code (auto)</label>
+                                    <label class="form-label fw-semibold">Property Tag (auto)</label>
                                     <input type="text" class="form-control" id="propertyCodeField" placeholder="AST-XXX-0001 ... AST-XXX-000N" readonly>
                                 </div>
 
@@ -190,7 +208,6 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                     <select class="form-select" name="unit" id="unitSelect" required>
                                         <option value="">Select existing or type a new unit</option>
                                     </select>
-                                    <div class="small text-muted mt-1">Tip: type a unit and press Enter to add it.</div>
                                 </div>
                                 <div class="col-md-4">
                                     <label class="form-label fw-semibold">Source of Fund (optional)</label>
@@ -199,8 +216,28 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                 <div class="col-md-4">
                                     <label class="form-label fw-semibold">Cost Value (optional)</label>
                                     <div class="input-group">
-                                        <span class="input-group-text">₱</span>
+                                        <span class="input-group-text">â‚±</span>
                                         <input type="number" step="0.01" min="0" class="form-control" name="cost_value" id="costValue" placeholder="0.00" inputmode="decimal" oninput="this.value=this.value.replace(/[^0-9.]/g,'').replace(/(\\..*)\\./g,'$1');">
+                                    </div>
+                                </div>
+
+                                <div class="col-12">
+                                    <div class="d-flex align-items-center justify-content-between mb-2">
+                                        <label class="form-label fw-semibold mb-0 d-flex align-items-center gap-1">Set as Available Item
+                                            <span class="text-muted" data-bs-toggle="tooltip" data-bs-placement="top" title="Select who can request this item. If set to None, no one can request it.">
+                                                <i class="bi bi-info-circle"></i>
+                                            </span>
+                                        </label>
+                                    </div>
+                                    <div class="row g-2">
+                                        <div class="col-md-6">
+                                            <div class="fw-semibold small text-muted">Teaching Personnel</div>
+                                            <select id="availTeachingStatus" class="form-select" multiple></select>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="fw-semibold small text-muted">Non-Teaching Personnel</div>
+                                            <select id="availNonTeachingStatus" class="form-select" multiple></select>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -226,7 +263,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                             <br>Generating QR code...
                                         </div>
                                         <div id="qrPreviewList" class="qr-preview-grid"></div>
-                                        <div id="qrPreviewMeta" class="small text-muted mt-2">Based on the property code</div>
+                                        <div id="qrPreviewMeta" class="small text-muted mt-2">Based on the Property Tag</div>
                                     </div>
                                 </div>
                             </div>
@@ -249,10 +286,10 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                     <div class="card-header"><i class="bi bi-plus-square"></i>&ensp;Add Quantity (Existing Item)</div>
                     <div class="card-body">
                         <div class="mb-3">
-                            <label class="form-label fw-semibold">Property Code</label>
+                            <label class="form-label fw-semibold">Property Tag</label>
                             <div class="select2-with-button">
                                 <select class="form-select" id="searchPropertyCode">
-                                    <option value="">Select property code</option>
+                                    <option value="">Select Property Tag</option>
                                 </select>
                                 <button class="btn btn-outline-secondary" type="button" id="openAddQtyScanner" title="Scan QR">
                                     <i class="bi bi-qr-code-scan"></i>
@@ -276,7 +313,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                 <div class="col-6">
                                     <label class="form-label fw-semibold">Cost Value</label>
                                     <div class="input-group">
-                                        <span class="input-group-text">₱</span>
+                                        <span class="input-group-text">â‚±</span>
                                         <input type="number" step="0.01" min="0" class="form-control" name="cost_value" id="addQtyCost" inputmode="decimal" oninput="this.value=this.value.replace(/[^0-9.]/g,'').replace(/(\\..*)\\./g,'$1');">
                                     </div>
                                 </div>
@@ -298,7 +335,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                             <span><i class="bi bi-table"></i>&ensp;Recent Items</span>
                             <div class="input-group" style="max-width:360px;">
                                 <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
-                                <input type="text" class="form-control form-control-sm" id="tableSearch" placeholder="Search property code or serial no.">
+                                <input type="text" class="form-control form-control-sm" id="tableSearch" placeholder="Search Property Tag or serial no.">
                                 <button class="btn btn-light btn-sm border" type="button" id="openSearchScanner" title="Scan QR">
                                     <i class="bi bi-qr-code-scan"></i>
                                 </button>
@@ -343,7 +380,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                 </div>
                 <div class="mt-2 small">
                     <span class="text-muted">Last scanned:</span>
-                    <span id="searchLastScanned" class="fw-semibold">�"</span>
+                    <span id="searchLastScanned" class="fw-semibold">ï¿½"</span>
                 </div>
                 <div id="searchScanError" class="text-danger small mt-1" style="display:none;"></div>
             </div>
@@ -442,14 +479,14 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                         <div class="col-md-6"><span class="text-muted">Source of Fund:</span> <span class="fw-semibold" id="reviewSource"></span></div>
                         <div class="col-md-6"><span class="text-muted">Cost:</span> <span class="fw-semibold" id="reviewCost"></span></div>
                         <div class="col-md-6"><span class="text-muted">Quantities to Create:</span> <span class="fw-semibold" id="reviewUnits"></span></div>
-                        <div class="col-md-6"><span class="text-muted">Property Code Range:</span> <span class="fw-semibold" id="reviewRange"></span></div>
+                        <div class="col-md-6"><span class="text-muted">Property Tag Range:</span> <span class="fw-semibold" id="reviewRange"></span></div>
                     </div>
                     <div class="review-table-wrap">
                         <table class="table table-sm table-striped mb-0">
                             <thead class="table-light">
                                 <tr>
                                     <th style="width:90px;">Quantity #</th>
-                                    <th style="width:260px;">Property Code</th>
+                                    <th style="width:260px;">Property Tag</th>
                                     <th>Serial Number</th>
                                 </tr>
                             </thead>
@@ -493,6 +530,10 @@ let serialScanner = null;
 let serialTargetInput = null;
 let lastSerialScan = '';
 let lastSerialScanAt = 0;
+const NONE_STATUS_VALUE = 'NONE';
+let availTeachingSelect = null;
+let availNonTeachingSelect = null;
+let statusSelectLock = false;
 const ADD_ITEM_DRAFT_KEY = 'ast_add_item_draft_v1';
 let pendingLocalDraft = null;
 let suppressDraftSave = false;
@@ -532,6 +573,77 @@ function showPageMessage(message) {
     pageMsgTimeout = setTimeout(() => {
         el.addClass('d-none').text('');
     }, 4000);
+}
+
+function normalizeStatusSelection($el) {
+    if (statusSelectLock) return;
+    statusSelectLock = true;
+    let vals = $el.val() || [];
+    if (!Array.isArray(vals)) {
+        vals = vals ? String(vals).split(',') : [];
+    }
+    if (vals.length === 0) {
+        $el.val([NONE_STATUS_VALUE]).trigger('change');
+    }
+    statusSelectLock = false;
+}
+
+function initAvailabilitySelects(options) {
+    const baseOptions = ['<option value="' + NONE_STATUS_VALUE + '">None</option>'];
+    (options || []).forEach(function(opt){
+        baseOptions.push('<option value="' + opt.employment_status_id + '">' + escapeHtml(opt.status_name || opt.status_code || '') + '</option>');
+    });
+    $('#availTeachingStatus').html(baseOptions.join(''));
+    $('#availNonTeachingStatus').html(baseOptions.join(''));
+
+    $('#availTeachingStatus').select2({ placeholder: 'Select allowed teaching status', allowClear: true, width: '100%' });
+    $('#availNonTeachingStatus').select2({ placeholder: 'Select allowed non-teaching status', allowClear: true, width: '100%' });
+
+    $('#availTeachingStatus').val([NONE_STATUS_VALUE]).trigger('change');
+    $('#availNonTeachingStatus').val([NONE_STATUS_VALUE]).trigger('change');
+
+    function bindNoneBehavior($el){
+        $el.off('select2:select').on('select2:select', function(e){
+            const id = e.params && e.params.data ? String(e.params.data.id) : '';
+            if (id === NONE_STATUS_VALUE) {
+                $el.val([NONE_STATUS_VALUE]).trigger('change');
+            } else {
+                const vals = ($el.val() || []).filter(v => String(v) !== NONE_STATUS_VALUE);
+                $el.val(vals).trigger('change');
+            }
+        });
+        $el.off('select2:unselect').on('select2:unselect', function(){
+            normalizeStatusSelection($el);
+        });
+    }
+
+    bindNoneBehavior($('#availTeachingStatus'));
+    bindNoneBehavior($('#availNonTeachingStatus'));
+}
+
+function loadEmploymentStatuses() {
+    $.post(PROCESS_URL, { action: 'list_employment_status' }, function(res){
+        if (res && res.success) {
+            initAvailabilitySelects(res.data || []);
+        } else {
+            initAvailabilitySelects([]);
+        }
+        tryRestoreAddItemDraft();
+    }, 'json').fail(function(){
+        initAvailabilitySelects([]);
+        tryRestoreAddItemDraft();
+    });
+}
+
+function buildAllowedStatusPayload() {
+    const teachRaw = $('#availTeachingStatus').val() || [];
+    const nonRaw = $('#availNonTeachingStatus').val() || [];
+    const teachArr = Array.isArray(teachRaw) ? teachRaw : (teachRaw ? String(teachRaw).split(',') : []);
+    const nonArr = Array.isArray(nonRaw) ? nonRaw : (nonRaw ? String(nonRaw).split(',') : []);
+    const teachAllowed = teachArr.filter(v => String(v) !== NONE_STATUS_VALUE);
+    const nonAllowed = nonArr.filter(v => String(v) !== NONE_STATUS_VALUE);
+    const allNone = teachAllowed.length === 0 && nonAllowed.length === 0;
+    return allNone ? { none: true } : { teaching: teachAllowed, non_teaching: nonAllowed };
 }
 
 function saveAddItemDraft() {
@@ -586,6 +698,19 @@ function applyAddItemDraft(draft) {
             $('#unitSelect').append(new Option(draft.unit_label || draft.unit, draft.unit, true, true));
         }
         $('#unitSelect').val(draft.unit).trigger('change');
+    }
+
+    const teachVals = Array.isArray(draft.teaching_status) ? draft.teaching_status : [];
+    const nonVals = Array.isArray(draft.non_teaching_status) ? draft.non_teaching_status : [];
+    if (teachVals.length) {
+        $('#availTeachingStatus').val(teachVals).trigger('change');
+    } else {
+        $('#availTeachingStatus').val([NONE_STATUS_VALUE]).trigger('change');
+    }
+    if (nonVals.length) {
+        $('#availNonTeachingStatus').val(nonVals).trigger('change');
+    } else {
+        $('#availNonTeachingStatus').val([NONE_STATUS_VALUE]).trigger('change');
     }
 
     $('#unitRows').html('');
@@ -690,7 +815,7 @@ function loadPropertyCodes() {
     $.post(PROCESS_URL, { action: 'list_property_codes', limit: 1000 }, function(res) {
         if (res.success) {
             propertyCodesCache = res.data || [];
-            const options = ['<option value="">Select property code</option>'];
+            const options = ['<option value="">Select Property Tag</option>'];
             propertyCodesCache.forEach(item => {
                 const category = item.item_category_name ? `[${item.item_category_name}] ` : '';
                 const description = item.item_description ? ` - ${item.item_description}` : '';
@@ -701,7 +826,7 @@ function loadPropertyCodes() {
             
             // Initialize Select2 for searchable dropdown
             $('#searchPropertyCode').select2({
-                placeholder: 'Search property code',
+                placeholder: 'Search Property Tag',
                 allowClear: true,
                 width: '100%'
             }).on('select2:select', function(e) {
@@ -718,11 +843,11 @@ function loadPropertyCodes() {
             showPageMessage('');
         } else {
             $('#searchPropertyCode').html('<option value="">Failed to load</option>');
-            showPageMessage(res.message || 'Failed to load property codes.');
+            showPageMessage(res.message || 'Failed to load Property Tags.');
         }
     }, 'json').fail(function() {
         $('#searchPropertyCode').html('<option value="">Failed to load</option>');
-        showPageMessage('Server error while loading property codes.');
+        showPageMessage('Server error while loading Property Tags.');
     });
 }
 
@@ -783,7 +908,7 @@ function formatPeso(value) {
     if (value === null || value === undefined || value === '') return '';
     const num = Number(value);
     if (!isFinite(num)) return '';
-    return '₱' + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return 'â‚±' + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function threeLineText(value, fallback = '-') {
@@ -815,6 +940,9 @@ function collectAddItemDraft() {
     });
     const categoryLabelRaw = ($('#categorySelect option:selected').text() || '').trim();
     const unitLabelRaw = ($('#unitSelect option:selected').text() || '').trim();
+    const allowedPayload = buildAllowedStatusPayload();
+    const teachVals = $('#availTeachingStatus').val() || [];
+    const nonVals = $('#availNonTeachingStatus').val() || [];
     return {
         category_id: ($('#categorySelect').val() || '').trim(),
         category_label: categoryLabelRaw && categoryLabelRaw !== 'Select category' ? categoryLabelRaw : '',
@@ -825,7 +953,10 @@ function collectAddItemDraft() {
         source_of_fund: ($('#sourceOfFund').val() || '').trim(),
         cost_value: ($('#costValue').val() || '').trim(),
         serial_rows: serialRows,
-        number_of_units: serialRows.length > 0 ? serialRows.length : 1
+        number_of_units: serialRows.length > 0 ? serialRows.length : 1,
+        teaching_status: teachVals,
+        non_teaching_status: nonVals,
+        allowed_status: JSON.stringify(allowedPayload)
     };
 }
 
@@ -908,6 +1039,7 @@ function buildAddItemFormData(draft) {
     fd.set('unit', draft.unit || '');
     fd.set('source_of_fund', draft.source_of_fund || '');
     fd.set('cost_value', draft.cost_value || '');
+    fd.set('allowed_status', draft.allowed_status || JSON.stringify({ none: true }));
     return fd;
 }
 
@@ -972,6 +1104,8 @@ function submitAddItemFromReview() {
             $('#addItemForm')[0].reset();
             $('#categorySelect').val('').trigger('change');
             $('#unitSelect').val('').trigger('change');
+            $('#availTeachingStatus').val([NONE_STATUS_VALUE]).trigger('change');
+            $('#availNonTeachingStatus').val([NONE_STATUS_VALUE]).trigger('change');
             resetUnitRows();
             refreshPropertyCode();
             refreshTable();
@@ -1041,7 +1175,7 @@ function refreshPropertyCode() {
                 }
                 updateQrPreview(codeList);
             } else {
-                console.error('Failed to get property code:', res.message);
+                console.error('Failed to get Property Tag:', res.message);
                 $('#propertyCodeField').val('');
                 $('#propertySeriesInput').val('');
                 updateQrPreview([]);
@@ -1059,7 +1193,7 @@ function refreshPropertyCode() {
                 window.location.reload();
                 return;
             }
-            console.error('AJAX error getting property code:', status, error);
+            console.error('AJAX error getting Property Tag:', status, error);
             $('#propertyCodeField').val('');
             $('#propertySeriesInput').val('');
             updateQrPreview([]);
@@ -1083,7 +1217,7 @@ function updateQrPreview(codes) {
     const codeList = Array.isArray(codes) ? codes : (codes ? [codes] : []);
     if (!codeList.length) {
         listEl.innerHTML = '';
-        if (metaEl) metaEl.textContent = 'Based on the property code';
+        if (metaEl) metaEl.textContent = 'Based on the Property Tag';
         loading.style.display = 'none';
         return;
     }
@@ -1093,7 +1227,7 @@ function updateQrPreview(codes) {
     if (metaEl) {
         metaEl.textContent = codeList.length > previewLimit
             ? `Showing first ${previewLimit} of ${codeList.length} QR codes.`
-            : 'Based on the property code';
+            : 'Based on the Property Tag';
     }
 
     loading.style.display = 'block';
@@ -1143,7 +1277,7 @@ function initTable() {
             return response.data || [];
         },
         columns: [
-            { title: 'Property Code', field: 'property_code', width: 200, headerFilter: 'input', headerFilterPlaceholder: 'Filter...', formatter: function(cell){
+            { title: 'Property Tag', field: 'property_code', width: 200, headerFilter: 'input', headerFilterPlaceholder: 'Filter...', formatter: function(cell){
                 return twoLineText(cell.getValue());
             }},
             { title: 'Property No.', field: 'property_number', width: 140, headerFilter: 'input', headerFilterPlaceholder: 'Filter...', formatter: function(cell){
@@ -1184,7 +1318,7 @@ function initTable() {
                 const parts = [];
                 if (src) parts.push(src);
                 if (cost) parts.push(formatPeso(cost));
-                return parts.length ? `<span class="two-line-cell">${parts.join(' • ')}</span>` : '<span class="text-muted">-</span>';
+                return parts.length ? `<span class="two-line-cell">${parts.join(' â€¢ ')}</span>` : '<span class="text-muted">-</span>';
             }},
             { title: 'Date Modified', field: 'created_at', width: 160, formatter: function(cell){
                 const d = new Date(cell.getValue());
@@ -1234,7 +1368,7 @@ function loadItemByCode(code) {
             $('#itemInfo').html(`
                 <div class="d-flex flex-column gap-2">
                     <div>
-                        <div class="small text-muted">Property Code</div>
+                        <div class="small text-muted">Property Tag</div>
                         <div class="fw-semibold">${d.property_code}</div>
                     </div>
                     <div class="small text-muted">${d.item_category_name || 'Uncategorized'}</div>
@@ -1430,6 +1564,7 @@ function setupSerialScannerModal() {
         loadCategories();
         loadUnits();
         loadPropertyCodes();
+        loadEmploymentStatuses();
         initTableLazy();
         resetUnitRows();
         refreshPropertyCode();
@@ -1510,6 +1645,8 @@ function setupSerialScannerModal() {
         $('#addItemForm')[0].reset();
         $('#categorySelect').val('').trigger('change'); // Reset Select2 dropdown
         $('#unitSelect').val('').trigger('change'); // Reset Select2 dropdown
+        $('#availTeachingStatus').val([NONE_STATUS_VALUE]).trigger('change');
+        $('#availNonTeachingStatus').val([NONE_STATUS_VALUE]).trigger('change');
         resetUnitRows();
         refreshPropertyCode();
         $('#addItemMsg').html('');
@@ -1529,7 +1666,7 @@ function setupSerialScannerModal() {
         $('#addQtyMsg').html('');
         const codeVal = ($('#addQtyPropertyCode').val() || '').trim();
         if (!codeVal) {
-            showMessage('#addQtyMsg', 'danger', 'Please select a property code first.');
+            showMessage('#addQtyMsg', 'danger', 'Please select a Property Tag first.');
             return;
         }
         const data = $(this).serialize();
@@ -1586,3 +1723,4 @@ function setupSerialScannerModal() {
 </script>
 </body>
 </html>
+

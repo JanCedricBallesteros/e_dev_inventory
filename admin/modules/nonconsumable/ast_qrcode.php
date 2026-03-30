@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 // REMINDER, USE THE ALL FUNC CSM_INVENTORY TO REPLACE THIS FRONTEND TO UTILIZE THE PROCESSING IN ONE FILE
 require_once dirname(__DIR__, 3) . '/config/config.php';
 require GLOBAL_FUNC;
@@ -164,7 +164,7 @@ if (!(
                         <div class="d-flex flex-wrap gap-2 align-items-center" style="max-width:520px;">
                             <div class="input-group" style="width:320px;">
                                 <span class="input-group-text"><i class="bi bi-search"></i></span>
-                                <input type="text" id="qrSearch" class="form-control" placeholder="Search property code or description">
+                                <input type="text" id="qrSearch" class="form-control" placeholder="Search Property Tag or description">
                             </div>
                             <select id="qrCategoryFilter" class="form-select form-select-sm" style="min-width:180px;">
                                 <option value="">All Categories</option>
@@ -255,10 +255,10 @@ function formatPeso(value) {
     if (value === null || value === undefined || value === '') return '';
     const num = Number(value);
     if (!isFinite(num)) return '';
-    return '₱' + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return 'â‚±' + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-// Render cards (latest first). Filter by property code, serial, description, or category.
+// Render cards (latest first). Filter by Property Tag, serial, description, or category.
 function renderList(filter = '', resetPage = false) {
     if (resetPage) currentPage = 1;
     lastFilter = filter;
@@ -389,8 +389,8 @@ function updatePrintButton() {
 }
 
 /* ============================================================
-   AST PROPERTY INVENTORY TAG — PRINT CSS + BUILDER
-   Layout: 2 × 5 grid per Letter page (10 tags), each tag ~50mm tall
+   AST PROPERTY INVENTORY TAG â€” PRINT CSS + BUILDER
+   Layout: 2 Ã— 5 grid per Letter page (10 tags), each tag ~50mm tall
    Left: details pane  |  Right: QR pane  |  Bottom: Remarks
    ============================================================ */
 const AST_TAG_CSS = `
@@ -544,7 +544,7 @@ const AST_TAG_CSS = `
 
 function buildAstTag({ code, propNum, serial, category, desc, acqDate, cost, issued, acctOfficer, qrUrl }) {
     const shortDesc = desc.length > 65 ? desc.slice(0, 63) + '\u2026' : desc;
-    // Build optional meta lines — only include if value exists
+    // Build optional meta lines â€” only include if value exists
     const metaLines = [
         serial     ? `S/N: ${escHtml(serial)}`       : '',
         acqDate    ? `Acq: ${escHtml(acqDate)}`      : '',
@@ -683,10 +683,10 @@ function saveToPdf() {
     if (selectedCodes.size === 0) return;
 
     const btn = $('#btnSavePdf');
-    btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-1"></span>Generating…');
+    btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-1"></span>Generatingâ€¦');
 
     const codes = [...selectedCodes];
-    const TAGS_PER_PAGE = 10; // 2 cols × 5 rows on Letter
+    const TAGS_PER_PAGE = 10; // 2 cols Ã— 5 rows on Letter
 
     const opt = {
         margin: [0.31, 0.31, 0.31, 0.31],
@@ -711,7 +711,7 @@ function saveToPdf() {
         pageSlices.push(codes.slice(i, i + TAGS_PER_PAGE));
     }
 
-    // Render the first page — this creates the jsPDF document
+    // Render the first page â€” this creates the jsPDF document
     let worker = html2pdf().set(opt).from(makePageEl(pageSlices[0])).toPdf();
 
     // For every additional page: explicitly add a blank PDF page, then render
@@ -813,7 +813,7 @@ $(document).ready(function() {
         updatePrintButton();
     });
 
-    // Clear date filter via the × on the button
+    // Clear date filter via the Ã— on the button
     $(document).on('click', '#btnClearDate', function(e) {
         e.stopPropagation();
         dateFilter = '';
@@ -841,5 +841,6 @@ $(document).ready(function() {
 });
 </script>
 </html>
+
 
 

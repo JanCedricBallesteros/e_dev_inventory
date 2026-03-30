@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 // admin/modules/nonconsumable/ast_inventory.php
 // /*todo next time, not urgent:wire Tabulator to use AJAX pagination instead of loading all at once.*/
 require_once dirname(__DIR__, 3) . '/config/config.php';
@@ -133,7 +133,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                     <div class="col-md-4">
                         <div class="filter-label">Search</div>
                         <div class="input-group">
-                            <input type="text" id="invSearch" class="form-control" placeholder="Property code, serial no., description, category">
+                            <input type="text" id="invSearch" class="form-control" placeholder="Property Tag, serial no., description, category">
                             <button class="btn btn-outline-secondary" type="button" id="openSearchScanner" title="Scan QR">
                                 <i class="bi bi-qr-code-scan"></i>
                             </button>
@@ -550,7 +550,7 @@ function parseDate(val) {
 function parseDateRangeInput(raw) {
     const text = (raw || '').trim();
     if (!text) return { from: null, to: null };
-    const parts = text.split(/\s+-\s+|\s+–\s+/).filter(Boolean);
+    const parts = text.split(/\s+-\s+|\s+â€“\s+/).filter(Boolean);
     if (parts.length === 1) {
         const d = parseDate(parts[0]);
         return { from: d, to: d };
@@ -573,7 +573,7 @@ function formatPeso(value) {
     if (value === null || value === undefined || value === '') return '';
     const num = Number(value);
     if (!isFinite(num)) return '';
-    return '₱' + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return 'â‚±' + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function twoLineText(value, fallback = '-') {
@@ -714,7 +714,7 @@ function initTable() {
                 const initials = (String(name).trim().split(/\s+/).map(w => w.charAt(0)).filter(Boolean).slice(0,2).join('') || 'IT').toUpperCase();
                 return `<div class="thumb-wrap"><div class="item-badge" title="${name}">${initials}</div></div>`;
             }},
-            { title: "Property Code", field: "property_code", width: 170, headerFilter: "input", headerFilterPlaceholder: "Filter...", formatter: function(cell){
+            { title: "Property Tag", field: "property_code", width: 170, headerFilter: "input", headerFilterPlaceholder: "Filter...", formatter: function(cell){
                 return twoLineText(cell.getValue());
             }},
             { title: "Property No.", field: "property_number", width: 120, headerFilter: "input", headerFilterPlaceholder: "Filter...", formatter: function(cell){
@@ -764,7 +764,7 @@ function initTable() {
                 const parts = [];
                 if (src) parts.push(src);
                 if (cost) parts.push(formatPeso(cost));
-                return parts.length ? `<span class="two-line-cell">${parts.join(' • ')}</span>` : '<span class="text-muted">-</span>';
+                return parts.length ? `<span class="two-line-cell">${parts.join(' â€¢ ')}</span>` : '<span class="text-muted">-</span>';
             }},
             { title: "Issued To", field: "issued_to_name", width: 160, headerFilter: "input", headerFilterPlaceholder: "Filter...", formatter: function(cell){
                 const v = cell.getValue();
@@ -949,13 +949,13 @@ $(document).ready(function() {
         }
 
         const rows = data.map(r => ({
-            "Property Code": r.property_code || '',
+            "Property Tag": r.property_code || '',
             "Property No.": r.property_number || '',
             "Serial No.": r.serial_number || '',
             "Description": r.item_description || '',
             "Qty / Unit": `${r.quantity ?? ''}${r.unit ? ' ' + r.unit : ''}`,
             "Allowed Status": r.allowed_status_names || '',
-            "Source / Cost": `${r.source_of_fund || ''}${(r.cost_value !== null && r.cost_value !== undefined && r.cost_value !== '') ? ' • ' + formatPeso(r.cost_value) : ''}`,
+            "Source / Cost": `${r.source_of_fund || ''}${(r.cost_value !== null && r.cost_value !== undefined && r.cost_value !== '') ? ' â€¢ ' + formatPeso(r.cost_value) : ''}`,
             "Issued To": r.issued_to_name || '',
             "Location": r.location_label || '',
             "Date Modified": r.created_at || ''
@@ -963,7 +963,7 @@ $(document).ready(function() {
 
         const ws = XLSX.utils.json_to_sheet(rows);
         ws['!cols'] = [
-            { wch: 18 }, // Property Code
+            { wch: 18 }, // Property Tag
             { wch: 12 }, // Property No.
             { wch: 20 }, // Serial No.
             { wch: 40 }, // Description
@@ -1010,3 +1010,4 @@ $(document).ready(function() {
 });
 </script>
 </html>
+
