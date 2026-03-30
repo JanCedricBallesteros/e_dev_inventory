@@ -115,6 +115,22 @@ if (!(
             word-break: break-word;
             color: #495057;
         }
+        .qr-preview-controls {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 10px;
+            margin-left: auto;
+            width: fit-content;
+        }
+        .qr-preview-page-info {
+            font-size: 12px;
+            color: #6c757d;
+            text-align: right;
+            flex: 0 0 auto;
+            min-width: 90px;
+        }
         .review-table-wrap {
             max-height: 320px;
             overflow: auto;
@@ -192,7 +208,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 
                                 <div class="col-md-4">
                                     <label class="form-label fw-semibold">Property Number (base)</label>
-                                    <input type="text" class="form-control" name="property_number" id="propertyNumberField" placeholder="Enter property no. (e.g., A12B)" required autocomplete="off" inputmode="text" pattern="[A-Za-z0-9]+">
+                                    <input type="text" class="form-control" name="property_number" id="propertyNumberField" placeholder="Enter property no. (e.g., A12-B)" required autocomplete="off" inputmode="text" pattern="[A-Za-z0-9-]+">
                                 </div>
 
                                 <div class="col-md-4">
@@ -251,6 +267,15 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                             <br>Generating QR code...
                                         </div>
                                         <div id="qrPreviewList" class="qr-preview-grid"></div>
+                                        <div id="qrPreviewPager" class="qr-preview-controls" style="display:none;">
+                                            <button type="button" class="btn btn-sm btn-outline-secondary" id="qrPrevPage">
+                                                <i class="bi bi-chevron-left"></i> Previous
+                                            </button>
+                                            <div id="qrPreviewPageInfo" class="qr-preview-page-info">Page 1 of 1</div>
+                                            <button type="button" class="btn btn-sm btn-outline-secondary" id="qrNextPage">
+                                                Next <i class="bi bi-chevron-right"></i>
+                                            </button>
+                                        </div>
                                         <div id="qrPreviewMeta" class="small text-muted mt-2">Based on the Property Tag</div>
                                     </div>
                                 </div>
@@ -528,6 +553,9 @@ let tableLoadXhr = null;
 let tableLoadDebounce = null;
 let inventoryTableReady = false;
 let pendingInitialTableLoad = false;
+let qrPreviewCodes = [];
+let qrPreviewPage = 1;
+const QR_PREVIEW_PAGE_SIZE = 20;
 const TABLE_CHUNK_SIZE_ALL = 200;
 const TABLE_CHUNK_SIZE_PAGED = 300;
 
@@ -862,10 +890,30 @@ function collectAddItemDraft() {
     };
 }
 
+function getPropertyNumberValidityMessage(value) {
+    const text = String(value || '').trim();
+    if (!text) return '';
+    if (/^-+$/.test(text)) return 'Property Number cannot contain dashes only.';
+    if (text.startsWith('-') || text.endsWith('-')) return 'Property Number cannot start or end with a dash.';
+    if (text.includes('--')) return 'Property Number cannot contain consecutive dashes.';
+    return '';
+}
+
+function applyPropertyNumberValidity() {
+    const field = document.getElementById('propertyNumberField');
+    if (!field) return true;
+    const msg = getPropertyNumberValidityMessage(field.value);
+    field.setCustomValidity(msg);
+    return msg === '';
+}
+
 function validateAddItemDraft(draft) {
     if (!draft.category_id) return 'Category is required.';
     if (!draft.property_number) return 'Property number is required.';
-    if (!/^[A-Za-z0-9]+$/.test(draft.property_number)) return 'Property number must contain letters and numbers only.';
+    if (/^-+$/.test(draft.property_number)) return 'Property number cannot contain dashes only.';
+    if (String(draft.property_number).startsWith('-') || String(draft.property_number).endsWith('-')) return 'Property number cannot start or end with a dash.';
+    if (String(draft.property_number).includes('--')) return 'Property number cannot contain consecutive dashes.';
+    if (!/^[A-Za-z0-9-]+$/.test(draft.property_number)) return 'Property number must contain letters, numbers, and dashes only.';
     if (!draft.item_description) return 'Item description is required.';
     if (!draft.unit) return 'Unit is required.';
     if (draft.number_of_units <= 0) return 'Please add at least one quantity row.';
@@ -1113,30 +1161,58 @@ function updateQrPreview(codes) {
     const loading = document.getElementById('qrLoading');
     if (!listEl || !loading) return;
 
-    const codeList = Array.isArray(codes) ? codes : (codes ? [codes] : []);
-    if (!codeList.length) {
+    qrPreviewCodes = Array.isArray(codes) ? codes.slice() : (codes ? [codes] : []);
+    qrPreviewPage = 1;
+    renderQrPreviewPage();
+}
+
+function renderQrPreviewPage() {
+    const listEl = document.getElementById('qrPreviewList');
+    const metaEl = document.getElementById('qrPreviewMeta');
+    const loading = document.getElementById('qrLoading');
+    const pager = document.getElementById('qrPreviewPager');
+    const pageInfo = document.getElementById('qrPreviewPageInfo');
+    const prevBtn = document.getElementById('qrPrevPage');
+    const nextBtn = document.getElementById('qrNextPage');
+    if (!listEl || !loading) return;
+
+    const total = qrPreviewCodes.length;
+    if (!total) {
         listEl.innerHTML = '';
         if (metaEl) metaEl.textContent = 'Based on the Property Tag';
+        if (pager) pager.style.display = 'none';
         loading.style.display = 'none';
         return;
     }
 
-    const previewLimit = 24;
-    const visibleCodes = codeList.slice(0, previewLimit);
+    const totalPages = Math.max(1, Math.ceil(total / QR_PREVIEW_PAGE_SIZE));
+    if (qrPreviewPage > totalPages) qrPreviewPage = totalPages;
+    if (qrPreviewPage < 1) qrPreviewPage = 1;
+
+    const startIndex = (qrPreviewPage - 1) * QR_PREVIEW_PAGE_SIZE;
+    const endIndex = Math.min(startIndex + QR_PREVIEW_PAGE_SIZE, total);
+    const visibleCodes = qrPreviewCodes.slice(startIndex, endIndex);
+
     if (metaEl) {
-        metaEl.textContent = codeList.length > previewLimit
-            ? `Showing first ${previewLimit} of ${codeList.length} QR codes.`
-            : 'Based on the Property Tag';
+        metaEl.textContent = `Showing ${startIndex + 1}-${endIndex} of ${total} QR codes.`;
     }
+    if (pager) {
+        pager.style.display = totalPages > 1 ? 'flex' : 'none';
+    }
+    if (pageInfo) {
+        pageInfo.textContent = `Page ${qrPreviewPage} of ${totalPages}`;
+    }
+    if (prevBtn) prevBtn.disabled = qrPreviewPage <= 1;
+    if (nextBtn) nextBtn.disabled = qrPreviewPage >= totalPages;
 
     loading.style.display = 'block';
     const stamp = Date.now();
     listEl.innerHTML = visibleCodes.map((code, idx) => {
         const safeCode = String(code);
-        const src = `${QR_GENERATOR_URL}?v=${encodeURIComponent(safeCode)}&t=${stamp}-${idx}`;
+        const src = `${QR_GENERATOR_URL}?v=${encodeURIComponent(safeCode)}&t=${stamp}-${startIndex + idx}`;
         return `
             <div class="qr-preview-item">
-                <img class="qr-preview-img" src="${src}" alt="QR ${idx + 1}" data-qr="1">
+                <img class="qr-preview-img" src="${src}" alt="QR ${startIndex + idx + 1}" data-qr="1">
                 <div class="qr-preview-code">${safeCode}</div>
             </div>
         `;
@@ -1576,6 +1652,7 @@ function setupSerialScannerModal() {
         initTableLazy();
         resetUnitRows();
         refreshPropertyCode();
+        applyPropertyNumberValidity();
         setupSerialScannerModal();
 
         // Enable Bootstrap tooltips (for unit helper, etc.)
@@ -1587,21 +1664,27 @@ function setupSerialScannerModal() {
         }
 
     $('#propertyNumberField').on('keypress', function(e) {
-        // Only allow letters and numbers
+        // Only allow letters, numbers, and dashes
         const char = String.fromCharCode(e.which || e.keyCode);
-        if (e.which > 31 && !/[a-zA-Z0-9]/.test(char)) {
+        if (e.which > 31 && !/[a-zA-Z0-9-]/.test(char)) {
             e.preventDefault();
             return false;
         }
     }).on('input', function() {
-        // Keep alphanumeric only and normalize to uppercase
-        let val = ($(this).val() || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+        // Keep letters, numbers, dashes only and normalize to uppercase
+        let val = ($(this).val() || '').replace(/[^a-zA-Z0-9-]/g, '').toUpperCase();
         $(this).val(val);
+        applyPropertyNumberValidity();
         debouncedRefreshPropertyCode();
         scheduleSaveAddItemDraft();
     }).on('change', function() {
+        applyPropertyNumberValidity();
         debouncedRefreshPropertyCode();
         scheduleSaveAddItemDraft();
+    }).on('blur', function() {
+        applyPropertyNumberValidity();
+    }).on('invalid', function() {
+        applyPropertyNumberValidity();
     });
 
     $('#addUnitRowBtn').on('click', function() {
@@ -1640,6 +1723,11 @@ function setupSerialScannerModal() {
     $('#addItemForm').on('submit', function(e) {
         e.preventDefault();
         $('#addItemMsg').html('');
+        applyPropertyNumberValidity();
+        if (!this.checkValidity()) {
+            this.reportValidity();
+            return;
+        }
         const draft = collectAddItemDraft();
         const validationError = validateAddItemDraft(draft);
         if (validationError) {
@@ -1691,6 +1779,19 @@ function setupSerialScannerModal() {
 
     $('#tableSearch').on('input', function() {
         refreshTable();
+    });
+
+    $('#qrPrevPage').on('click', function() {
+        if (qrPreviewPage <= 1) return;
+        qrPreviewPage -= 1;
+        renderQrPreviewPage();
+    });
+
+    $('#qrNextPage').on('click', function() {
+        const totalPages = Math.max(1, Math.ceil(qrPreviewCodes.length / QR_PREVIEW_PAGE_SIZE));
+        if (qrPreviewPage >= totalPages) return;
+        qrPreviewPage += 1;
+        renderQrPreviewPage();
     });
 
     // Global QR search helper (shared across pages)
