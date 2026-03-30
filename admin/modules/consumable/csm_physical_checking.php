@@ -315,7 +315,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                     </div>
                                     <div class="col-md-3">
                                         <div class="mini-stat">
-                                            <div class="info-label">Item Cost</div>
+                                            <div class="info-label">Cost Value</div>
                                             <div class="info-value" id="infoItemCost">-</div>
                                         </div>
                                     </div>

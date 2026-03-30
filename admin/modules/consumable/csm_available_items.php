@@ -425,7 +425,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                 </div>
 
                                 <div class="col-md-4">
-                                    <label class="form-label fw-semibold">Item Cost</label>
+                                    <label class="form-label fw-semibold">Cost Value</label>
                                     <input type="number" step="0.01" min="0" class="form-control" name="cost_value" id="itemCost" value="0.00" required>
                                 </div>
 
@@ -503,7 +503,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                     <input type="text" class="form-control" name="source_of_funds" id="addQtySource">
                                 </div>
                                 <div class="col-6">
-                                    <label class="form-label fw-semibold">Item Cost</label>
+                                    <label class="form-label fw-semibold">Cost Value</label>
                                     <input type="number" step="0.01" min="0" class="form-control" name="cost_value" id="addQtyCost">
                                 </div>
                             </div>
@@ -768,7 +768,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                         </div>
 
                         <div class="col-md-3">
-                            <label class="form-label fw-semibold">Item Cost</label>
+                            <label class="form-label fw-semibold">Cost Value</label>
                             <input type="number" step="0.01" name="cost_value" id="edit_item_cost" class="form-control" required min="0">
                         </div>
 
@@ -1142,7 +1142,7 @@ function validateAddItemDraft(draft) {
     if (draft.quantity === '' || parseInt(draft.quantity, 10) < 0) return 'Actual Qty must be 0 or higher.';
     // if (draft.current_quantity === '' || parseInt(draft.current_quantity, 10) < 0) return 'Available to Issue must be 0 or higher.';
     if (draft.qty_crit_level === '' || parseInt(draft.qty_crit_level, 10) < 0) return 'Critical Level must be 0 or higher.';
-    // if (draft.cost_value === '' || parseFloat(draft.cost_value) < 0) return 'Item Cost must be 0 or higher.';
+    // if (draft.cost_value === '' || parseFloat(draft.cost_value) < 0) return 'Cost Value must be 0 or higher.';
     // if (parseInt(draft.current_quantity, 10) > parseInt(draft.quantity, 10)) return 'Available to Issue cannot exceed Actual Qty.';
     return '';
 }
