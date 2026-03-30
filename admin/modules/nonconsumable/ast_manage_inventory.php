@@ -146,6 +146,14 @@ if (!(
         .tabulator {
             font-size: 0.875rem;
         }
+        #unitRows {
+            max-height: 320px;
+            overflow-y: auto;
+            padding: 8px;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            background: #f8f9fa;
+        }
     </style>
 </head>
 
