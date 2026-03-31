@@ -35,6 +35,7 @@ if (!(
         .summary-card.is-active { border-color: #0d6efd; box-shadow: 0 0 0 2px rgba(13,110,253,0.15); }
         .filter-label { font-size: 12px; color: #6c757d; margin-bottom: 4px; }
         .item-thumb { width: 46px; height: 46px; border-radius: 6px; object-fit: cover; border: 1px solid #e5e7eb; background: #f8f9fa; cursor: zoom-in; }
+        .qr-thumb { width: 46px; height: 46px; border-radius: 6px; object-fit: contain; border: 1px solid #e5e7eb; background: #fff; padding: 2px; }
         .item-badge {
             width: 46px;
             height: 46px;
@@ -52,6 +53,114 @@ if (!(
         }
         .thumb-wrap { display: flex; align-items: center; justify-content: center; }
         .img-preview { max-width: 100%; max-height: 70vh; border-radius: 8px; }
+        .ast-sticker-tag {
+            border: 1.5px solid #000;
+            border-radius: 2px;
+            overflow: hidden;
+            font-family: Arial, Helvetica, sans-serif;
+            background: #fff;
+        }
+        #qrStickerPreviewModal .modal-dialog {
+            max-width: 700px;
+        }
+        .ast-sticker-header {
+            border-bottom: 1.5px solid #000;
+            padding: 12px 10px;
+            font-size: 13px;
+            font-weight: 800;
+            letter-spacing: 0.3px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .ast-sticker-logo {
+            width: 28px;
+            height: 28px;
+            object-fit: contain;
+            flex: 0 0 auto;
+        }
+        .ast-sticker-body {
+            display: flex;
+        }
+        .ast-sticker-details {
+            flex: 1;
+            border-right: 1.5px solid #000;
+            padding: 9px 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            min-width: 0;
+        }
+        .ast-sticker-cat {
+            font-size: 11px;
+            font-style: italic;
+            color: #555;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .ast-sticker-code {
+            font-size: 16px;
+            font-weight: 800;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .ast-sticker-prop {
+            font-size: 11px;
+            font-weight: 700;
+            color: #222;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .ast-sticker-desc {
+            font-size: 12px;
+            font-weight: 600;
+            overflow: hidden;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            line-clamp: 2;
+            -webkit-box-orient: vertical;
+        }
+        .ast-sticker-meta {
+            font-size: 11px;
+            color: #444;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .ast-sticker-divider {
+            border: none;
+            border-top: 1px dashed #aaa;
+            margin: 4px 0;
+        }
+        .ast-sticker-qr {
+            width: 170px;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 10px 8px 7px;
+            gap: 5px;
+        }
+        .ast-sticker-qr img {
+            width: 152px;
+            height: 152px;
+            object-fit: contain;
+            border: 1px solid #ccc;
+            padding: 4px;
+            background: #fff;
+        }
+        .ast-sticker-qr-code {
+            font-size: 9px;
+            font-weight: 900;
+            text-align: center;
+            word-break: break-all;
+            line-height: 1.2;
+            max-width: 155px;
+        }
         #ast-inventory-table .tabulator-header .tabulator-col .tabulator-col-content .tabulator-col-title {
             white-space: normal !important;
             line-height: 1.2;
@@ -270,14 +379,37 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
     </div>
 </div>
 
+<!-- QR STICKER PREVIEW MODAL -->
+<div class="modal fade" id="qrStickerPreviewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-semibold"><i class="bi bi-qr-code"></i>&ensp;QR Sticker Preview</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="qrStickerPreviewWrap"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" id="btnDownloadQrStickerPdf" disabled>
+                    <i class="bi bi-file-earmark-pdf"></i> Download PDF
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 </body>
 <?php include_once DOMAIN_PATH . '/global/include_bottom.php'; ?>
 <script src="https://unpkg.com/html5-qrcode"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <script src="<?= BASE_URL ?>assets/js/qr_search.js"></script>
 <script>
 const BASE_URL = <?php echo json_encode(BASE_URL); ?>;
 const PROCESS_URL = BASE_URL + 'admin/modules/nonconsumable/process/ast_inventory_process.php';
 const FACILITY_RECORDS_URL = BASE_URL + 'admin/modules/transactions/facility_inventory_records.php';
+const LOGO_URL = BASE_URL + 'upload/img/ccc-logo.png';
 
 let inventoryTable = null;
 let rawRows = [];
@@ -295,9 +427,101 @@ let loadXhr = null;
 let loadDebounceTimer = null;
 let inventoryTableReady = false;
 let pendingInitialLoad = false;
+let currentQrStickerCode = '';
 const CHUNK_SIZE_ALL = 200;
 const CHUNK_SIZE_PAGED = 300;
 const GROUP_STATE_KEY = 'ast_inventory_group_state_v1';
+
+const AST_TAG_CSS = `
+    @page { size: Letter; margin: 8mm; }
+    body { font-family: Arial, Helvetica, sans-serif; color: #000; margin: 0; }
+    .ast-print-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    .ast-print-table tr { page-break-inside: avoid; }
+    .ast-print-table td { border: 1px dotted #999; padding: 0.6mm; vertical-align: top; box-sizing: border-box; }
+    .ast-tag {
+        width: 97mm;
+        height: 50mm;
+        overflow: hidden;
+        border: 1px solid #000;
+        border-radius: 1mm;
+        background: #fff;
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        margin: 0 auto;
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+    .ast-tag-header {
+        background: #fff;
+        color: #000;
+        text-align: left;
+        padding: 2.8mm 2mm;
+        font-size: 8.6pt;
+        font-weight: 800;
+        letter-spacing: 0.3px;
+        border-bottom: 1.5px solid #000;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 6px;
+    }
+    .ast-tag-header .ast-header-logo { width: 20px; height: 20px; }
+    .ast-tag-body { display: grid; grid-template-columns: 1fr 32mm; flex: 1; min-height: 0; }
+    .ast-tag-details {
+        border-right: 1.5px solid #000;
+        padding: 1mm 1.5mm;
+        display: flex;
+        flex-direction: column;
+        gap: 0.3mm;
+        box-sizing: border-box;
+        overflow: hidden;
+    }
+    .ast-tag-line {
+        font-size: 5.8pt;
+        font-weight: 600;
+        line-height: 1.2;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+    .ast-tag-line.tl-code { font-size: 7pt; font-weight: 800; }
+    .ast-tag-line.tl-prop { font-size: 6.4pt; font-weight: 700; }
+    .ast-tag-line.tl-cat { font-size: 5.5pt; font-weight: 400; font-style: italic; }
+    .ast-tag-line.tl-desc { font-size: 5.8pt; }
+    .ast-tag-line.tl-meta { font-size: 5.3pt; font-weight: 400; color: #333; }
+    .ast-tag-divider { border: none; border-top: 1px dashed #999; margin: 0.3mm 0; }
+    .ast-tag-qr {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 1.5mm 1.5mm 1mm;
+        gap: 0.8mm;
+        box-sizing: border-box;
+    }
+    .ast-tag-qr img {
+        width: 26mm;
+        height: 26mm;
+        object-fit: contain;
+        border: 1px solid #ccc;
+        padding: 0.5mm;
+        background: #fff;
+        box-sizing: border-box;
+    }
+    .ast-tag-qr-code {
+        font-size: 4.5pt;
+        font-weight: 900;
+        text-align: center;
+        word-break: break-word;
+        line-height: 1.1;
+    }
+    @media print {
+        body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+`;
 
 function loadGroupState() {
     try {
@@ -595,6 +819,150 @@ function threeLineText(value, fallback = '-') {
     return `<span class="three-line-cell" title="${safe}">${safe}</span>`;
 }
 
+function getItemByPropertyCode(code) {
+    if (!code) return null;
+    return (rawRows || []).find(function(row) {
+        return String(row.property_code || '') === String(code);
+    }) || null;
+}
+
+function buildQrStickerPreview(item) {
+    if (!item) return '<div class="text-muted">No preview data.</div>';
+
+    const code = item.property_code || '';
+    const desc = item.item_description || '';
+    const category = item.item_category_name || '';
+    const propNum = item.property_number || '';
+    const serial = item.serial_number || '';
+    const cost = (item.cost_value !== null && item.cost_value !== undefined && item.cost_value !== '') ? formatPeso(item.cost_value) : '';
+    const source = item.source_of_fund || '';
+    const qrUrl = item.qr_image_url || (code ? (BASE_URL + 'admin/modules/tools/qr_image.php?v=' + encodeURIComponent(code)) : '');
+    const shortDesc = String(desc).length > 65 ? String(desc).slice(0, 63) + '...' : String(desc);
+
+    const metaLines = [];
+    if (serial) metaLines.push(`S/N: ${escapeHtml(serial)}`);
+    if (source) metaLines.push(`Source: ${escapeHtml(source)}`);
+    if (cost) metaLines.push(`Cost: ${escapeHtml(cost)}`);
+
+    const metaHtml = metaLines.length
+        ? `<hr class="ast-sticker-divider">${metaLines.map(function(line){ return `<div class="ast-sticker-meta">${line}</div>`; }).join('')}`
+        : '';
+
+    return `
+        <div class="ast-sticker-tag">
+            <div class="ast-sticker-header">
+                <img class="ast-sticker-logo" src="${LOGO_URL}" alt="CCC logo">
+                <span>City College of Calamba</span>
+            </div>
+            <div class="ast-sticker-body">
+                <div class="ast-sticker-details">
+                    <div class="ast-sticker-cat">${escapeHtml(category)}</div>
+                    <div class="ast-sticker-code">${escapeHtml(code)}</div>
+                    ${propNum ? `<div class="ast-sticker-prop">Property No.: ${escapeHtml(propNum)}</div>` : ''}
+                    <div class="ast-sticker-desc">${escapeHtml(shortDesc)}</div>
+                    ${metaHtml}
+                </div>
+                <div class="ast-sticker-qr">
+                    <img src="${escapeHtml(qrUrl)}" alt="QR ${escapeHtml(code)}">
+                    <div class="ast-sticker-qr-code">${escapeHtml(code)}</div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function buildAstTagForPdf(item) {
+    if (!item) return '';
+    const code = item.property_code || '';
+    const desc = item.item_description || '';
+    const category = item.item_category_name || '';
+    const propNum = item.property_number || '';
+    const serial = item.serial_number || '';
+    const source = item.source_of_fund || '';
+    const cost = (item.cost_value !== null && item.cost_value !== undefined && item.cost_value !== '') ? formatPeso(item.cost_value) : '';
+    const qrUrl = item.qr_image_url || (code ? (BASE_URL + 'admin/modules/tools/qr_image.php?v=' + encodeURIComponent(code)) : '');
+    const shortDesc = String(desc).length > 65 ? String(desc).slice(0, 63) + '...' : String(desc);
+
+    const metaLines = [];
+    if (serial) metaLines.push(`S/N: ${escapeHtml(serial)}`);
+    if (source) metaLines.push(`Source: ${escapeHtml(source)}`);
+    if (cost) metaLines.push(`Cost: ${escapeHtml(cost)}`);
+
+    return `
+        <div class="ast-tag">
+            <div class="ast-tag-header">
+                <img class="ast-header-logo" src="${LOGO_URL}" alt="CCC logo">
+                <span>City College of Calamba</span>
+            </div>
+            <div class="ast-tag-body">
+                <div class="ast-tag-details">
+                    <div class="ast-tag-line tl-cat">${escapeHtml(category)}</div>
+                    <div class="ast-tag-line tl-code">${escapeHtml(code)}</div>
+                    ${propNum ? `<div class="ast-tag-line tl-prop">Property No.: ${escapeHtml(propNum)}</div>` : ''}
+                    <div class="ast-tag-line tl-desc">${escapeHtml(shortDesc)}</div>
+                    ${metaLines.length ? '<hr class="ast-tag-divider">' + metaLines.map(function(l){ return `<div class="ast-tag-line tl-meta">${l}</div>`; }).join('') : ''}
+                </div>
+                <div class="ast-tag-qr">
+                    <img src="${escapeHtml(qrUrl)}" alt="QR ${escapeHtml(code)}">
+                    <div class="ast-tag-qr-code">${escapeHtml(code)}</div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function buildAstPrintTable(tagHtmlList) {
+    const cols = 2;
+    let rows = '';
+    for (let i = 0; i < tagHtmlList.length; i += cols) {
+        rows += '<tr>';
+        for (let c = 0; c < cols; c++) {
+            const idx = i + c;
+            rows += `<td>${tagHtmlList[idx] || ''}</td>`;
+        }
+        rows += '</tr>';
+    }
+    return `<table class="ast-print-table"><tbody>${rows}</tbody></table>`;
+}
+
+function downloadCurrentQrStickerPdf() {
+    if (!currentQrStickerCode) return;
+    if (typeof html2pdf === 'undefined') {
+        showInvMessage('PDF library is not available.');
+        return;
+    }
+
+    const item = getItemByPropertyCode(currentQrStickerCode);
+    if (!item) {
+        showInvMessage('Unable to load sticker data for PDF download.');
+        return;
+    }
+
+    const btn = $('#btnDownloadQrStickerPdf');
+    btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-1"></span>Generating...');
+
+    const tagHtml = buildAstTagForPdf(item);
+    const pageHtml = buildAstPrintTable([tagHtml]);
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = `<style>${AST_TAG_CSS}</style>${pageHtml}`;
+
+    const fileCode = String(item.property_code || 'sticker').replace(/[^A-Za-z0-9_-]/g, '_');
+    const opt = {
+        margin: [0.31, 0.31, 0.31, 0.31],
+        filename: `${fileCode}-tag.pdf`,
+        image: { type: 'jpeg', quality: 0.95 },
+        html2canvas: { scale: 1.5, useCORS: true, allowTaint: true },
+        jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+    };
+
+    html2pdf().set(opt).from(wrapper).save().then(function() {
+        btn.prop('disabled', false).html('<i class="bi bi-file-earmark-pdf"></i> Download PDF');
+    }).catch(function() {
+        btn.prop('disabled', false).html('<i class="bi bi-file-earmark-pdf"></i> Download PDF');
+        showInvMessage('Failed to generate PDF.');
+    });
+}
+
 // Update the summary cards based on the current filtered rows
 function updateSummary(rows) {
     const totalItems = rows.length;
@@ -772,7 +1140,7 @@ function initTable() {
         },
         columns: [
             { formatter: "rowSelection", titleFormatter: "rowSelection", hozAlign: "center", headerSort: false, width: 40 },
-            { title: "Image", field: "category_photo_thumb_url", width: 60, hozAlign: "center", formatter: function(cell){
+            { title: "Img", field: "category_photo_thumb_url", width: 80, hozAlign: "center", formatter: function(cell){
                 const url = cell.getValue();
                 const full = cell.getRow().getData().category_photo_url;
                 const name = cell.getRow().getData().item_category_name || '';
@@ -785,6 +1153,16 @@ function initTable() {
                 // Render initials badge when no image
                 const initials = (String(name).trim().split(/\s+/).map(w => w.charAt(0)).filter(Boolean).slice(0,2).join('') || 'IT').toUpperCase();
                 return `<div class="thumb-wrap"><div class="item-badge" title="${name}">${initials}</div></div>`;
+            }},
+            { title: "QR", field: "qr_image_url", width: 80, hozAlign: "center", headerSort: false, formatter: function(cell){
+                const row = cell.getRow().getData();
+                const qrUrl = cell.getValue() || (row.property_code ? (BASE_URL + 'admin/modules/tools/qr_image.php?v=' + encodeURIComponent(row.property_code)) : '');
+                if (!qrUrl) {
+                    return '<span class="text-muted small">-</span>';
+                }
+                const safeUrl = escapeHtml(qrUrl);
+                const safeCode = escapeHtml(row.property_code || 'QR Code');
+                return `<div class="thumb-wrap"><a href="#" class="js-qr-sticker-preview" data-code="${safeCode}" title="Preview QR sticker for ${safeCode}"><img class="qr-thumb" src="${safeUrl}" loading="lazy" alt="QR code"></a></div>`;
             }},
             { title: "Property Tag", field: "property_code", width: 170, headerFilter: "input", headerFilterPlaceholder: "Filter...", formatter: function(cell){
                 return twoLineText(cell.getValue());
@@ -1101,6 +1479,25 @@ $(document).ready(function() {
         const encoded = $(this).data('group');
         const key = decodeURIComponent(String(encoded || ''));
         toggleGroupSelection(key, this.checked);
+    });
+
+    $('#ast-inventory-table').on('click', '.js-qr-sticker-preview', function(e) {
+        e.preventDefault();
+        const code = $(this).data('code');
+        const item = getItemByPropertyCode(code);
+        currentQrStickerCode = String(code || '');
+        $('#btnDownloadQrStickerPdf').prop('disabled', !item);
+        $('#qrStickerPreviewWrap').html(buildQrStickerPreview(item));
+        $('#qrStickerPreviewModal').modal('show');
+    });
+
+    $('#btnDownloadQrStickerPdf').on('click', function() {
+        downloadCurrentQrStickerPdf();
+    });
+
+    $('#qrStickerPreviewModal').on('hidden.bs.modal', function() {
+        currentQrStickerCode = '';
+        $('#btnDownloadQrStickerPdf').prop('disabled', true).html('<i class="bi bi-file-earmark-pdf"></i> Download PDF');
     });
 });
 </script>
