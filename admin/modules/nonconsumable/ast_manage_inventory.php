@@ -162,6 +162,13 @@ if (!(
         .tabulator {
             font-size: 0.875rem;
         }
+        #inventoryTable .tabulator-row.tab-row-recent {
+            background: #fff7d6 !important;
+            border-left: 3px solid #f0ad00;
+        }
+        #inventoryTable .tabulator-row.tab-row-recent:hover {
+            background: #ffefbf !important;
+        }
         #unitRows {
             max-height: 320px;
             overflow-y: auto;
@@ -560,6 +567,9 @@ let qrPreviewPage = 1;
 const QR_PREVIEW_PAGE_SIZE = 20;
 const TABLE_CHUNK_SIZE_ALL = 200;
 const TABLE_CHUNK_SIZE_PAGED = 300;
+const LATEST_BATCH_WINDOW_MS = 2 * 60 * 1000;
+let latestBatchMeta = { timestampMs: null, propertyNumber: '' };
+const messageTimers = {};
 
 function playSerialBeep(kind) {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -581,7 +591,19 @@ function playSerialBeep(kind) {
 
 
 function showMessage(target, type, text) {
+    if (messageTimers[target]) {
+        clearTimeout(messageTimers[target]);
+        delete messageTimers[target];
+    }
+
     $(target).html(`<div class="alert alert-${type} mb-2">${text}</div>`);
+
+    if (String(type).toLowerCase() === 'info') {
+        messageTimers[target] = setTimeout(function() {
+            $(target).html('');
+            delete messageTimers[target];
+        }, 10000);
+    }
 }
 
 function showPageMessage(message) {
@@ -1029,6 +1051,51 @@ function twoLineText(value, fallback = '-') {
     return `<span class="two-line-cell" title="${safe}">${safe}</span>`;
 }
 
+function parseDateTime(value) {
+    if (!value) return null;
+    const raw = String(value).trim();
+    if (!raw) return null;
+    const normalized = raw.includes('T') ? raw : raw.replace(' ', 'T');
+    let d = new Date(normalized);
+    if (!isNaN(d.getTime())) return d;
+    d = new Date(raw);
+    return isNaN(d.getTime()) ? null : d;
+}
+
+function refreshLatestBatchMeta(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+    let latestTs = null;
+    let latestProp = '';
+
+    list.forEach(function(row) {
+        const created = parseDateTime(row && row.created_at ? row.created_at : '');
+        if (!created) return;
+        const ts = created.getTime();
+        if (latestTs === null || ts > latestTs) {
+            latestTs = ts;
+            latestProp = String(row && row.property_number ? row.property_number : '').trim().toUpperCase();
+        }
+    });
+
+    latestBatchMeta = {
+        timestampMs: latestTs,
+        propertyNumber: latestProp
+    };
+}
+
+function isLatestBatchRow(data) {
+    if (!data || latestBatchMeta.timestampMs === null) return false;
+    const created = parseDateTime(data.created_at);
+    if (!created) return false;
+
+    const withinWindow = Math.abs(latestBatchMeta.timestampMs - created.getTime()) <= LATEST_BATCH_WINDOW_MS;
+    if (!withinWindow) return false;
+
+    if (!latestBatchMeta.propertyNumber) return true;
+    const rowProp = String(data.property_number || '').trim().toUpperCase();
+    return rowProp === latestBatchMeta.propertyNumber;
+}
+
 function buildPropertyCodeList(propertyNumber, startSeries, units) {
     const normalized = String(propertyNumber || '').toUpperCase();
     const start = parseInt(startSeries, 10) || 1;
@@ -1436,6 +1503,7 @@ function fetchInventoryChunk(params) {
         if (params.version !== tableLoadVersion) return;
         if (!(res && res.success)) {
             inventoryRows = [];
+            refreshLatestBatchMeta([]);
             inventoryTable.replaceData([]);
             return;
         }
@@ -1445,9 +1513,11 @@ function fetchInventoryChunk(params) {
 
         if (params.offset === 0) {
             inventoryRows = chunk.slice();
+            refreshLatestBatchMeta(inventoryRows);
             inventoryTable.replaceData(inventoryRows);
         } else if (chunk.length > 0) {
             inventoryRows = inventoryRows.concat(chunk);
+            refreshLatestBatchMeta(inventoryRows);
             inventoryTable.addData(chunk);
         }
 
@@ -1463,11 +1533,13 @@ function fetchInventoryChunk(params) {
         }
 
         tableLoadXhr = null;
+        inventoryTable.redraw(true);
         inventoryTable.setPage(1);
     }).fail(function(xhr, status) {
         if (status === 'abort') return;
         if (params.version !== tableLoadVersion) return;
         inventoryRows = [];
+        refreshLatestBatchMeta([]);
         inventoryTable.replaceData([]);
     });
 }
@@ -1489,6 +1561,7 @@ function loadInventoryTable(restart) {
     }
 
     inventoryRows = [];
+    refreshLatestBatchMeta([]);
     inventoryTable.replaceData([]);
 
     const allMode = isAllTablePageSize();
@@ -1517,6 +1590,19 @@ function initTable() {
         layout: 'fitColumns',
         responsiveLayout: 'collapse',
         placeholder: 'No items found',
+        rowFormatter: function(row) {
+            const el = row.getElement();
+            if (!el) return;
+            if (isLatestBatchRow(row.getData())) {
+                el.classList.add('tab-row-recent');
+                el.title = 'Latest added batch';
+            } else {
+                el.classList.remove('tab-row-recent');
+                if (el.title && el.title.indexOf('Latest added batch') === 0) {
+                    el.removeAttribute('title');
+                }
+            }
+        },
         pagination: 'local',
         paginationSize: 10,
         paginationSizeSelector: [5, 10, 20, 50, true],
