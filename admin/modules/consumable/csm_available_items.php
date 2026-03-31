@@ -1299,6 +1299,19 @@ function initTable() {
                 }
             },
             {
+                title: 'QR',
+                field: 'inventory_system_item_code',
+                width: 92,
+                hozAlign: 'center',
+                headerSort: false,
+                formatter: function(cell) {
+                    const code = cell.getValue();
+                    if (!code) return '';
+                    const u = `${QR_GENERATOR_URL}?v=${encodeURIComponent(code)}`;
+                    return `<img src="${u}" data-code="${escHtml(code)}" class="qr-thumb" style="height:56px;width:56px;object-fit:contain;border:1px solid #dee2e6;border-radius:8px;background:#fff;padding:4px;cursor:pointer;" alt="QR">`;
+                }
+            },
+            {
                 title: 'Item Code',
                 field: 'inventory_system_item_code',
                 width: 190,
@@ -1369,20 +1382,7 @@ function initTable() {
                 formatter: function(cell){
                     return cell.getValue() || '-';
                 }
-            }
-//            {
-//                title: 'QR',
-//                field: 'inventory_system_item_code',
-//                width: 92,
-//                hozAlign: 'center',
-//                headerSort: false,
-//                formatter: function(cell) {
-//                    const code = cell.getValue();
-//                    if (!code) return '';
-//                    const u = `${QR_GENERATOR_URL}?v=${encodeURIComponent(code)}`;
-//                    return `<img src="${u}" data-code="${escHtml(code)}" class="qr-thumb" style="height:56px;width:56px;object-fit:contain;border:1px solid #dee2e6;border-radius:8px;background:#fff;padding:4px;cursor:pointer;" alt="QR">`;
-//                }
-//            },
+            },
 //            {
 //                title: 'Actions',
 //                field: 'inventory_id',
