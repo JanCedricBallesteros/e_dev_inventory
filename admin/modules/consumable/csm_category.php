@@ -756,6 +756,8 @@ function buildTabulator(data){
                 title: "Category Code",
                 field: "item_category_code",
                 width: 160,
+                headerFilter: "input",
+                headerFilterPlaceholder: "Filter...",
                 formatter: function(cell) {
                     return `<span class="badge bg-light text-dark border">${escHtml(displayCode(cell.getValue() || ''))}</span>`;
                 }
