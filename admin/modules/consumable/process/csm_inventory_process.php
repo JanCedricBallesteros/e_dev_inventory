@@ -472,6 +472,11 @@ try {
                 echo "Cost, quantity, and critical level cannot be negative.";
                 exit();
             }
+            if ($quantity <= $qty_crit_level) {
+                http_response_code(422);
+                echo "Actual Qty must be greater than Critical Level.";
+                exit();
+            }
             if ($current_quantity > $quantity) {
                 http_response_code(422);
                 echo "Available quantity cannot exceed Total Quantity.";
@@ -860,6 +865,11 @@ try {
             if ($cost_value < 0 || $quantity < 0 || $qty_crit_level < 0) {
                 http_response_code(422);
                 echo "Cost, quantity, and critical level cannot be negative.";
+                exit();
+            }
+            if ($quantity <= $qty_crit_level) {
+                http_response_code(422);
+                echo "Actual Qty must be greater than Critical Level.";
                 exit();
             }
 

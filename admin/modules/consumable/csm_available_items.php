@@ -1142,6 +1142,7 @@ function validateAddItemDraft(draft) {
     if (draft.quantity === '' || parseInt(draft.quantity, 10) < 0) return 'Actual Qty must be 0 or higher.';
     // if (draft.current_quantity === '' || parseInt(draft.current_quantity, 10) < 0) return 'Available to Issue must be 0 or higher.';
     if (draft.qty_crit_level === '' || parseInt(draft.qty_crit_level, 10) < 0) return 'Critical Level must be 0 or higher.';
+    if (parseInt(draft.quantity, 10) <= parseInt(draft.qty_crit_level, 10)) return 'Actual Qty must be greater than Critical Level.';
     // if (draft.cost_value === '' || parseFloat(draft.cost_value) < 0) return 'Cost Value must be 0 or higher.';
     // if (parseInt(draft.current_quantity, 10) > parseInt(draft.quantity, 10)) return 'Available to Issue cannot exceed Actual Qty.';
     return '';
