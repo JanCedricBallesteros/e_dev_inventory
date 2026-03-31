@@ -208,7 +208,9 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 
                                 <div class="col-md-4">
                                     <label class="form-label fw-semibold">Property Number (base)</label>
-                                    <input type="text" class="form-control" name="property_number" id="propertyNumberField" placeholder="Enter property no. (e.g., A12-B)" required autocomplete="off" inputmode="text" pattern="[A-Za-z0-9-]+">
+                                    <select class="form-select" name="property_number" id="propertyNumberField" required>
+                                        <option value="">Select existing or type a new property number</option>
+                                    </select>
                                 </div>
 
                                 <div class="col-md-4">
@@ -630,7 +632,6 @@ function applyAddItemDraft(draft) {
     if (!draft) return false;
     suppressDraftSave = true;
 
-    $('#propertyNumberField').val(draft.property_number || '');
     $('#itemDescription').val(draft.item_description || '');
     $('#sourceOfFund').val(draft.source_of_fund || '');
     $('#costValue').val(draft.cost_value || '');
@@ -640,6 +641,7 @@ function applyAddItemDraft(draft) {
             $('#categorySelect').append(new Option(draft.category_label || draft.category_id, draft.category_id, true, true));
         }
         $('#categorySelect').val(draft.category_id).trigger('change');
+        loadPropertyNumbersForCategory(draft.category_id, draft.property_number || '');
     }
 
     if (draft.unit) {
@@ -647,6 +649,12 @@ function applyAddItemDraft(draft) {
             $('#unitSelect').append(new Option(draft.unit_label || draft.unit, draft.unit, true, true));
         }
         $('#unitSelect').val(draft.unit).trigger('change');
+    }
+
+    if (draft.property_number && !draft.category_id) {
+        setPropertyNumberValue(draft.property_number, false);
+    } else if (!draft.property_number) {
+        $('#propertyNumberField').val('').trigger('change');
     }
 
     $('#unitRows').html('');
@@ -761,6 +769,9 @@ function loadPropertyCodes() {
             $('#searchPropertyCode').html(options.join(''));
             
             // Initialize Select2 for searchable dropdown
+            if ($('#searchPropertyCode').hasClass('select2-hidden-accessible')) {
+                $('#searchPropertyCode').select2('destroy');
+            }
             $('#searchPropertyCode').select2({
                 placeholder: 'Search Property Tag',
                 allowClear: true,
@@ -784,6 +795,165 @@ function loadPropertyCodes() {
     }, 'json').fail(function() {
         $('#searchPropertyCode').html('<option value="">Failed to load</option>');
         showPageMessage('Server error while loading Property Tags.');
+    });
+}
+
+function normalizePropertyNumberValue(value) {
+    return String(value || '').toUpperCase().replace(/[^A-Z0-9-]/g, '').trim();
+}
+
+function setPropertyNumberValue(value, markAsExisting) {
+    const normalized = normalizePropertyNumberValue(value);
+    if (!normalized) {
+        $('#propertyNumberField').val('').trigger('change');
+        return;
+    }
+    let opt = $('#propertyNumberField option[value="' + normalized + '"]');
+    if (!opt.length) {
+        const newOpt = new Option(normalized, normalized, true, true);
+        if (markAsExisting) {
+            $(newOpt).attr('data-existing', '1');
+        }
+        $('#propertyNumberField').append(newOpt);
+    } else if (markAsExisting) {
+        opt.attr('data-existing', '1');
+    }
+    $('#propertyNumberField').val(normalized).trigger('change');
+}
+
+function prefillAddFormByPropertyNumber(propertyNumber, categoryId) {
+    const propNum = (propertyNumber || '').trim().toUpperCase();
+    const catId = parseInt(categoryId, 10) || 0;
+    if (!propNum) return;
+    if (!catId) {
+        showMessage('#addItemMsg', 'danger', 'Please select a category first.');
+        return;
+    }
+
+    $.post(PROCESS_URL, {
+        action: 'get_item_by_property_number',
+        property_number: propNum,
+        category_id: catId
+    }, function(res) {
+        if (!(res && res.success && res.data)) {
+            showMessage('#addItemMsg', 'danger', (res && res.message) ? res.message : 'Failed to load item details.');
+            return;
+        }
+
+        const d = res.data;
+
+        if (d.category_id) {
+            if ($('#categorySelect option[value="' + d.category_id + '"]').length === 0) {
+                const catLabel = d.item_category_name || d.category_id;
+                $('#categorySelect').append(new Option(catLabel, d.category_id, true, true));
+            }
+            $('#categorySelect').val(String(d.category_id)).trigger('change');
+        }
+
+        const nextPropertyNumber = (d.property_number || '').toString().toUpperCase();
+        loadPropertyNumbersForCategory(d.category_id, nextPropertyNumber);
+        setPropertyNumberValue(nextPropertyNumber, true);
+        $('#itemDescription').val(d.item_description || '');
+
+        if (d.unit) {
+            if ($('#unitSelect option[value="' + d.unit + '"]').length === 0) {
+                $('#unitSelect').append(new Option(d.unit, d.unit, true, true));
+            }
+            $('#unitSelect').val(d.unit).trigger('change');
+        }
+
+        $('#sourceOfFund').val(d.source_of_fund || '');
+        $('#costValue').val(d.cost_value || '');
+
+        resetUnitRows();
+        applyPropertyNumberValidity();
+        refreshPropertyCode();
+        scheduleSaveAddItemDraft();
+
+        const safePropNum = escapeHtml(d.property_number || propNum);
+        showMessage('#addItemMsg', 'info', 'Loaded details for property number <span class="badge bg-light text-dark border badge-code">' + safePropNum + '</span>. Add quantity rows, then save.');
+    }, 'json').fail(function() {
+        showMessage('#addItemMsg', 'danger', 'Server error while loading existing item details.');
+    });
+}
+
+function initPropertyNumberSelect() {
+    const hasCategory = !!String($('#categorySelect').val() || '').trim();
+    const placeholderText = hasCategory
+        ? 'Select existing or type a new property number'
+        : 'Select item category first';
+
+    if ($('#propertyNumberField').hasClass('select2-hidden-accessible')) {
+        $('#propertyNumberField').select2('destroy');
+    }
+
+    $('#propertyNumberField').select2({
+        placeholder: placeholderText,
+        allowClear: true,
+        tags: true,
+        width: '100%',
+        createTag: function(params) {
+            if (!hasCategory) return null;
+            const normalized = normalizePropertyNumberValue(params.term);
+            if (!normalized) return null;
+            return { id: normalized, text: normalized, newTag: true };
+        }
+    });
+
+    $('#propertyNumberField').prop('disabled', !hasCategory);
+}
+
+function loadPropertyNumbersForCategory(categoryId, preserveValue) {
+    const catId = (categoryId || '').toString().trim();
+    const keepVal = normalizePropertyNumberValue(preserveValue || '');
+    const currentVal = normalizePropertyNumberValue($('#propertyNumberField').val() || '');
+    const valueToTry = keepVal || currentVal;
+
+    if ($('#propertyNumberField').hasClass('select2-hidden-accessible')) {
+        $('#propertyNumberField').select2('destroy');
+    }
+
+    if (!catId) {
+        $('#propertyNumberField').html('<option value="">Select item category first</option>');
+        initPropertyNumberSelect();
+        $('#propertyNumberField').val('').trigger('change');
+        applyPropertyNumberValidity();
+        return;
+    }
+
+    $('#propertyNumberField').prop('disabled', false);
+    $('#propertyNumberField').html('<option value="">Loading property numbers...</option>');
+    initPropertyNumberSelect();
+
+    $.post(PROCESS_URL, { action: 'list_existing_property_numbers', category_id: catId }, function(res) {
+        const existingValues = [];
+        if (res && res.success && Array.isArray(res.data)) {
+            res.data.forEach(function(row) {
+                const val = normalizePropertyNumberValue(row && row.property_number ? row.property_number : '');
+                if (val) existingValues.push(val);
+            });
+        }
+
+        const uniq = Array.from(new Set(existingValues));
+        const options = ['<option value="">Select existing or type a new property number</option>'];
+        uniq.forEach(function(val) {
+            options.push('<option value="' + escapeHtml(val) + '" data-existing="1">' + escapeHtml(val) + '</option>');
+        });
+        $('#propertyNumberField').html(options.join(''));
+        initPropertyNumberSelect();
+
+        if (valueToTry) {
+            const isExisting = uniq.indexOf(valueToTry) !== -1;
+            if (isExisting || keepVal) {
+                setPropertyNumberValue(valueToTry, isExisting);
+            } else {
+                $('#propertyNumberField').val('').trigger('change');
+            }
+        }
+    }, 'json').fail(function() {
+        $('#propertyNumberField').html('<option value="">Select existing or type a new property number</option>');
+        initPropertyNumberSelect();
+        if (keepVal) setPropertyNumberValue(keepVal, false);
     });
 }
 
@@ -1053,6 +1223,8 @@ function submitAddItemFromReview() {
             $('#addItemForm')[0].reset();
             $('#categorySelect').val('').trigger('change');
             $('#unitSelect').val('').trigger('change');
+            $('#propertyNumberField').val('').trigger('change');
+            loadPropertyNumbersForCategory('', '');
             resetUnitRows();
             refreshPropertyCode();
             refreshTable();
@@ -1079,7 +1251,7 @@ function submitAddItemFromReview() {
 
 
 function refreshPropertyCode() {
-    const propNum = $('#propertyNumberField').val().trim();
+    const propNum = normalizePropertyNumberValue($('#propertyNumberField').val());
     const units = countUnitRows();
     $('#numberOfUnits').val(units);
     propertyCodeRequestSeq += 1;
@@ -1654,6 +1826,8 @@ function setupSerialScannerModal() {
         refreshPropertyCode();
         applyPropertyNumberValidity();
         setupSerialScannerModal();
+        initPropertyNumberSelect();
+        loadPropertyNumbersForCategory('', '');
 
         // Enable Bootstrap tooltips (for unit helper, etc.)
         if (typeof bootstrap !== 'undefined') {
@@ -1663,28 +1837,40 @@ function setupSerialScannerModal() {
             });
         }
 
-    $('#propertyNumberField').on('keypress', function(e) {
-        // Only allow letters, numbers, and dashes
-        const char = String.fromCharCode(e.which || e.keyCode);
-        if (e.which > 31 && !/[a-zA-Z0-9-]/.test(char)) {
-            e.preventDefault();
-            return false;
+    $('#propertyNumberField').on('select2:select', function(e) {
+        const data = e && e.params ? e.params.data : null;
+        const normalized = normalizePropertyNumberValue(data && data.id ? data.id : $('#propertyNumberField').val());
+        if (normalized) {
+            setPropertyNumberValue(normalized, false);
         }
-    }).on('input', function() {
-        // Keep letters, numbers, dashes only and normalize to uppercase
-        let val = ($(this).val() || '').replace(/[^a-zA-Z0-9-]/g, '').toUpperCase();
-        $(this).val(val);
         applyPropertyNumberValidity();
         debouncedRefreshPropertyCode();
         scheduleSaveAddItemDraft();
+
+        const categoryId = ($('#categorySelect').val() || '').trim();
+        const isExisting = !!(data && data.element && String($(data.element).attr('data-existing') || '') === '1');
+        if (normalized && categoryId && isExisting) {
+            prefillAddFormByPropertyNumber(normalized, categoryId);
+        }
     }).on('change', function() {
+        const normalized = normalizePropertyNumberValue($(this).val());
+        if (normalized !== ($(this).val() || '')) {
+            setPropertyNumberValue(normalized, false);
+            return;
+        }
         applyPropertyNumberValidity();
         debouncedRefreshPropertyCode();
         scheduleSaveAddItemDraft();
-    }).on('blur', function() {
+    }).on('select2:clear', function() {
         applyPropertyNumberValidity();
-    }).on('invalid', function() {
-        applyPropertyNumberValidity();
+        debouncedRefreshPropertyCode();
+        scheduleSaveAddItemDraft();
+    });
+
+    $('#categorySelect').on('change', function() {
+        const categoryId = ($(this).val() || '').trim();
+        loadPropertyNumbersForCategory(categoryId, '');
+        scheduleSaveAddItemDraft();
     });
 
     $('#addUnitRowBtn').on('click', function() {
@@ -1741,6 +1927,8 @@ function setupSerialScannerModal() {
         $('#addItemForm')[0].reset();
         $('#categorySelect').val('').trigger('change'); // Reset Select2 dropdown
         $('#unitSelect').val('').trigger('change'); // Reset Select2 dropdown
+        $('#propertyNumberField').val('').trigger('change');
+        loadPropertyNumbersForCategory('', '');
         resetUnitRows();
         refreshPropertyCode();
         $('#addItemMsg').html('');

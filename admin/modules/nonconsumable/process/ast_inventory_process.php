@@ -419,6 +419,54 @@ try {
             json_response(['success' => true, 'data' => $rows]);
             break;
 
+        case 'list_existing_property_numbers':
+            $category_id = _int(_post('category_id'));
+            if ($category_id <= 0) {
+                json_response(['success' => false, 'message' => 'Category is required.'], 422);
+            }
+            $sql = "SELECT DISTINCT i.property_number
+                    FROM ast_inventory i
+                    WHERE i.category_id = {$category_id}
+                      AND i.property_number IS NOT NULL
+                      AND TRIM(i.property_number) <> ''
+                    ORDER BY i.property_number ASC";
+            $res = call_mysql_query($sql);
+            $rows = [];
+            if ($res) {
+                while ($row = call_mysql_fetch_array($res)) {
+                    $rows[] = ['property_number' => strtoupper(trim((string)($row['property_number'] ?? '')))];
+                }
+            }
+            json_response(['success' => true, 'data' => $rows]);
+            break;
+
+        case 'get_item_by_property_number':
+            $property_number = sanitize_property_number(_post('property_number'));
+            $category_id = _int(_post('category_id'));
+            if ($property_number === '') {
+                json_response(['success' => false, 'message' => 'Property number is required.'], 422);
+            }
+            if ($category_id <= 0) {
+                json_response(['success' => false, 'message' => 'Category is required.'], 422);
+            }
+            $sql = "SELECT i.*, c.item_category_name
+                    FROM ast_inventory i
+                    LEFT JOIN ast_inventory_category c ON c.category_id = i.category_id
+                    WHERE i.property_number = '" . _esc($property_number) . "'
+                      AND i.category_id = {$category_id}
+                    ORDER BY i.property_series DESC, i.created_at DESC
+                    LIMIT 1";
+            $res = call_mysql_query($sql);
+            $row = $res ? call_mysql_fetch_array($res) : null;
+            if (!$row) {
+                json_response(['success' => false, 'message' => 'Item not found for selected property number.'], 404);
+            }
+            if (!isset($row['serial_number'])) {
+                $row['serial_number'] = '';
+            }
+            json_response(['success' => true, 'data' => $row]);
+            break;
+
         case 'get_next_property_code':
             $property_number = sanitize_property_number(_post('property_number'));
             $number_of_units = _int(_post('number_of_units'), 1);

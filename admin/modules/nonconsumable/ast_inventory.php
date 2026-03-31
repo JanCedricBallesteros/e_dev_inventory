@@ -61,7 +61,7 @@ if (!(
             background: #fff;
         }
         #qrStickerPreviewModal .modal-dialog {
-            max-width: 700px;
+            max-width: 600px;
         }
         .ast-sticker-header {
             border-bottom: 1.5px solid #000;
