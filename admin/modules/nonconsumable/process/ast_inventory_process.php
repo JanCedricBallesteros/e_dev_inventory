@@ -246,7 +246,7 @@ function sanitize_property_number($v) {
 }
 
 function is_valid_property_number($v) {
-    return (bool)preg_match('/^[A-Z0-9]+$/', (string)$v);
+    return (bool)preg_match('/^[A-Z0-9-]+$/', (string)$v);
 }
 
 function sanitize_property_code($v) {
@@ -428,7 +428,7 @@ try {
                 json_response(['success' => false, 'message' => 'Property number is required.'], 422);
             }
             if (!is_valid_property_number($property_number)) {
-                json_response(['success' => false, 'message' => 'Property number must contain letters and numbers only.'], 422);
+                json_response(['success' => false, 'message' => 'Property number must contain letters, numbers, and dashes only.'], 422);
             }
             $nextSeries = get_next_series($property_number);
             $property_code = build_property_code($property_number, $nextSeries);
@@ -740,7 +740,7 @@ try {
                 json_response(['success' => false, 'message' => 'Property number is required.'], 422);
             }
             if (!is_valid_property_number($property_number)) {
-                json_response(['success' => false, 'message' => 'Property number must contain letters and numbers only.'], 422);
+                json_response(['success' => false, 'message' => 'Property number must contain letters, numbers, and dashes only.'], 422);
             }
             if ($item_description === '') {
                 json_response(['success' => false, 'message' => 'Item description is required.'], 422);
@@ -914,7 +914,7 @@ try {
 
             $property_number_base = sanitize_property_number(_post('property_number_base'));
             if ($property_number_base !== '' && !is_valid_property_number($property_number_base)) {
-                json_response(['success' => false, 'message' => 'Property number base must contain letters and numbers only.'], 422);
+                json_response(['success' => false, 'message' => 'Property number base must contain letters, numbers, and dashes only.'], 422);
             }
 
             $fileTmp = $_FILES['csv_file']['tmp_name'];
@@ -956,7 +956,7 @@ try {
                     $property_number = $property_number_base;
                 }
                 if ($property_number !== '' && !is_valid_property_number($property_number)) {
-                    $errors[] = 'Invalid property number (letters and numbers only) in row ' . ($inserted + $updated + $skipped + 2);
+                    $errors[] = 'Invalid property number (letters, numbers, and dashes only) in row ' . ($inserted + $updated + $skipped + 2);
                     $skipped++;
                     continue;
                 }
@@ -1014,20 +1014,21 @@ try {
                 if ($property_code_csv !== '') {
                     $property_code = $property_code_csv;
                     // Attempt to derive property number & series from property_code if missing
-                    if ($property_number === '') {
-                        $parts = explode('-', $property_code);
-                        if (count($parts) >= 3) {
-                            $property_number = sanitize_property_number($parts[1]);
+                    if (preg_match('/^AST-(.+)-(\d{4})$/', $property_code, $m)) {
+                        $derived_property_number = sanitize_property_number($m[1]);
+                        $derived_series = _int($m[2]);
+
+                        if ($property_number === '') {
+                            $property_number = $derived_property_number;
                             if ($property_number !== '' && !is_valid_property_number($property_number)) {
                                 $errors[] = 'Invalid property number in Property Tag at row ' . ($inserted + $updated + $skipped + 2);
                                 $skipped++;
                                 continue;
                             }
                         }
-                    }
-                    if ($property_series_csv <= 0 && count(explode('-', $property_code)) >= 3) {
-                        $last = explode('-', $property_code);
-                        $property_series_csv = _int(end($last));
+                        if ($property_series_csv <= 0 && $derived_series > 0) {
+                            $property_series_csv = $derived_series;
+                        }
                     }
                 } else {
                     if ($property_series_csv <= 0) {
