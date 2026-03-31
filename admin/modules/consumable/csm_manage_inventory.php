@@ -152,6 +152,10 @@ if (!(
             padding: 4px 8px;
             box-sizing: border-box;
         }
+        #csm-inventory-table .tabulator-tableholder {
+            max-height: 72vh;
+            overflow-y: auto;
+        }
         .two-line-cell {
             display: -webkit-box;
             -webkit-line-clamp: 2;
