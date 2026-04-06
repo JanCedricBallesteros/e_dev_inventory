@@ -195,6 +195,42 @@ if (!(
         .status-1 { background: #dcfce7; color: #166534; }
         .status-2 { background: #fef3c7; color: #92400e; }
         .status-3 { background: #fee2e2; color: #991b1b; }
+        .avail-metric-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .avail-metric-card {
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            background: #f8fafc;
+            padding: 10px 12px;
+        }
+        .avail-metric-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: .05em;
+            color: #64748b;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        .avail-metric-value {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #0f172a;
+            line-height: 1.15;
+        }
+        .avail-metric-sub {
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 2px;
+        }
+        @media (max-width: 575.98px) {
+            .avail-metric-grid {
+                grid-template-columns: 1fr;
+            }
+        }
 
         .qr-camera-shell{
             width:100%;
@@ -440,29 +476,44 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                     <div class="row g-3">
                         <div class="col-md-8">
                             <div class="small text-muted">Item</div>
-                            <div class="fw-semibold" id="availItemLabel">â€”</div>
+                            <div class="fw-semibold" id="availItemLabel">-</div>
                         </div>
                         <div class="col-md-4">
                             <div class="small text-muted">Status</div>
-                            <div id="availStatusLabel">â€”</div>
+                            <div id="availStatusLabel">-</div>
                         </div>
 
-                        <div class="col-md-4" id="availQtyWrap">
+                        <div class="col-12 col-lg-5" id="availQtyWrap">
                             <label class="form-label fw-semibold">Available Quantity</label>
                             <input type="number" min="0" name="current_quantity" id="availCurrentQty" class="form-control" placeholder="Enter available quantity">
-                            <div class="small text-muted mt-1" id="availQtyHint"></div>
+                            <div class="avail-metric-grid" id="availQtyHint">
+                                <div class="avail-metric-card">
+                                    <div class="avail-metric-label">Total Quantity</div>
+                                    <div class="avail-metric-value" id="availTotalQtyValue">-</div>
+                                    <div class="avail-metric-sub" id="availTotalQtyUnit">Unit: -</div>
+                                </div>
+                                <div class="avail-metric-card">
+                                    <div class="avail-metric-label">Critical Level</div>
+                                    <div class="avail-metric-value" id="availCriticalLevelValue">-</div>
+                                    <div class="avail-metric-sub">Threshold before stock critical</div>
+                                </div>
+                            </div>
                         </div>
 
-                        <div class="col-md-8" id="availTeachWrap">
-                            <label class="form-label fw-semibold">Academic Personnel</label>
-                            <select id="availTeachingStatus" class="form-select" multiple></select>
-                            <div class="small text-muted mt-1">Choose allowed teaching status. Select None to block all.</div>
-                        </div>
+                        <div class="col-12 col-lg-7" id="availRulesWrap">
+                            <div class="row g-3">
+                                <div class="col-12" id="availTeachWrap">
+                                    <label class="form-label fw-semibold">Academic Personnel</label>
+                                    <select id="availTeachingStatus" class="form-select" multiple></select>
+                                    <div class="small text-muted mt-1">Choose allowed teaching status. Select None to block all.</div>
+                                </div>
 
-                        <div class="col-md-8 offset-md-4" id="availNonTeachWrap">
-                            <label class="form-label fw-semibold">Administrative</label>
-                            <select id="availNonTeachingStatus" class="form-select" multiple></select>
-                            <div class="small text-muted mt-1">Choose allowed non-teaching status. Select None to block all.</div>
+                                <div class="col-12" id="availNonTeachWrap">
+                                    <label class="form-label fw-semibold">Administrative</label>
+                                    <select id="availNonTeachingStatus" class="form-select" multiple></select>
+                                    <div class="small text-muted mt-1">Choose allowed non-teaching status. Select None to block all.</div>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -655,7 +706,7 @@ function parseDate(val) {
 function parseDateRangeInput(raw) {
     const text = (raw || '').trim();
     if (!text) return { from: null, to: null };
-    const parts = text.split(/\s+-\s+|\s+â€“\s+/).filter(Boolean);
+    const parts = text.split(/\s+-\s+|\s+\u2013\s+/).filter(Boolean);
     if (parts.length === 1) {
         const d = parseDate(parts[0]);
         return { from: d, to: d };
@@ -675,6 +726,11 @@ function threeLineText(value, fallback = '-') {
     const raw = (value === null || value === undefined || value === '') ? fallback : String(value);
     const safe = escHtml(raw);
     return `<span class="three-line-cell" title="${safe}">${safe}</span>`;
+}
+
+function formatMetricNumber(value) {
+    const n = parseInt(value, 10);
+    return Number.isFinite(n) ? n.toLocaleString('en-US') : '0';
 }
 
 function statusLabel(status) {
@@ -873,13 +929,17 @@ function openAvailabilityModal(inventoryId) {
     $('#availBulkIds').val('');
     $('#availBulkNote').addClass('d-none').text('');
     $('#availQtyWrap').show();
-    $('#availTeachWrap').removeClass('col-md-12').addClass('col-md-8');
-    $('#availNonTeachWrap').removeClass('col-md-12 offset-md-0').addClass('col-md-8 offset-md-4');
+    $('#availQtyWrap').removeClass('d-none').addClass('col-12 col-lg-5');
+    $('#availRulesWrap').removeClass('col-12').addClass('col-12 col-lg-7');
+    $('#availTeachWrap').removeClass('col-md-6 col-md-8 offset-md-4').addClass('col-12');
+    $('#availNonTeachWrap').removeClass('col-md-6 col-md-8 offset-md-4 offset-md-0').addClass('col-12');
 
     $('#availItemLabel').text('Loading...');
-    $('#availStatusLabel').html('â€”');
+    $('#availStatusLabel').html('-');
     $('#availCurrentQty').val('');
-    $('#availQtyHint').text('');
+    $('#availTotalQtyValue').text('-');
+    $('#availTotalQtyUnit').text('Unit: -');
+    $('#availCriticalLevelValue').text('-');
 
     $.ajax({
         url: PROCESS_URL,
@@ -894,12 +954,14 @@ function openAvailabilityModal(inventoryId) {
 
             const d = res.data || {};
             const rules = d.allowed_employment_status || {};
-            const label = `${d.inventory_system_item_code || ''} â€” ${String(d.item_description || '').slice(0, 100)}`;
+            const label = `${d.inventory_system_item_code || ''} - ${String(d.item_description || '').slice(0, 100)}`;
 
             $('#availItemLabel').text(label);
             $('#availStatusLabel').html(statusLabel(d.status || 0));
             $('#availCurrentQty').val(d.current_quantity || 0);
-            $('#availQtyHint').text(`Total quantity: ${d.quantity || 0} ${d.unit || ''} | Critical level: ${d.qty_crit_level || 0}`);
+            $('#availTotalQtyValue').text(formatMetricNumber(d.quantity || 0));
+            $('#availTotalQtyUnit').text(`Unit: ${d.unit || '-'}`);
+            $('#availCriticalLevelValue').text(formatMetricNumber(d.qty_crit_level || 0));
 
             setAvailabilitySelectValues(
                 rules.teaching || [],
@@ -927,13 +989,16 @@ function openAvailabilityModalBulk(ids) {
     $('#availBulkIds').val(ids.join(','));
     $('#availBulkNote').removeClass('d-none').text(`${ids.length} item(s) selected`);
     $('#availQtyWrap').hide();
-    $('#availTeachWrap').removeClass('col-md-8').addClass('col-md-12');
-    $('#availNonTeachWrap').removeClass('col-md-8 offset-md-4').addClass('col-md-12 offset-md-0');
+    $('#availRulesWrap').removeClass('col-lg-7').addClass('col-12');
+    $('#availTeachWrap').removeClass('col-md-6 col-md-8 offset-md-4').addClass('col-12');
+    $('#availNonTeachWrap').removeClass('col-md-6 col-md-8 offset-md-4 offset-md-0').addClass('col-12');
 
     $('#availItemLabel').text('Bulk rule update');
     $('#availStatusLabel').html('<span class="status-pill status-0">Multiple Items</span>');
     $('#availCurrentQty').val('');
-    $('#availQtyHint').text('');
+    $('#availTotalQtyValue').text('-');
+    $('#availTotalQtyUnit').text('Unit: -');
+    $('#availCriticalLevelValue').text('-');
 
     availStatusLock = true;
     $('#availTeachingStatus').val([NONE_STATUS_VALUE]).trigger('change.select2');
