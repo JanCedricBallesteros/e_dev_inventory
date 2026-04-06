@@ -1164,6 +1164,13 @@ function initTable() {
                 }
             },
             {
+                title: 'Source',
+                field: 'source_of_funds',
+                width: 140,
+                headerFilter: 'input',
+                headerFilterPlaceholder: 'Filter...'
+            },
+            {
                 title: 'Allowed Status',
                 field: 'allowed_status_names',
                 width: 220,
@@ -1175,13 +1182,6 @@ function initTable() {
                     if (v === 'All') return '<span class="text-success small fw-semibold">All</span>';
                     return `<span class="three-line-cell text-muted small" title="${escHtml(v)}">${escHtml(v)}</span>`;
                 }
-            },
-            {
-                title: 'Source',
-                field: 'source_of_funds',
-                width: 140,
-                headerFilter: 'input',
-                headerFilterPlaceholder: 'Filter...'
             },
             {
                 title: 'Status',
