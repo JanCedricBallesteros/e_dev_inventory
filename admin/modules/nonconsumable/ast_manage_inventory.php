@@ -1610,6 +1610,7 @@ function initTable() {
         paginationSizeSelector: [5, 10, 20, 50, true],
         paginationCounter: 'rows',
         columns: [
+            { title: 'Category', field: 'item_category_name', width: 170, headerFilter: 'input', headerFilterPlaceholder: 'Filter...' },
             { title: 'Property Tag', field: 'property_code', width: 200, headerFilter: 'input', headerFilterPlaceholder: 'Filter...', formatter: function(cell){
                 return twoLineText(cell.getValue());
             }},
@@ -1620,7 +1621,6 @@ function initTable() {
                 const v = cell.getValue();
                 return v && String(v).trim() !== '' ? v : '-';
             }},
-            { title: 'Category', field: 'item_category_name', width: 170, headerFilter: 'input', headerFilterPlaceholder: 'Filter...' },
             { title: 'Description', field: 'item_description', widthGrow: 2, headerFilter: 'input', headerFilterPlaceholder: 'Filter...', formatter: function(cell){
                 return threeLineText(cell.getValue());
             }},
