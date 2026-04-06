@@ -215,6 +215,23 @@ if (!(
         .btn-match-input {
             height: 38px;
         }
+        #availabilityModal .modal-dialog {
+            max-width: 1200px;
+        }
+        .review-table-wrap {
+            max-height: 260px;
+            overflow: auto;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+        }
+        .availability-item-thumb {
+            width: 42px;
+            height: 42px;
+            border-radius: 6px;
+            object-fit: cover;
+            border: 1px solid #e5e7eb;
+            background: #f8f9fa;
+        }
     </style>
 </head>
 
@@ -297,7 +314,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 
 <!-- SET AVAILABILITY MODAL -->
 <div class="modal fade" id="availabilityModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title fw-semibold"><i class="bi bi-sliders"></i>&ensp;Set as Available Item</h5>
@@ -309,6 +326,26 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                     <input type="hidden" name="property_code" id="availPropertyCode">
                     <input type="hidden" name="bulk_codes" id="availBulkCodes">
                     <div class="mb-2 small fw-semibold text-dark" id="availBulkNote" style="display:none;"></div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold mb-2">Selected Item(s)</label>
+                        <div class="review-table-wrap">
+                            <table class="table table-sm table-striped mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width:70px;">Image</th>
+                                        <th style="width:170px;">Property Tag</th>
+                                        <th style="width:150px;">Category</th>
+                                        <th style="width:130px;">Property No.</th>
+                                        <th>Description</th>
+                                        <th style="width:140px;">Serial No.</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="availabilitySelectedItemsBody">
+                                    <tr><td colspan="6" class="text-muted small">No item selected.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Allowed Employment Status</label>
                         <div class="small text-muted mb-2">Choose allowed status per position. "None" means no one can request.</div>
@@ -684,6 +721,8 @@ function openAvailabilityModal(code) {
     $('#availPropertyCode').val(code);
     $('#availBulkCodes').val('');
     $('#availBulkNote').hide().text('');
+    const selectedItem = getItemByPropertyCode(code) || { property_code: code };
+    renderAvailabilitySelectedItemsTable([selectedItem]);
     if (availTeachingSelect) availTeachingSelect.clear();
     if (availNonTeachingSelect) availNonTeachingSelect.clear();
     updateAvailQtyState();
@@ -742,6 +781,12 @@ function openAvailabilityModalBulk(codes) {
     $('#availPropertyCode').val('');
     $('#availBulkCodes').val(codes.join(','));
     $('#availBulkNote').show().text(codes.length + ' items selected');
+    const selectedRows = inventoryTable ? (inventoryTable.getSelectedData() || []) : [];
+    const codeSet = new Set(codes.map(c => String(c || '').trim()));
+    const orderedRows = selectedRows
+        .filter(r => codeSet.has(String(r.property_code || '').trim()))
+        .sort((a, b) => codes.indexOf(String(a.property_code || '').trim()) - codes.indexOf(String(b.property_code || '').trim()));
+    renderAvailabilitySelectedItemsTable(orderedRows);
 
     if (availTeachingSelect) availTeachingSelect.clear();
     if (availNonTeachingSelect) availNonTeachingSelect.clear();
@@ -805,6 +850,41 @@ function formatPeso(value) {
     const num = Number(value);
     if (!isFinite(num)) return '';
     return String.fromCharCode(8369) + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function clearAvailabilitySelectedItemsTable() {
+    $('#availabilitySelectedItemsBody').html('<tr><td colspan="6" class="text-muted small">No item selected.</td></tr>');
+}
+
+function renderAvailabilitySelectedItemsTable(items) {
+    const list = Array.isArray(items) ? items : [];
+    if (!list.length) {
+        clearAvailabilitySelectedItemsTable();
+        return;
+    }
+
+    const html = list.map(function(item) {
+        const code = item && item.property_code ? item.property_code : '-';
+        const category = item && item.item_category_name ? item.item_category_name : '-';
+        const propNo = item && item.property_number ? item.property_number : '-';
+        const desc = item && item.item_description ? item.item_description : '-';
+        const serial = item && item.serial_number ? item.serial_number : '-';
+        const img = item && (item.category_photo_thumb_url || item.category_photo_url) ? (item.category_photo_thumb_url || item.category_photo_url) : '';
+        const imgHtml = img
+            ? '<img class="availability-item-thumb" src="' + escapeHtml(img) + '" alt="Item image" loading="lazy">'
+            : '<span class="text-muted small">-</span>';
+        return `
+            <tr>
+                <td>${imgHtml}</td>
+                <td>${twoLineText(code, '-')}</td>
+                <td>${twoLineText(category, '-')}</td>
+                <td>${twoLineText(propNo, '-')}</td>
+                <td>${threeLineText(desc, '-')}</td>
+                <td>${twoLineText(serial, '-')}</td>
+            </tr>
+        `;
+    }).join('');
+    $('#availabilitySelectedItemsBody').html(html);
 }
 
 function twoLineText(value, fallback = '-') {
@@ -1493,6 +1573,11 @@ $(document).ready(function() {
 
     $('#btnDownloadQrStickerPdf').on('click', function() {
         downloadCurrentQrStickerPdf();
+    });
+
+    $('#availabilityModal').on('hidden.bs.modal', function() {
+        clearAvailabilitySelectedItemsTable();
+        $('#availBulkNote').hide().text('');
     });
 
     $('#qrStickerPreviewModal').on('hidden.bs.modal', function() {
