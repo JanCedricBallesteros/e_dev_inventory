@@ -258,7 +258,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                     <div class="d-flex align-items-center justify-content-between mb-1">
                                         <label class="form-label fw-semibold mb-0">Quantity Rows</label>
                                         <div class="d-flex align-items-center gap-2">
-                                            <input type="number" class="form-control form-control-sm" id="addUnitRowCount" min="1" max="50" value="1" style="width:90px;" aria-label="Quantity count">
+                                            <input type="number" class="form-control form-control-sm" id="addUnitRowCount" min="1" value="1" style="width:90px;" aria-label="Quantity count">
                                             <button type="button" class="btn btn-sm btn-outline-primary" id="addUnitRowBtn">
                                                 <i class="bi bi-plus-lg"></i> Add Quantity
                                             </button>
@@ -1177,6 +1177,8 @@ function setReviewModalState(opts) {
     } else {
         $('#reviewAddItemError').addClass('d-none').text('');
     }
+    const canConfirm = content && !loading && !error;
+    $('#confirmAddItemBtn').prop('disabled', !canConfirm);
 }
 
 function populateReviewModal(draft) {
@@ -1232,7 +1234,7 @@ function buildAddItemFormData(draft) {
 function openReviewAddItemModal(draft) {
     pendingAddItemDraft = null;
     setReviewModalState({ loading: true, content: false, error: '' });
-    $('#confirmAddItemBtn').prop('disabled', false).html('<i class="bi bi-save"></i> Confirm Save');
+    $('#confirmAddItemBtn').prop('disabled', true).html('<i class="bi bi-save"></i> Confirm Save');
     $('#reviewAddItemModal').modal('show');
 
     $.ajax({
@@ -1608,6 +1610,7 @@ function initTable() {
         paginationSizeSelector: [5, 10, 20, 50, true],
         paginationCounter: 'rows',
         columns: [
+            { title: 'Category', field: 'item_category_name', width: 170, headerFilter: 'input', headerFilterPlaceholder: 'Filter...' },
             { title: 'Property Tag', field: 'property_code', width: 200, headerFilter: 'input', headerFilterPlaceholder: 'Filter...', formatter: function(cell){
                 return twoLineText(cell.getValue());
             }},
@@ -1618,7 +1621,6 @@ function initTable() {
                 const v = cell.getValue();
                 return v && String(v).trim() !== '' ? v : '-';
             }},
-            { title: 'Category', field: 'item_category_name', width: 170, headerFilter: 'input', headerFilterPlaceholder: 'Filter...' },
             { title: 'Description', field: 'item_description', widthGrow: 2, headerFilter: 'input', headerFilterPlaceholder: 'Filter...', formatter: function(cell){
                 return threeLineText(cell.getValue());
             }},
@@ -1961,7 +1963,7 @@ function setupSerialScannerModal() {
 
     $('#addUnitRowBtn').on('click', function() {
         const raw = parseInt($('#addUnitRowCount').val(), 10);
-        const count = isFinite(raw) ? Math.max(1, Math.min(raw, 50)) : 1;
+        const count = isFinite(raw) ? Math.max(1, Math.min(raw, 200)) : 1;
         for (let i = 0; i < count; i++) {
             addUnitRow('');
         }
