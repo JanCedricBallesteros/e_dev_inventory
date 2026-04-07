@@ -31,6 +31,10 @@ if (!(role_has("ADMIN") || $staffAccess)) {
         .facility-header .facility-meta { flex: 1 1 auto; min-width: 0; }
         .facility-header .facility-meta .title-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
         .facility-header .facility-actions { display: flex; gap: 6px; flex-shrink: 0; }
+        .facility-header.stockroom { background: #0f766e; }
+        .facility-header.stockroom:hover { background: #0d9488; }
+        .facility-header.stockroom.active { background: #0f766e; box-shadow: 0 2px 6px rgba(15,118,110,0.35); }
+        .stockroom-note { font-size: 0.82rem; opacity: 0.95; }
         .facility-code { font-family: monospace; font-weight: 700; }
         .floor-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
         .floor-badge { background: #eef5ff; color: #1e3a8a; border: 1px dashed #a5b4fc; border-radius: 999px; font-size: 0.75rem; padding: 2px 8px; }
@@ -357,6 +361,12 @@ function normalizeFloorKey(name){
     return String(name || '').trim() || 'Unassigned';
 }
 
+function isStockroomFacility(facility){
+    if (!facility) return false;
+    if (String(facility.is_stockroom || '0') === '1') return true;
+    return String(facility.facility_code || '').trim().toUpperCase() === 'STOCKROOM';
+}
+
 function getRowFloorLabel(row){
     const floor = row ? (row.floor_label ?? row.unit_floor ?? row.unit_floor_label ?? row.floor ?? row.unit_floor_name) : '';
     let normalized = normalizeFloorKey(floor);
@@ -491,16 +501,28 @@ function applyInitialSelectionFromQuery(){
     facilityItems = [];
     assignmentList = [];
     currentPage = 1;
-    $('#selectedUnitInfo').text((selectedFacility.facility_name || '') + ' (' + (selectedFacility.facility_code || '') + ') — All Units');
-    $('#selectedManagedBy').text('Managed By: Multiple');
+    if (isStockroomFacility(selectedFacility)) {
+        $('#selectedUnitInfo').text((selectedFacility.facility_name || 'Stockroom') + ' — Unassigned Inventory');
+        $('#selectedManagedBy').text('Managed By: System');
+    } else {
+        $('#selectedUnitInfo').text((selectedFacility.facility_name || '') + ' (' + (selectedFacility.facility_code || '') + ') — All Units');
+        $('#selectedManagedBy').text('Managed By: Multiple');
+    }
     renderFacilities();
-    loadUnits(function(){
-        if (!selectedUnit) {
+    if (!isStockroomFacility(selectedFacility)) {
+        loadUnits(function(){
+            if (!selectedUnit) {
+                loadFacilityItems();
+                loadAssignments();
+            }
+        });
+        if (!initialUnitId) {
             loadFacilityItems();
             loadAssignments();
         }
-    });
-    if (!initialUnitId) {
+    } else {
+        unitList = [];
+        renderUnits();
         loadFacilityItems();
         loadAssignments();
     }
@@ -515,6 +537,7 @@ function renderFacilities(){
     }
     facilityList.forEach(function(f){
         const isActive = selectedFacility && String(selectedFacility.facility_id) === String(f.facility_id);
+        const isStockroom = isStockroomFacility(f);
         const facilityCode = escapeHtml(f.facility_code || '');
         const facilityName = escapeHtml(f.facility_name || '');
         const totalItems = parseInt(f.active_item_count || 0, 10) || 0;
@@ -525,23 +548,24 @@ function renderFacilities(){
             : '<span class="floor-empty">No floors set</span>';
         wrap.append(`
             <div class="facility-group">
-                <div class="facility-header ${isActive ? 'active' : ''}" data-id="${f.facility_id}">
+                <div class="facility-header ${isActive ? 'active' : ''} ${isStockroom ? 'stockroom' : ''}" data-id="${f.facility_id}">
                     <div class="facility-meta">
                         <div class="title-row">
-                            <i class="bi bi-building"></i>
+                            <i class="bi ${isStockroom ? 'bi-box-seam' : 'bi-building'}"></i>
                             <span>${facilityName}</span>
                             <span class="badge bg-light text-dark facility-code">${facilityCode}</span>
+                            ${isStockroom ? '<span class="badge bg-warning text-dark">SYSTEM</span>' : ''}
                         </div>
-                        <div class="small" style="opacity:0.9;">${totalUnits} unit(s) &middot; ${totalItems} item(s)</div>
-                        <div class="floor-badges">${floorBadges}</div>
+                        <div class="small" style="opacity:0.9;">${isStockroom ? 'No units' : (totalUnits + ' unit(s)')} &middot; ${totalItems} item(s)</div>
+                        ${isStockroom ? '<div class="stockroom-note">System-managed default location for unassigned inventory.</div>' : '<div class="floor-badges">' + floorBadges + '</div>'}
                     </div>
-                    <div class="facility-actions">
+                    ${isStockroom ? '' : `<div class="facility-actions">
                         <button class="btn btn-light btn-sm btn-add-unit" data-id="${f.facility_id}"><i class="bi bi-plus-lg"></i> Add Unit</button>
                         <button class="btn btn-outline-light btn-sm btn-edit-facility" data-id="${f.facility_id}"><i class="bi bi-pencil"></i></button>
-                    </div>
+                    </div>`}
                 </div>
                 <div class="facility-units mt-2" data-facility-id="${f.facility_id}">
-                    ${isActive ? '<div class="small-muted">Loading units...</div>' : '<div class="small-muted">Select to view units.</div>'}
+                    ${isActive ? (isStockroom ? '<div class="small-muted">Stockroom has no units.</div>' : '<div class="small-muted">Loading units...</div>') : (isStockroom ? '<div class="small-muted">Stockroom has no units.</div>' : '<div class="small-muted">Select to view units.</div>')}
                 </div>
             </div>
         `);
@@ -550,6 +574,13 @@ function renderFacilities(){
 
 function loadUnits(cb){
     if (!selectedFacility) return;
+    if (isStockroomFacility(selectedFacility)) {
+        unitList = [];
+        selectedUnit = null;
+        renderUnits();
+        if (typeof cb === 'function') cb();
+        return;
+    }
     $.post(PROCESS_URL, { action: 'list_units', facility_id: selectedFacility.facility_id }, function(res){
         if (!res.success) { showPageError(res.message || 'Failed to load units.'); return; }
         unitList = res.data || [];
@@ -692,6 +723,10 @@ function renderUnits(){
     if (!selectedFacility) return;
     const container = $(`.facility-units[data-facility-id="${selectedFacility.facility_id}"]`);
     if (!container.length) return;
+    if (isStockroomFacility(selectedFacility)) {
+        container.html('<div class="small-muted">Stockroom is a system location and does not contain units.</div>');
+        return;
+    }
     container.empty();
     const facilityFloors = Array.isArray(selectedFacility.floors) ? selectedFacility.floors : [];
     const groups = {};
@@ -788,6 +823,13 @@ function loadAssignments(){
 
 function renderAssignments(){
     if (!assignmentTable || !assignmentTableReady) return;
+    const isStockroomView = !!(selectedFacility && isStockroomFacility(selectedFacility) && !selectedUnit);
+    const colIssuedTo = assignmentTable.getColumn('issued_to_name');
+    const colIssuedAt = assignmentTable.getColumn('issued_at');
+    const colReturnedAt = assignmentTable.getColumn('returned_at');
+    if (colIssuedTo) isStockroomView ? colIssuedTo.hide() : colIssuedTo.show();
+    if (colReturnedAt) isStockroomView ? colReturnedAt.show() : colReturnedAt.hide();
+    if (colIssuedAt) colIssuedAt.updateDefinition({ title: isStockroomView ? 'Date Added' : 'Issued At' });
     let sourceRows = selectedUnit ? assignmentList : (selectedFacility ? facilityItems : []);
     if (!selectedUnit && selectedFacility && selectedFloor) {
         const targetFloor = normalizeFloorKey(selectedFloor);
@@ -805,6 +847,7 @@ function renderAssignments(){
     } else {
         assignmentTable.clearFilter();
     }
+    assignmentTable.redraw(true);
 }
 
 function scheduleAssignmentRedraw(){
@@ -857,6 +900,15 @@ function initAssignmentTable(){
                 const v = String(cell.getValue() || '');
                 if (!v) return '';
                 // Try to split date and time if possible
+                const parts = v.split(/\s+/);
+                if (parts.length >= 2) {
+                    return `<div style="line-height:1.2;white-space:normal;">${escapeHtml(parts[0])}<br>${escapeHtml(parts.slice(1).join(' '))}</div>`;
+                }
+                return `<div style="line-height:1.2;white-space:normal;">${escapeHtml(v)}</div>`;
+            } },
+            { title: "Date Returned", field: "returned_at", width: 130, visible: false, formatter: function(cell){
+                const v = String(cell.getValue() || '');
+                if (!v) return '<span class="text-muted">-</span>';
                 const parts = v.split(/\s+/);
                 if (parts.length >= 2) {
                     return `<div style="line-height:1.2;white-space:normal;">${escapeHtml(parts[0])}<br>${escapeHtml(parts.slice(1).join(' '))}</div>`;
@@ -921,15 +973,27 @@ $(document).ready(function(){
             floorCollapseState[selectedFacility.facility_id] = {};
         }
         currentPage = 1;
-        $('#selectedUnitInfo').text(selectedFacility ? (selectedFacility.facility_name || '') + ' (' + (selectedFacility.facility_code || '') + ') — All Units' : '');
-        $('#selectedManagedBy').text('Managed By: Multiple');
+        if (selectedFacility && isStockroomFacility(selectedFacility)) {
+            $('#selectedUnitInfo').text((selectedFacility.facility_name || 'Stockroom') + ' — Unassigned Inventory');
+            $('#selectedManagedBy').text('Managed By: System');
+        } else {
+            $('#selectedUnitInfo').text(selectedFacility ? (selectedFacility.facility_name || '') + ' (' + (selectedFacility.facility_code || '') + ') — All Units' : '');
+            $('#selectedManagedBy').text('Managed By: Multiple');
+        }
         renderFacilities();
-        loadUnits();
+        if (!isStockroomFacility(selectedFacility)) {
+            loadUnits();
+        } else {
+            unitList = [];
+            selectedUnit = null;
+            renderUnits();
+        }
         loadFacilityItems();
         loadAssignments();
     });
 
     $('#facilityList').on('click', '.floor-header', function(){
+        if (selectedFacility && isStockroomFacility(selectedFacility)) return;
         const facilityId = $(this).closest('.facility-units').data('facility-id');
         if (!facilityId) return;
         const floorEncoded = $(this).data('floor') || '';
@@ -965,6 +1029,10 @@ $(document).ready(function(){
         const id = $(this).data('id');
         const f = facilityList.find(x => String(x.facility_id) === String(id));
         if (!f) return;
+        if (isStockroomFacility(f)) {
+            notifyError('Stockroom is system-managed and cannot be edited.');
+            return;
+        }
         $('#facilityId').val(f.facility_id);
         $('#facilityCode').val(f.facility_code);
         $('#facilityName').val(f.facility_name);
@@ -1020,6 +1088,10 @@ $(document).ready(function(){
         e.stopPropagation();
         const id = $(this).data('id');
         selectedFacility = facilityList.find(x => String(x.facility_id) === String(id)) || null;
+        if (selectedFacility && isStockroomFacility(selectedFacility)) {
+            notifyError('Stockroom has no units.');
+            return;
+        }
         facilityItems = [];
         selectedUnit = null;
         selectedFloor = null;
@@ -1039,6 +1111,7 @@ $(document).ready(function(){
     });
 
     $('#facilityList').on('click', '.unit-card', function(e){
+        if (selectedFacility && isStockroomFacility(selectedFacility)) return;
         if ($(e.target).closest('.btn-edit-unit').length) return;
         const id = $(this).data('id');
         selectedUnit = unitList.find(x => String(x.unit_id) === String(id)) || null;
@@ -1058,6 +1131,10 @@ $(document).ready(function(){
     $('#facilityList').on('click', '.btn-edit-unit', function(e){
         e.preventDefault();
         e.stopPropagation();
+        if (selectedFacility && isStockroomFacility(selectedFacility)) {
+            notifyError('Stockroom has no units.');
+            return;
+        }
         const id = $(this).data('id');
         const u = unitList.find(x => String(x.unit_id) === String(id));
         if (!u) return;
@@ -1091,6 +1168,10 @@ $(document).ready(function(){
     $('#saveUnitBtn').on('click', function(){
         if (!selectedFacility){
             $('#unitMsg').html('<div class="alert alert-danger mb-0">Select facility first.</div>');
+            return;
+        }
+        if (isStockroomFacility(selectedFacility)) {
+            $('#unitMsg').html('<div class="alert alert-danger mb-0">Stockroom has no units.</div>');
             return;
         }
         const unitIdVal = $('#unitId').val() || $('#unitModal').data('edit-id') || '';

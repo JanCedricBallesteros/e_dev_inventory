@@ -108,6 +108,104 @@ function fr_resolve_row_images(&$row) {
     unset($row['ast_category_photo'], $row['ast_category_name'], $row['csm_category_img'], $row['csm_category_name']);
 }
 
+function fr_stockroom_code()
+{
+    return 'STOCKROOM';
+}
+
+function fr_stockroom_name()
+{
+    return 'Stockroom';
+}
+
+function fr_get_stockroom_facility($ensure = true)
+{
+    global $db_connect, $s_user_id;
+    $code = fr_stockroom_code();
+    $res = call_mysql_query("SELECT facility_id, facility_code, facility_name, facility_floor, status
+                             FROM facility_records_facilities
+                             WHERE UPPER(TRIM(facility_code)) = '" . _esc($code) . "'
+                             ORDER BY facility_id ASC
+                             LIMIT 1");
+    $row = $res ? call_mysql_fetch_array($res) : null;
+    if ($row) return $row;
+    if (!$ensure) return null;
+
+    $creator = isset($s_user_id) ? (int)$s_user_id : 0;
+    $ok = call_mysql_query("INSERT INTO facility_records_facilities
+                            (facility_code, facility_name, facility_floor, status, created_by, updated_by)
+                            VALUES (
+                                '" . _esc($code) . "',
+                                '" . _esc(fr_stockroom_name()) . "',
+                                '" . _esc(json_encode(array('floors' => array()), JSON_UNESCAPED_UNICODE)) . "',
+                                1,
+                                " . ($creator > 0 ? $creator : "NULL") . ",
+                                " . ($creator > 0 ? $creator : "NULL") . "
+                            )");
+    if (!$ok) return null;
+    $id = (int)mysqli_insert_id($db_connect);
+    return array(
+        'facility_id' => $id,
+        'facility_code' => $code,
+        'facility_name' => fr_stockroom_name(),
+        'facility_floor' => json_encode(array('floors' => array()), JSON_UNESCAPED_UNICODE),
+        'status' => 1
+    );
+}
+
+function fr_is_stockroom_facility_id($facility_id)
+{
+    $facility_id = (int)$facility_id;
+    if ($facility_id <= 0) return false;
+    $res = call_mysql_query("SELECT facility_id
+                             FROM facility_records_facilities
+                             WHERE facility_id = {$facility_id}
+                               AND UPPER(TRIM(facility_code)) = '" . _esc(fr_stockroom_code()) . "'
+                             LIMIT 1");
+    return ($res && call_mysql_fetch_array($res)) ? true : false;
+}
+
+function fr_count_stockroom_items()
+{
+    $count = 0;
+
+    if (fr_table_exists('ast_inventory') && fr_table_exists('facility_records_assignments')) {
+        $codeCol = fr_first_existing_col('ast_inventory', array('property_code', 'item_code'), 'property_code');
+        $sqlAst = "SELECT COUNT(*) AS cnt
+                   FROM ast_inventory a
+                   WHERE 1=1
+                     AND NOT EXISTS (
+                         SELECT 1
+                         FROM facility_records_assignments x
+                         WHERE x.module_type = 'AST'
+                           AND x.item_code = a.{$codeCol}
+                           AND x.status <> 'RETURNED'
+                     )";
+        $resAst = call_mysql_query($sqlAst);
+        if ($resAst && ($rowAst = call_mysql_fetch_array($resAst))) {
+            $count += (int)($rowAst['cnt'] ?? 0);
+        }
+    }
+
+    if (fr_table_exists('csm_inventory')) {
+        $qtyCol = fr_first_existing_col('csm_inventory', array('current_quantity', 'current_unit_quantity'), '');
+        if ($qtyCol !== '') {
+            $hasStatus = fr_column_exists('csm_inventory', 'status');
+            $whereStatus = $hasStatus ? " AND (LOWER(c.status) = 'available' OR c.status = 1)" : "";
+            $sqlCsm = "SELECT COUNT(*) AS cnt
+                       FROM csm_inventory c
+                       WHERE c.{$qtyCol} > 0
+                       {$whereStatus}";
+            $resCsm = call_mysql_query($sqlCsm);
+            if ($resCsm && ($rowCsm = call_mysql_fetch_array($resCsm))) {
+                $count += (int)($rowCsm['cnt'] ?? 0);
+            }
+        }
+    }
+
+    return $count;
+}
+
 function fr_active_user_where_clause()
 {
     if (!fr_column_exists('users', 'status')) {
@@ -132,6 +230,9 @@ if ($action === '') {
 if (!fr_required_tables_ready()) {
     json_response(array('success' => false, 'message' => 'Facility tables are missing. Run migration: db/migrations/2026-03-09_facility_inventory_records.sql'), 500);
 }
+
+// Ensure system stockroom exists for default-location behavior.
+fr_get_stockroom_facility(true);
 
 try {
     switch ($action) {
@@ -190,11 +291,19 @@ try {
                             WHERE a.facility_id = f.facility_id AND a.status = 'ACTIVE'
                         ) AS active_item_count
                     FROM facility_records_facilities f
-                    ORDER BY f.facility_name ASC";
+                    ORDER BY
+                        CASE WHEN UPPER(TRIM(f.facility_code)) = '" . _esc(fr_stockroom_code()) . "' THEN 0 ELSE 1 END,
+                        f.facility_name ASC";
             $res = call_mysql_query($sql);
             $rows = array();
             if ($res) {
                 while ($row = call_mysql_fetch_array($res)) {
+                    $isStockroom = (strtoupper(trim((string)($row['facility_code'] ?? ''))) === fr_stockroom_code());
+                    $row['is_stockroom'] = $isStockroom ? 1 : 0;
+                    if ($isStockroom) {
+                        $row['unit_count'] = 0;
+                        $row['active_item_count'] = fr_count_stockroom_items();
+                    }
                     $rows[] = $row;
                 }
             }
@@ -225,8 +334,14 @@ try {
             if ($facility_code === '' || $facility_name === '') {
                 json_response(array('success' => false, 'message' => 'Facility code and name are required.'), 422);
             }
+            if (strtoupper(trim($facility_code)) === fr_stockroom_code()) {
+                json_response(array('success' => false, 'message' => 'Stockroom is system-managed and cannot be edited manually.'), 403);
+            }
 
             if ($facility_id > 0) {
+                if (fr_is_stockroom_facility_id($facility_id)) {
+                    json_response(array('success' => false, 'message' => 'Stockroom is system-managed and cannot be edited manually.'), 403);
+                }
                 $dup = call_mysql_query("SELECT facility_id FROM facility_records_facilities WHERE facility_code = '" . _esc($facility_code) . "' AND facility_id <> {$facility_id} LIMIT 1");
                 if ($dup && mysqli_num_rows($dup) > 0) {
                     json_response(array('success' => false, 'message' => 'Facility code already exists.'), 409);
@@ -257,6 +372,9 @@ try {
         case 'list_units':
             $facility_id = _int(_post('facility_id'), 0);
             if ($facility_id <= 0) json_response(array('success' => false, 'message' => 'Facility is required.'), 422);
+            if (fr_is_stockroom_facility_id($facility_id)) {
+                json_response(array('success' => true, 'data' => array()));
+            }
             $hasUnitManager = fr_column_exists('facility_records_units', 'facility_unit_manager_user_id');
             $hasUnitManagerLegacy = fr_column_exists('facility_records_units', 'accountable_user_id');
             $unitManagerCol = $hasUnitManager ? 'facility_unit_manager_user_id' : ($hasUnitManagerLegacy ? 'accountable_user_id' : '');
@@ -340,6 +458,9 @@ try {
             $allowed = array('ROOM', 'OFFICE', 'LABORATORY', 'OTHER');
             if ($facility_id <= 0 || $unit_code === '' || $unit_name === '') {
                 json_response(array('success' => false, 'message' => 'Unit code, name, and facility are required.'), 422);
+            }
+            if (fr_is_stockroom_facility_id($facility_id)) {
+                json_response(array('success' => false, 'message' => 'Stockroom has no units and cannot be modified.'), 403);
             }
             if (!in_array($unit_type, $allowed, true)) {
                 $unit_type = 'ROOM';
@@ -653,6 +774,110 @@ try {
         case 'list_facility_inventory':
             $facility_id = _int(_post('facility_id'), 0);
             if ($facility_id <= 0) json_response(array('success' => false, 'message' => 'Facility is required.'), 422);
+            if (fr_is_stockroom_facility_id($facility_id)) {
+                $rows = array();
+
+                if (fr_table_exists('ast_inventory')) {
+                    $astCodeCol = fr_first_existing_col('ast_inventory', array('property_code', 'item_code'), 'property_code');
+                    $astCatIdCol = fr_first_existing_col('ast_inventory', array('category_id'), 'category_id');
+                    $sqlAst = "SELECT
+                                    NULL AS assignment_id,
+                                    'AST' AS module_type,
+                                    ai.{$astCodeCol} AS item_code,
+                                    ai.item_description,
+                                    NULL AS unit_id,
+                                    1 AS qty,
+                                    ai.unit,
+                                    'IN_STOCK' AS status,
+                                    ai.created_at AS issued_at,
+                                    (SELECT MAX(a2.returned_at)
+                                     FROM facility_records_assignments a2
+                                     WHERE a2.module_type = 'AST'
+                                       AND a2.item_code = ai.{$astCodeCol}
+                                       AND a2.status = 'RETURNED') AS returned_at,
+                                    NULL AS remarks,
+                                    '' AS issued_to_name,
+                                    '' AS accountable_name,
+                                    '' AS managed_by_name,
+                                    'Stockroom' AS unit_name,
+                                    'STOCKROOM' AS unit_code,
+                                    '' AS floor_label,
+                                    ac.category_photo AS ast_category_photo,
+                                    ac.item_category_name AS ast_category_name,
+                                    NULL AS csm_category_img,
+                                    NULL AS csm_category_name
+                               FROM ast_inventory ai
+                               LEFT JOIN ast_inventory_category ac ON ac.category_id = ai.{$astCatIdCol}
+                               WHERE 1=1
+                                 AND NOT EXISTS (
+                                    SELECT 1
+                                    FROM facility_records_assignments a
+                                    WHERE a.module_type = 'AST'
+                                      AND a.item_code = ai.{$astCodeCol}
+                                      AND a.status <> 'RETURNED'
+                                 )
+                               ORDER BY ai.created_at DESC";
+                    $resAst = call_mysql_query($sqlAst);
+                    if ($resAst) {
+                        while ($row = call_mysql_fetch_array($resAst)) {
+                            fr_resolve_row_images($row);
+                            $rows[] = $row;
+                        }
+                    }
+                }
+
+                if (fr_table_exists('csm_inventory')) {
+                    $csmCodeCol = fr_first_existing_col('csm_inventory', array('inventory_system_item_code', 'item_code'), 'inventory_system_item_code');
+                    $csmQtyCol = fr_first_existing_col('csm_inventory', array('current_quantity', 'current_unit_quantity'), '');
+                    $csmUnitCol = fr_first_existing_col('csm_inventory', array('unit'), '');
+                    $csmCatCodeCol = fr_first_existing_col('csm_inventory', array('item_category_code'), '');
+                    $csmHasStatus = fr_column_exists('csm_inventory', 'status');
+                    if ($csmQtyCol !== '') {
+                        $whereStatus = $csmHasStatus ? " AND (LOWER(ci.status) = 'available' OR ci.status = 1)" : "";
+                        $joinCat = ($csmCatCodeCol !== '') ? "LEFT JOIN csm_inventory_category cc ON ci.{$csmCatCodeCol} = cc.item_category_code" : "LEFT JOIN csm_inventory_category cc ON 1=0";
+                        $sqlCsm = "SELECT
+                                        NULL AS assignment_id,
+                                        'CSM' AS module_type,
+                                        ci.{$csmCodeCol} AS item_code,
+                                        ci.item_description,
+                                        NULL AS unit_id,
+                                        ci.{$csmQtyCol} AS qty,
+                                        " . ($csmUnitCol !== '' ? "ci.{$csmUnitCol}" : "''") . " AS unit,
+                                        'IN_STOCK' AS status,
+                                        ci.updated_at AS issued_at,
+                                        (SELECT MAX(a2.returned_at)
+                                         FROM facility_records_assignments a2
+                                         WHERE a2.module_type = 'CSM'
+                                           AND a2.item_code = ci.{$csmCodeCol}
+                                           AND a2.status = 'RETURNED') AS returned_at,
+                                        NULL AS remarks,
+                                        '' AS issued_to_name,
+                                        '' AS accountable_name,
+                                        '' AS managed_by_name,
+                                        'Stockroom' AS unit_name,
+                                        'STOCKROOM' AS unit_code,
+                                        '' AS floor_label,
+                                        NULL AS ast_category_photo,
+                                        NULL AS ast_category_name,
+                                        ci.item_category_img AS csm_category_img,
+                                        cc.item_category_name AS csm_category_name
+                                   FROM csm_inventory ci
+                                   {$joinCat}
+                                   WHERE ci.{$csmQtyCol} > 0
+                                   {$whereStatus}
+                                   ORDER BY ci.updated_at DESC";
+                        $resCsm = call_mysql_query($sqlCsm);
+                        if ($resCsm) {
+                            while ($row = call_mysql_fetch_array($resCsm)) {
+                                fr_resolve_row_images($row);
+                                $rows[] = $row;
+                            }
+                        }
+                    }
+                }
+
+                json_response(array('success' => true, 'data' => $rows));
+            }
             $hasManagedBy = fr_column_exists('facility_records_assignments', 'managed_by_user_id');
             $sql = "SELECT
                         a.assignment_id,

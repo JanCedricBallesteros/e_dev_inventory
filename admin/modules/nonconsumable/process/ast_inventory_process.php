@@ -283,6 +283,15 @@ function build_property_code($propertyNumber, $series) {
     return 'AST-' . $propertyNumber . '-' . $seriesPadded;
 }
 
+function ensure_stockroom_facility_exists() {
+    $tableRes = call_mysql_query("SHOW TABLES LIKE 'facility_records_facilities'");
+    if (!$tableRes || mysqli_num_rows($tableRes) <= 0) return;
+    $check = call_mysql_query("SELECT facility_id FROM facility_records_facilities WHERE UPPER(TRIM(facility_code)) = 'STOCKROOM' LIMIT 1");
+    if ($check && call_mysql_fetch_array($check)) return;
+    call_mysql_query("INSERT INTO facility_records_facilities (facility_code, facility_name, facility_floor, status)
+                      VALUES ('STOCKROOM', 'Stockroom', '{\"floors\":[]}', 1)");
+}
+
 function get_next_series($propertyNumber) {
     $propertyNumber = sanitize_property_number($propertyNumber);
     $sql = "SELECT MAX(property_series) AS max_series FROM ast_inventory WHERE property_number = '" . _esc($propertyNumber) . "'";
@@ -494,6 +503,7 @@ try {
             break;
 
         case 'list_items':
+            ensure_stockroom_facility_exists();
             $limit = _int(_post('limit', 200));
             if ($limit <= 0) $limit = 200;
             if ($limit > 1000) $limit = 1000;
@@ -567,13 +577,19 @@ try {
                                          WHERE a.module_type = 'AST'
                                              AND a.item_code = i.property_code
                                              AND a.status <> 'RETURNED') AS issued_count,
+                                        COALESCE(
                                         (SELECT a.facility_id
                                          FROM facility_records_assignments a
                                          WHERE a.module_type = 'AST'
                                              AND a.item_code = i.property_code
                                              AND a.status <> 'RETURNED'
                                          ORDER BY a.issued_at DESC, a.assignment_id DESC
-                                         LIMIT 1) AS location_facility_id,
+                                         LIMIT 1),
+                                        (SELECT f.facility_id
+                                         FROM facility_records_facilities f
+                                         WHERE UPPER(TRIM(f.facility_code)) = 'STOCKROOM'
+                                         LIMIT 1)
+                                        ) AS location_facility_id,
                                         (SELECT a.unit_id
                                          FROM facility_records_assignments a
                                          WHERE a.module_type = 'AST'
@@ -581,6 +597,7 @@ try {
                                              AND a.status <> 'RETURNED'
                                          ORDER BY a.issued_at DESC, a.assignment_id DESC
                                          LIMIT 1) AS location_unit_id,
+                                        COALESCE(
                                         (SELECT CONCAT(
                                                         COALESCE(f.facility_name, ''),
                                                         CASE
@@ -594,7 +611,12 @@ try {
                                          LEFT JOIN facility_records_units u ON u.unit_id = a.unit_id
                                          WHERE a.module_type = 'AST' AND a.item_code = i.property_code AND a.status <> 'RETURNED'
                                          ORDER BY a.issued_at DESC, a.assignment_id DESC
-                                         LIMIT 1) AS location_label
+                                         LIMIT 1),
+                                        (SELECT f.facility_name
+                                         FROM facility_records_facilities f
+                                         WHERE UPPER(TRIM(f.facility_code)) = 'STOCKROOM'
+                                         LIMIT 1)
+                                        ) AS location_label
                                         FROM ast_inventory i
                                         LEFT JOIN ast_inventory_category c ON c.category_id = i.category_id
                                         {$where}
