@@ -419,12 +419,12 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                     <input type="number" min="0" class="form-control" name="qty_crit_level" id="unitCritLevel" value="0" required>
                                 </div>
 
-                                <div class="col-md-4">
+                                <div class="col-12 col-md-7 col-lg-8">
                                     <label class="form-label fw-semibold">Source of Funds</label>
                                     <input type="text" class="form-control" name="source_of_funds" id="sourceOfFunds" placeholder="e.g. General Fund">
                                 </div>
 
-                                <div class="col-md-4">
+                                <div class="col-12 col-md-5 col-lg-4">
                                     <label class="form-label fw-semibold">Cost Value</label>
                                     <input type="number" step="0.01" min="0" class="form-control" name="cost_value" id="itemCost" value="0.00" required>
                                 </div>
