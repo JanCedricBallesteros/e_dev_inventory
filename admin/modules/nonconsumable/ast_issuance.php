@@ -95,7 +95,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 <main id="main" class="main">
     <div class="pagetitle">
         <h1 class="h4 fw-semibold mb-1">AST Issuance</h1>
-        <p class="text-muted small mb-0">Item-first issuance for non-consumable inventory with single or batch assignment.</p>
+        <p class="text-muted small mb-0">Select one or multiple to issue AST items.</p>
     </div>
 
     <section class="section">
