@@ -74,6 +74,31 @@ function normalize_allowed_employment($raw) {
     if (empty($ids)) return ['mode' => 'all', 'teaching' => [], 'non_teaching' => []];
     return ['mode' => 'legacy', 'teaching' => $ids, 'non_teaching' => $ids];
 }
+
+function requester_is_allowed_for_item($norm, $statusId, $positionCategory) {
+    $mode = $norm['mode'] ?? 'all';
+    if ($mode === 'none') return false;
+    if ($mode === 'all') return true;
+    if ($statusId <= 0) return false;
+
+    $teaching = array_values(array_filter(array_map('intval', (array)($norm['teaching'] ?? []))));
+    $nonTeaching = array_values(array_filter(array_map('intval', (array)($norm['non_teaching'] ?? []))));
+
+    if ($mode === 'legacy') {
+        return in_array((int)$statusId, $teaching, true);
+    }
+
+    $pos = strtolower(trim((string)$positionCategory));
+    if ($pos === 'teaching') {
+        return in_array((int)$statusId, $teaching, true);
+    }
+    if ($pos === 'non_teaching') {
+        return in_array((int)$statusId, $nonTeaching, true);
+    }
+
+    // Fallback: if requester position text is unmapped, allow by status in either bucket.
+    return in_array((int)$statusId, $teaching, true) || in_array((int)$statusId, $nonTeaching, true);
+}
 function json_response($data, $code = 200) {
     http_response_code($code);
     echo json_encode($data);
@@ -110,6 +135,31 @@ function active_user_where_clause() {
     return "1=1";
 }
 
+function can_access_module_type($type) {
+    $type = strtoupper((string)$type);
+    if (role_has("ADMIN")) return true;
+    if (!(role_has("ADMIN_STAFF") || role_has("ADMINSTAFF"))) return false;
+    return user_has_access($type);
+}
+
+function requisition_is_claimed($row, $hasClaimAssignment, $hasClaimedAt, $hasReqIdInAssignments) {
+    $claimAssignmentId = (int)($row['claim_assignment_id'] ?? 0);
+    if ($hasClaimAssignment && $claimAssignmentId > 0) return true;
+    if ($hasClaimedAt && !empty($row['claimed_at'])) return true;
+    if ($hasReqIdInAssignments) {
+        $reqId = (int)($row['requisition_id'] ?? 0);
+        if ($reqId > 0) {
+            $res = call_mysql_query("SELECT assignment_id
+                                     FROM facility_records_assignments
+                                     WHERE requisition_id = {$reqId}
+                                       AND status <> 'RETURNED'
+                                     LIMIT 1");
+            if ($res && call_mysql_fetch_array($res)) return true;
+        }
+    }
+    return false;
+}
+
 $action = _post('action', '');
 if ($action === '') {
     json_response(['success' => false, 'message' => 'Missing action.'], 400);
@@ -123,6 +173,9 @@ try {
             $search = _post('search');
             if (!in_array($type, ['AST', 'CSM'], true)) {
                 $type = 'AST';
+            }
+            if (!can_access_module_type($type)) {
+                json_response(['success' => false, 'message' => 'Access denied for this module.'], 403);
             }
 
             $where = "WHERE r.module_type = '" . _esc($type) . "'";
@@ -149,12 +202,27 @@ try {
                         $where .= " AND r.claim_assignment_id IS NOT NULL";
                     } elseif ($hasClaimedAt) {
                         $where .= " AND r.claimed_at IS NOT NULL";
+                    } elseif ($hasReqIdInAssignments) {
+                        $where .= " AND EXISTS (
+                                        SELECT 1
+                                        FROM facility_records_assignments ax
+                                        WHERE ax.requisition_id = r.requisition_id
+                                          AND ax.status <> 'RETURNED'
+                                    )";
                     } else {
                         $where .= " AND r.status = 'claimed'";
                     }
                 } else {
                     $where .= " AND r.status = '" . _esc($status) . "'";
                 }
+            }
+            if ($status === 'for_claiming' && !$hasClaimAssignment && !$hasClaimedAt && $hasReqIdInAssignments) {
+                $where .= " AND NOT EXISTS (
+                                SELECT 1
+                                FROM facility_records_assignments ax
+                                WHERE ax.requisition_id = r.requisition_id
+                                  AND ax.status <> 'RETURNED'
+                            )";
             }
             if ($search !== '') {
                 $searchEsc = _esc('%' . $search . '%');
@@ -213,7 +281,7 @@ try {
                 // Auto-expire AST approved requisitions that were not claimed within 7 days.
                 if ($type === 'AST' && $hasApprovedAt) {
                     $rawStatus = strtolower((string)($row['status'] ?? 'pending'));
-                    $isClaimed = !empty($row['claim_assignment_id']) || !empty($row['claimed_at']);
+                    $isClaimed = requisition_is_claimed($row, $hasClaimAssignment, $hasClaimedAt, $hasReqIdInAssignments);
                     $approvedAt = $row['approved_at'] ?? null;
                     if ($rawStatus === 'approved' && !$isClaimed && $approvedAt) {
                         $approvedTs = strtotime($approvedAt);
@@ -233,7 +301,8 @@ try {
                 $row['requester_name'] = get_full_name($row['f_name'], $row['m_name'], $row['l_name'], $row['suffix']);
                 $row['position_category'] = normalize_position_category($row['position'] ?? '');
                 $rawStatus = strtolower((string)($row['status'] ?? 'pending'));
-                if (!empty($row['claim_assignment_id']) || !empty($row['claimed_at'])) {
+                $isClaimed = requisition_is_claimed($row, $hasClaimAssignment, $hasClaimedAt, $hasReqIdInAssignments);
+                if ($isClaimed || $rawStatus === 'claimed') {
                     $row['workflow_status'] = 'claimed';
                 } elseif ($rawStatus === 'approved') {
                     $row['workflow_status'] = 'for_claiming';
@@ -283,13 +352,17 @@ try {
             $res = call_mysql_query($sql);
             $req = $res ? call_mysql_fetch_array($res) : null;
             if (!$req) json_response(['success' => false, 'message' => 'Requisition not found.'], 404);
+            if (!can_access_module_type((string)($req['module_type'] ?? ''))) {
+                json_response(['success' => false, 'message' => 'Access denied for this module.'], 403);
+            }
             $prevStatus = $req['status'] ?? '';
             $hasClaimAssignment = table_column_exists('requisition_items', 'claim_assignment_id');
             $hasClaimedAt = table_column_exists('requisition_items', 'claimed_at');
-            if (!empty($req['claim_assignment_id']) || !empty($req['claimed_at'])) {
+            $hasReqIdInAssignments = table_column_exists('facility_records_assignments', 'requisition_id');
+            if (requisition_is_claimed($req, $hasClaimAssignment, $hasClaimedAt, $hasReqIdInAssignments)) {
                 json_response(['success' => false, 'message' => 'Requisition is already claimed.'], 409);
             }
-            if (in_array(strtolower((string)$prevStatus), ['approved', 'disapproved'], true)) {
+            if (in_array(strtolower((string)$prevStatus), ['approved', 'claimed', 'disapproved', 'not_claimed'], true)) {
                 json_response(['success' => false, 'message' => 'Requisition is already ' . strtolower((string)$prevStatus) . '.'], 409);
             }
             $prevIsAvailable = null;
@@ -317,31 +390,25 @@ try {
                 if ($norm['mode'] !== 'all') {
                     $statusId = (int)($req['employment_status_id'] ?? 0);
                     $posCat = normalize_position_category($req['position'] ?? '');
-                    if ($statusId <= 0) {
-                        json_response(['success' => false, 'message' => 'Requester employment status not allowed.'], 422);
-                    }
-                    if ($norm['mode'] === 'legacy') {
-                        if (!in_array($statusId, $norm['teaching'], true)) {
-                            json_response(['success' => false, 'message' => 'Requester employment status not allowed.'], 422);
-                        }
-                    } else {
-                        if ($posCat === 'teaching') {
-                            if (!in_array($statusId, $norm['teaching'], true)) {
-                                json_response(['success' => false, 'message' => 'Requester employment status not allowed.'], 422);
-                            }
-                        } elseif ($posCat === 'non_teaching') {
-                            if (!in_array($statusId, $norm['non_teaching'], true)) {
-                                json_response(['success' => false, 'message' => 'Requester employment status not allowed.'], 422);
-                            }
-                        } else {
-                            json_response(['success' => false, 'message' => 'Requester position not allowed.'], 422);
-                        }
+                    if (!requester_is_allowed_for_item($norm, $statusId, $posCat)) {
+                        json_response(['success' => false, 'message' => 'Requester employment settings are not allowed for this item.'], 422);
                     }
                 }
                 $newIsAvailable = 0;
-                call_mysql_query("UPDATE ast_inventory SET is_available = 0 WHERE property_code = '{$itemCode}' LIMIT 1");
             }
 
+            call_mysql_query("START TRANSACTION");
+            if (strtoupper((string)($req['module_type'] ?? '')) === 'AST') {
+                $lockOk = call_mysql_query("UPDATE ast_inventory
+                                            SET is_available = 0
+                                            WHERE property_code = '{$itemCode}'
+                                              AND is_available = 1
+                                            LIMIT 1");
+                if (!$lockOk || mysqli_affected_rows($db_connect) < 1) {
+                    call_mysql_query("ROLLBACK");
+                    json_response(['success' => false, 'message' => 'AST item is no longer available.'], 422);
+                }
+            }
             $setCols = "status='approved', updated_at = NOW()";
             if (table_column_exists('requisition_items', 'approved_by_user_id')) {
                 $setCols .= ", approved_by_user_id = " . (int)$s_user_id;
@@ -349,8 +416,16 @@ try {
             if (table_column_exists('requisition_items', 'approved_at')) {
                 $setCols .= ", approved_at = NOW()";
             }
-            $ok = call_mysql_query("UPDATE requisition_items SET {$setCols} WHERE requisition_id = {$id} LIMIT 1");
-            if (!$ok) json_response(['success' => false, 'message' => 'Failed to approve requisition.'], 500);
+            $ok = call_mysql_query("UPDATE requisition_items
+                                    SET {$setCols}
+                                    WHERE requisition_id = {$id}
+                                      AND status IN ('pending','reviewed')
+                                    LIMIT 1");
+            if (!$ok || mysqli_affected_rows($db_connect) < 1) {
+                call_mysql_query("ROLLBACK");
+                json_response(['success' => false, 'message' => 'Failed to approve requisition. It may have been updated already.'], 409);
+            }
+            call_mysql_query("COMMIT");
             activity_log_new("REQUISITION APPROVAL", "SUCCESS", array(
                 'requisition_id' => $id,
                 'module_type' => $req['module_type'] ?? '',
@@ -477,6 +552,9 @@ try {
             $reqRes = call_mysql_query("SELECT * FROM requisition_items WHERE requisition_id = {$id} LIMIT 1");
             $req = $reqRes ? call_mysql_fetch_array($reqRes) : null;
             if (!$req) json_response(['success' => false, 'message' => 'Requisition not found.'], 404);
+            if (!can_access_module_type((string)($req['module_type'] ?? ''))) {
+                json_response(['success' => false, 'message' => 'Access denied for this module.'], 403);
+            }
             $issuedToUserId = (int)($req['requester_user_id'] ?? 0);
             $accountableUserId = $issuedToUserId > 0 ? $issuedToUserId : 0;
             if ($issuedToUserId <= 0) {
@@ -488,6 +566,13 @@ try {
                 $isAlreadyClaimed = (int)($req['claim_assignment_id'] ?? 0) > 0;
             } elseif (table_column_exists('requisition_items', 'claimed_at')) {
                 $isAlreadyClaimed = !empty($req['claimed_at']);
+            } elseif (table_column_exists('facility_records_assignments', 'requisition_id')) {
+                $chkClaim = call_mysql_query("SELECT assignment_id
+                                              FROM facility_records_assignments
+                                              WHERE requisition_id = {$id}
+                                                AND status <> 'RETURNED'
+                                              LIMIT 1");
+                $isAlreadyClaimed = ($chkClaim && call_mysql_fetch_array($chkClaim)) ? true : false;
             }
             if ($isAlreadyClaimed) {
                 json_response(['success' => false, 'message' => 'Requisition is already claimed.'], 409);
@@ -530,10 +615,15 @@ try {
                 $managedByUserId = (int)($mgrRow['unit_manager_user_id'] ?? 0);
             }
 
+            call_mysql_query("START TRANSACTION");
+
             if ($moduleType === 'AST') {
                 $invRes = call_mysql_query("SELECT item_id, property_code, item_description, unit FROM ast_inventory WHERE property_code = '{$itemCode}' LIMIT 1");
                 $inv = $invRes ? call_mysql_fetch_array($invRes) : null;
-                if (!$inv) json_response(['success' => false, 'message' => 'AST inventory item not found.'], 404);
+                if (!$inv) {
+                    call_mysql_query("ROLLBACK");
+                    json_response(['success' => false, 'message' => 'AST inventory item not found.'], 404);
+                }
                 $sourceItemId = (int)$inv['item_id'];
                 $itemDescription = $inv['item_description'] ?: $itemDescription;
                 $itemUnit = (string)($inv['unit'] ?? '');
@@ -544,18 +634,27 @@ try {
                                             FROM csm_inventory
                                             WHERE inventory_system_item_code = '{$itemCode}' LIMIT 1");
                 $inv = $invRes ? call_mysql_fetch_array($invRes) : null;
-                if (!$inv) json_response(['success' => false, 'message' => 'CSM inventory item not found.'], 404);
+                if (!$inv) {
+                    call_mysql_query("ROLLBACK");
+                    json_response(['success' => false, 'message' => 'CSM inventory item not found.'], 404);
+                }
                 $available = (int)($inv['current_unit_quantity'] ?? 0);
                 if ($available < $qtyRequested) {
+                    call_mysql_query("ROLLBACK");
                     json_response(['success' => false, 'message' => 'CSM quantity is not enough for claim.'], 422);
                 }
                 $sourceItemId = (int)$inv['inventory_id'];
                 $itemDescription = $inv['item_description'] ?: ($inv['item_name'] ?? $itemDescription);
                 $itemUnit = '';
-                call_mysql_query("UPDATE csm_inventory
-                                  SET current_unit_quantity = current_unit_quantity - {$qtyRequested}
-                                  WHERE inventory_id = {$sourceItemId}
-                                  LIMIT 1");
+                $decOk = call_mysql_query("UPDATE csm_inventory
+                                           SET current_unit_quantity = current_unit_quantity - {$qtyRequested}
+                                           WHERE inventory_id = {$sourceItemId}
+                                             AND current_unit_quantity >= {$qtyRequested}
+                                           LIMIT 1");
+                if (!$decOk || mysqli_affected_rows($db_connect) < 1) {
+                    call_mysql_query("ROLLBACK");
+                    json_response(['success' => false, 'message' => 'CSM quantity is not enough for claim.'], 422);
+                }
             }
 
             $hasManagedBy = table_column_exists('facility_records_assignments', 'managed_by_user_id');
@@ -577,7 +676,10 @@ try {
             $insVals .= ", 'ACTIVE', NOW(), " . ($remarks !== '' ? "'" . _esc($remarks) . "'" : "NULL") . ", " . (int)$s_user_id . ", " . (int)$s_user_id;
             $insSql = "INSERT INTO facility_records_assignments ({$insCols}) VALUES ({$insVals})";
             $okAssign = call_mysql_query($insSql);
-            if (!$okAssign) json_response(['success' => false, 'message' => 'Failed to create facility assignment.'], 500);
+            if (!$okAssign) {
+                call_mysql_query("ROLLBACK");
+                json_response(['success' => false, 'message' => 'Failed to create facility assignment.'], 500);
+            }
             $assignmentId = mysqli_insert_id($db_connect);
 
             if (table_exists('facility_records_history')) {
@@ -603,9 +705,17 @@ try {
             if (table_column_exists('requisition_items', 'claim_unit_id')) {
                 $reqSet .= ", claim_unit_id = {$unitId}";
             }
-            $reqSet .= ", status = 'approved'";
-            $okReq = call_mysql_query("UPDATE requisition_items SET {$reqSet} WHERE requisition_id = {$id} LIMIT 1");
-            if (!$okReq) json_response(['success' => false, 'message' => 'Claim saved but failed to update requisition state.'], 500);
+            $reqSet .= ", status = 'claimed'";
+            $okReq = call_mysql_query("UPDATE requisition_items
+                                       SET {$reqSet}
+                                       WHERE requisition_id = {$id}
+                                         AND status IN ('approved','reviewed')
+                                       LIMIT 1");
+            if (!$okReq || mysqli_affected_rows($db_connect) < 1) {
+                call_mysql_query("ROLLBACK");
+                json_response(['success' => false, 'message' => 'Claim saved but failed to update requisition state.'], 500);
+            }
+            call_mysql_query("COMMIT");
 
             activity_log_new("REQUISITION CLAIM", "SUCCESS", array(
                 'requisition_id' => $id,
@@ -626,11 +736,31 @@ try {
             $id = _int(_post('requisition_id'));
             $reason = _post('reason');
             if ($id <= 0) json_response(['success' => false, 'message' => 'Invalid requisition.'], 422);
+            if ($reason === '') json_response(['success' => false, 'message' => 'Reason is required.'], 422);
             $reqRes = call_mysql_query("SELECT * FROM requisition_items WHERE requisition_id = {$id} LIMIT 1");
             $req = $reqRes ? call_mysql_fetch_array($reqRes) : null;
+            if (!$req) json_response(['success' => false, 'message' => 'Requisition not found.'], 404);
+            if (!can_access_module_type((string)($req['module_type'] ?? ''))) {
+                json_response(['success' => false, 'message' => 'Access denied for this module.'], 403);
+            }
             $prevStatus = $req['status'] ?? '';
-            $ok = call_mysql_query("UPDATE requisition_items SET status='disapproved', reason='" . _esc($reason) . "', updated_at = NOW() WHERE requisition_id = {$id} LIMIT 1");
-            if (!$ok) json_response(['success' => false, 'message' => 'Failed to disapprove requisition.'], 500);
+            $rawPrev = strtolower((string)$prevStatus);
+            if (!in_array($rawPrev, ['pending', 'reviewed'], true)) {
+                json_response(['success' => false, 'message' => 'Only pending/reviewed requisitions can be disapproved.'], 409);
+            }
+            call_mysql_query("START TRANSACTION");
+            $ok = call_mysql_query("UPDATE requisition_items
+                                    SET status='disapproved',
+                                        reason='" . _esc($reason) . "',
+                                        updated_at = NOW()
+                                    WHERE requisition_id = {$id}
+                                      AND status IN ('pending','reviewed')
+                                    LIMIT 1");
+            if (!$ok || mysqli_affected_rows($db_connect) < 1) {
+                call_mysql_query("ROLLBACK");
+                json_response(['success' => false, 'message' => 'Failed to disapprove requisition.'], 500);
+            }
+            call_mysql_query("COMMIT");
             activity_log_new("REQUISITION DISAPPROVAL", "SUCCESS", array(
                 'requisition_id' => $id,
                 'module_type' => $req['module_type'] ?? '',
@@ -649,5 +779,6 @@ try {
             json_response(['success' => false, 'message' => 'Unknown action.'], 400);
     }
 } catch (Throwable $e) {
+    call_mysql_query("ROLLBACK");
     json_response(['success' => false, 'message' => 'Server error occurred.'], 500);
 }

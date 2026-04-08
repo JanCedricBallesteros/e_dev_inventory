@@ -162,7 +162,24 @@ if (($type === 'AST' && !$canAST) || ($type === 'CSM' && !$canCSM)) {
             </div>
             <div class="modal-body">
                 <input type="hidden" id="approveReqId">
-                <p class="mb-0">Approve this requisition?</p>
+                <p class="mb-2">Approve this requisition?</p>
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:120px;">Item Code</th>
+                                <th>Description</th>
+                                <th style="width:60px;" class="text-center">Qty</th>
+                                <th style="width:110px;">Requester</th>
+                            </tr>
+                        </thead>
+                        <tbody id="approvePreviewBody">
+                            <tr>
+                                <td colspan="4" class="text-muted small">No request selected.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
                 <div id="approveMsg" class="alert alert-danger d-none mt-2"></div>
             </div>
             <div class="modal-footer">
@@ -244,6 +261,7 @@ const PROCESS_URL = BASE_URL + 'admin/modules/transactions/requisition_process.p
 let reqTable = null;
 let claimFacilities = [];
 let claimUnits = [];
+let reqSearchTimer = null;
 
 function escapeHtml(value) {
     return String(value ?? '')
@@ -296,6 +314,27 @@ function notifyMsg(type, msg) {
     el.removeClass('d-none alert-danger alert-success alert-warning alert-info');
     const cls = type ? ('alert-' + type) : 'alert-info';
     el.addClass(cls).text(msg);
+}
+
+function renderApprovePreview(row) {
+    const $body = $('#approvePreviewBody');
+    if (!row) {
+        $body.html('<tr><td colspan="4" class="text-muted small">No request selected.</td></tr>');
+        return;
+    }
+    const code = escapeHtml(row.item_code || '-');
+    const desc = threeLineText(row.item_description || '-', '-');
+    const qty = parseInt(row.qty_requested, 10);
+    const qtyText = Number.isFinite(qty) ? String(qty) : '-';
+    const requester = twoLineText(row.requester_name || '-', '-');
+    $body.html(
+        '<tr>' +
+        '<td><span class="badge bg-light text-dark border">' + code + '</span></td>' +
+        '<td>' + desc + '</td>' +
+        '<td class="text-center">' + escapeHtml(qtyText) + '</td>' +
+        '<td>' + requester + '</td>' +
+        '</tr>'
+    );
 }
 
 if (typeof window.success_notif !== 'function') {
@@ -438,7 +477,7 @@ function initReqTable() {
                 return `
                     <button class="btn btn-sm btn-success me-1 btn-approve" data-id="${id}" ${canApprove ? '' : 'disabled'}>Approve</button>
                     <button class="btn btn-sm btn-danger btn-disapprove" data-id="${id}" ${canApprove ? '' : 'disabled'}>Disapprove</button>
-                    ${canClaim ? `<button class="btn btn-sm btn-primary mt-1 btn-claim" data-id="${id}">Claimed</button>` : ''}
+                    ${canClaim ? `<button class="btn btn-sm btn-primary mt-1 btn-claim" data-id="${id}">Claim</button>` : ''}
                 `;
             }}
         ]
@@ -446,7 +485,10 @@ function initReqTable() {
 
     $('#reqTable').on('click', '.btn-approve', function() {
         const id = $(this).data('id');
+        const row = reqTable ? reqTable.getRows().find(r => String(r.getData().requisition_id) === String(id)) : null;
+        const data = row ? row.getData() : null;
         $('#approveReqId').val(id || '');
+        renderApprovePreview(data);
         $('#approveMsg').addClass('d-none').text('');
         $('#approveModal').modal('show');
     });
@@ -570,7 +612,10 @@ $(document).ready(function() {
     loadClaimLookups();
     initReqTable();
     $('#reqRefresh').on('click', loadReqData);
-    $('#reqSearch').on('keyup', loadReqData);
+    $('#reqSearch').on('keyup', function(){
+        clearTimeout(reqSearchTimer);
+        reqSearchTimer = setTimeout(loadReqData, 300);
+    });
     $('#reqStatus').on('change', loadReqData);
 
     $('body').on('click', '.js-thumb-preview', function() {

@@ -20,6 +20,7 @@ if (!(role_has("USER") || role_has("USERS"))) {
     include_once DOMAIN_PATH . '/global/include_top.php';
     ?>
     <link href="<?= BASE_URL ?>assets/css/tabulator_bootstrap.min.css" rel="stylesheet">
+    <link href="<?= BASE_URL ?>assets/css/select2.min.css" rel="stylesheet">
     <style>
         .section-card { border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
         .tab-pill { border-radius: 999px; }
@@ -61,7 +62,7 @@ if (!(role_has("USER") || role_has("USERS"))) {
     <main id="main" class="main">
         <div class="pagetitle">
             <h1 class="h4 fw-semibold mb-1">Request Items</h1>
-            <p class="text-muted small mb-0">Browse available items and submit a requisition.</p>
+            <p class="text-muted small mb-0">Pick AST for non-consumable items and CSM for consumable items.</p>
         </div>
 
         <section class="section">
@@ -155,13 +156,9 @@ if (!(role_has("USER") || role_has("USERS"))) {
                         <div class="small text-muted mt-1" id="reqQtyHelp">Must be exactly 1 for AST requests.</div>
                     </div>
                     <div class="row g-2">
-                        <div class="col-md-6">
-                            <label class="form-label fw-semibold">Facility</label>
-                            <select id="reqFacilityId" class="form-select"></select>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label fw-semibold">Unit</label>
-                            <select id="reqUnitId" class="form-select"></select>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Facility / Unit</label>
+                            <select id="reqFacilityUnit" class="form-select"></select>
                         </div>
                     </div>
                     <div id="reqModalMsg" class="alert alert-danger d-none"></div>
@@ -175,6 +172,7 @@ if (!(role_has("USER") || role_has("USERS"))) {
     </div>
 </body>
 <?php include_once DOMAIN_PATH . '/global/include_bottom.php'; ?>
+<script src="<?= BASE_URL ?>assets/js/select2.min.js"></script>
 <script>
 const BASE_URL = <?php echo json_encode(BASE_URL); ?>;
 const PROCESS_URL = BASE_URL + 'users/modules/request_items_process.php';
@@ -182,8 +180,6 @@ let currentType = 'AST';
 let table = null;
 let reqSelected = null;
 let myReqTable = null;
-let reqFacilities = [];
-let reqUnits = [];
 let itemSearchTimer = null;
 let myReqSearchTimer = null;
 let myReqLoading = false;
@@ -243,35 +239,76 @@ function loadItems() {
     table.setData(PROCESS_URL, { action: 'list_available_items', type: currentType, search }, 'POST');
 }
 
-function loadRequestFacilities() {
+function initReqFacilityUnitSelect() {
+    if (!$.fn.select2) return;
+    const $sel = $('#reqFacilityUnit');
+    if ($sel.hasClass('select2-hidden-accessible')) {
+        $sel.select2('destroy');
+    }
+    $sel.select2({
+        width: '100%',
+        placeholder: 'Select facility unit',
+        allowClear: true,
+        dropdownParent: $('#requestModal')
+    });
+}
+
+function loadRequestFacilityUnits() {
+    const $sel = $('#reqFacilityUnit');
+    $sel.empty().append('<option value="">Select facility unit</option>');
     $.post(PROCESS_URL, { action: 'list_facilities' }, function(res) {
         if (!(res && res.success)) {
             $('#reqModalMsg').removeClass('d-none').text((res && res.message) || 'Failed to load facilities.');
             return;
         }
-        reqFacilities = res.data || [];
-        const $f = $('#reqFacilityId');
-        $f.empty().append('<option value="">Select facility</option>');
-        reqFacilities.forEach(function(f){
-            $f.append(`<option value="${f.facility_id}">${f.facility_code} - ${f.facility_name}</option>`);
+        const facilities = Array.isArray(res.data) ? res.data : [];
+        const regularFacilities = facilities.filter(function(f){
+            const code = String(f.facility_code || '').toUpperCase().trim();
+            return code !== 'STOCKROOM';
         });
-    }, 'json');
-}
-
-function loadRequestUnits(facilityId) {
-    const $u = $('#reqUnitId');
-    reqUnits = [];
-    $u.empty().append('<option value="">Select unit</option>');
-    if (!facilityId) return;
-    $.post(PROCESS_URL, { action: 'list_units', facility_id: facilityId }, function(res){
-        if (!(res && res.success)) {
-            $('#reqModalMsg').removeClass('d-none').text((res && res.message) || 'Failed to load units.');
+        if (regularFacilities.length === 0) {
+            $('#reqModalMsg').removeClass('d-none').text('No available facility units for request.');
             return;
         }
-        reqUnits = res.data || [];
-        reqUnits.forEach(function(u){
-            $u.append(`<option value="${u.unit_id}">${u.unit_code} - ${u.unit_name}</option>`);
-        });
+
+        const opts = ['<option value="">Select facility unit</option>'];
+        let idx = 0;
+
+        function processNext() {
+            if (idx >= regularFacilities.length) {
+                $sel.html(opts.join(''));
+                $sel.val(null).trigger('change');
+                return;
+            }
+            const f = regularFacilities[idx++];
+            const facilityId = Number(f.facility_id || 0);
+            const facilityName = String(f.facility_name || '-');
+
+            $.post(PROCESS_URL, { action: 'list_units', facility_id: facilityId }, function(unitRes){
+                const units = (unitRes && unitRes.success && Array.isArray(unitRes.data)) ? unitRes.data : [];
+                if (units.length > 0) {
+                    const group = [];
+                    units.forEach(function(u){
+                        const unitId = Number(u.unit_id || 0);
+                        const unitName = String(u.unit_name || '-');
+                        const value = facilityId + '::' + unitId;
+                        group.push(
+                            '<option value="' + escapeHtml(value) + '"' +
+                            ' data-facility-id="' + facilityId + '"' +
+                            ' data-unit-id="' + unitId + '">' +
+                            escapeHtml(unitName) +
+                            '</option>'
+                        );
+                    });
+                    opts.push('<optgroup label="' + escapeHtml(facilityName) + '">' + group.join('') + '</optgroup>');
+                }
+                processNext();
+            }, 'json').fail(function(){
+                processNext();
+            });
+        }
+
+        processNext();
     }, 'json');
 }
 
@@ -364,9 +401,8 @@ function syncRequestQtyUI() {
         $('#reqQtyInput').val(1);
         syncRequestQtyUI();
         $('#reqModalMsg').addClass('d-none').text('');
-        $('#reqFacilityId').val('');
-        $('#reqUnitId').empty().append('<option value="">Select unit</option>');
-        loadRequestFacilities();
+        $('#reqFacilityUnit').val(null).trigger('change');
+        loadRequestFacilityUnits();
         $('#requestModal').modal('show');
     });
 }
@@ -435,7 +471,7 @@ function initMyReqTable() {
                 return threeLineText(cell.getValue());
             }},
             { title: 'Qty', field: 'qty_requested', width: 55, hozAlign: 'center' },
-            { title: 'Workflow', field: 'workflow_status', width: 120, headerFilter: 'select', headerFilterParams: { values: { '': 'All', 'pending': 'Pending', 'reviewed': 'Reviewed', 'approved': 'Approved', 'for_claiming': 'For Claiming', 'claimed': 'Claimed', 'not_claimed': 'Not Claimed', 'disapproved': 'Disapproved' } }, formatter: function(cell){
+            { title: 'Workflow', field: 'workflow_status', width: 120, formatter: function(cell){
                 return statusBadge(cell.getValue());
             }},
             { title: 'Updated', field: 'updated_at', width: 130, formatter: function(cell){
@@ -476,8 +512,14 @@ function initMyReqTable() {
 }
 
 $(document).ready(function() {
+    initReqFacilityUnitSelect();
     initTable();
-    initMyReqTable();
+    try {
+        initMyReqTable();
+    } catch (e) {
+        console.error('My Requests table init failed:', e);
+        showMyReqMessage('My Requests table failed to initialize. You can still browse and request items.');
+    }
     $('#itemSearch').on('keyup', function() {
         clearTimeout(itemSearchTimer);
         itemSearchTimer = setTimeout(loadItems, 300);
@@ -506,19 +548,16 @@ $(document).ready(function() {
         $('#imagePreviewModal').modal('show');
     });
 
-    $('#reqFacilityId').on('change', function() {
-        loadRequestUnits($(this).val());
-    });
-
     $('#btnSubmitRequest').on('click', function() {
         if (!reqSelected) {
             $('#reqModalMsg').removeClass('d-none').text('No item selected.');
             return;
         }
-        const facilityId = $('#reqFacilityId').val();
-        const unitId = $('#reqUnitId').val();
+        const $picked = $('#reqFacilityUnit option:selected');
+        const facilityId = String($picked.data('facility-id') || '');
+        const unitId = String($picked.data('unit-id') || '');
         if (!facilityId || !unitId) {
-            $('#reqModalMsg').removeClass('d-none').text('Facility and unit are required.');
+            $('#reqModalMsg').removeClass('d-none').text('Facility / Unit is required.');
             return;
         }
         const qtyVal = parseInt($('#reqQtyInput').val(), 10);

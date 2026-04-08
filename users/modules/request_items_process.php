@@ -133,9 +133,9 @@ function build_allowed_status_label($norm, $statusMap) {
             $sid = (int)$sid;
             if (isset($statusMap[$sid])) $names[] = $statusMap[$sid];
         }
-        $labels[] = 'Teaching: ' . (!empty($names) ? implode(', ', $names) : 'None');
+        $labels[] = 'Academic Personnel: ' . (!empty($names) ? implode(', ', $names) : 'None');
     } else {
-        $labels[] = 'Teaching: None';
+        $labels[] = 'Academic Personnel: None';
     }
     if (!empty($non)) {
         $names = [];
@@ -143,9 +143,9 @@ function build_allowed_status_label($norm, $statusMap) {
             $sid = (int)$sid;
             if (isset($statusMap[$sid])) $names[] = $statusMap[$sid];
         }
-        $labels[] = 'Non-Teaching: ' . (!empty($names) ? implode(', ', $names) : 'None');
+        $labels[] = 'Administrative: ' . (!empty($names) ? implode(', ', $names) : 'None');
     } else {
-        $labels[] = 'Non-Teaching: None';
+        $labels[] = 'Administrative: None';
     }
     return implode(' | ', $labels);
 }
@@ -159,6 +159,49 @@ function get_current_user_status_id() {
         return (int)($row['employment_status_id'] ?? 0);
     }
     return 0;
+}
+
+function is_allowed_for_user($norm, $statusId, $positionCategory) {
+    $mode = $norm['mode'] ?? 'all';
+    if ($mode === 'none') return false;
+    if ($mode === 'all') return true;
+    if ($statusId <= 0) return false;
+
+    $teaching = array_values(array_filter(array_map('intval', (array)($norm['teaching'] ?? []))));
+    $nonTeaching = array_values(array_filter(array_map('intval', (array)($norm['non_teaching'] ?? []))));
+
+    if ($mode === 'legacy') {
+        return in_array((int)$statusId, $teaching, true);
+    }
+
+    $pos = strtolower(trim((string)$positionCategory));
+    if ($pos === 'teaching') {
+        return in_array((int)$statusId, $teaching, true);
+    }
+    if ($pos === 'non_teaching') {
+        return in_array((int)$statusId, $nonTeaching, true);
+    }
+
+    // Fallback: if position category is unknown/unmapped, allow if status matches either bucket.
+    return in_array((int)$statusId, $teaching, true) || in_array((int)$statusId, $nonTeaching, true);
+}
+
+function requisition_is_claimed($row, $hasClaimAssignment, $hasClaimedAt, $hasReqIdInAssignments) {
+    $claimAssignmentId = (int)($row['claim_assignment_id'] ?? 0);
+    if ($hasClaimAssignment && $claimAssignmentId > 0) return true;
+    if ($hasClaimedAt && !empty($row['claimed_at'])) return true;
+    if ($hasReqIdInAssignments) {
+        $reqId = (int)($row['requisition_id'] ?? 0);
+        if ($reqId > 0) {
+            $res = call_mysql_query("SELECT assignment_id
+                                     FROM facility_records_assignments
+                                     WHERE requisition_id = {$reqId}
+                                       AND status <> 'RETURNED'
+                                     LIMIT 1");
+            if ($res && call_mysql_fetch_array($res)) return true;
+        }
+    }
+    return false;
 }
 
 $action = _post('action', '');
@@ -199,30 +242,8 @@ try {
                 $rows = [];
                 while ($row = call_mysql_fetch_array($res)) {
                     $norm = normalize_allowed_employment($row['allowed_employment_status'] ?? '');
-                    if ($norm['mode'] === 'none') {
+                    if (!is_allowed_for_user($norm, (int)$statusId, (string)$positionCategory)) {
                         continue;
-                    }
-                    if ($norm['mode'] !== 'all') {
-                        if ($statusId <= 0) {
-                            continue;
-                        }
-                        if ($norm['mode'] === 'legacy') {
-                            if (!in_array($statusId, $norm['teaching'], true)) {
-                                continue;
-                            }
-                        } else {
-                            if ($positionCategory === 'teaching') {
-                                if (!in_array($statusId, $norm['teaching'], true)) {
-                                    continue;
-                                }
-                            } elseif ($positionCategory === 'non_teaching') {
-                                if (!in_array($statusId, $norm['non_teaching'], true)) {
-                                    continue;
-                                }
-                            } else {
-                                continue;
-                            }
-                        }
                     }
 
                     $row['allowed_status_names'] = build_allowed_status_label($norm, $statusMap);
@@ -293,6 +314,7 @@ try {
             $res = call_mysql_query("SELECT facility_id, facility_code, facility_name
                                      FROM facility_records_facilities
                                      WHERE status = 1
+                                       AND UPPER(TRIM(COALESCE(facility_code, ''))) <> 'STOCKROOM'
                                      ORDER BY facility_name ASC");
             $rows = [];
             if ($res) {
@@ -308,6 +330,16 @@ try {
             if ($facilityId <= 0) json_response(['success' => false, 'message' => 'Facility is required.'], 422);
             if (!table_exists('facility_records_units')) {
                 json_response(['success' => false, 'message' => 'Facility unit table is missing.'], 500);
+            }
+            if (table_exists('facility_records_facilities')) {
+                $chk = call_mysql_query("SELECT facility_id
+                                         FROM facility_records_facilities
+                                         WHERE facility_id = {$facilityId}
+                                           AND UPPER(TRIM(COALESCE(facility_code, ''))) = 'STOCKROOM'
+                                         LIMIT 1");
+                if ($chk && call_mysql_fetch_array($chk)) {
+                    json_response(['success' => true, 'data' => []]);
+                }
             }
             $res = call_mysql_query("SELECT unit_id, unit_code, unit_name
                                      FROM facility_records_units
@@ -360,32 +392,10 @@ try {
                 }
 
                 $norm = normalize_allowed_employment($invRow['allowed_employment_status'] ?? '');
-                if ($norm['mode'] === 'none') {
-                    json_response(['success' => false, 'message' => 'Item is not available for your position/status.'], 422);
-                }
-                if ($norm['mode'] !== 'all') {
-                    $statusId = get_current_user_status_id();
-                    $posCat = get_current_user_position_category();
-                    if ($statusId <= 0) {
-                        json_response(['success' => false, 'message' => 'Your employment status is not allowed for this item.'], 422);
-                    }
-                    if ($norm['mode'] === 'legacy') {
-                        if (!in_array($statusId, $norm['teaching'], true)) {
-                            json_response(['success' => false, 'message' => 'Your employment status is not allowed for this item.'], 422);
-                        }
-                    } else {
-                        if ($posCat === 'teaching') {
-                            if (!in_array($statusId, $norm['teaching'], true)) {
-                                json_response(['success' => false, 'message' => 'Your employment status is not allowed for this item.'], 422);
-                            }
-                        } elseif ($posCat === 'non_teaching') {
-                            if (!in_array($statusId, $norm['non_teaching'], true)) {
-                                json_response(['success' => false, 'message' => 'Your employment status is not allowed for this item.'], 422);
-                            }
-                        } else {
-                            json_response(['success' => false, 'message' => 'Your position is not allowed for this item.'], 422);
-                        }
-                    }
+                $statusId = get_current_user_status_id();
+                $posCat = get_current_user_position_category();
+                if (!is_allowed_for_user($norm, (int)$statusId, (string)$posCat)) {
+                    json_response(['success' => false, 'message' => 'Item is not available for your current employment settings.'], 422);
                 }
 
                 $descEsc = _esc($invRow['item_description'] ?? '');
@@ -489,12 +499,27 @@ try {
                         $where .= " AND r.claim_assignment_id IS NOT NULL";
                     } elseif ($hasClaimedAt) {
                         $where .= " AND r.claimed_at IS NOT NULL";
+                    } elseif ($hasReqIdInAssignments) {
+                        $where .= " AND EXISTS (
+                                        SELECT 1
+                                        FROM facility_records_assignments ax
+                                        WHERE ax.requisition_id = r.requisition_id
+                                          AND ax.status <> 'RETURNED'
+                                    )";
                     } else {
                         $where .= " AND r.status = 'claimed'";
                     }
                 } else {
                     $where .= " AND r.status = '" . _esc($status) . "'";
                 }
+            }
+            if ($status === 'for_claiming' && !$hasClaimAssignment && !$hasClaimedAt && $hasReqIdInAssignments) {
+                $where .= " AND NOT EXISTS (
+                                SELECT 1
+                                FROM facility_records_assignments ax
+                                WHERE ax.requisition_id = r.requisition_id
+                                  AND ax.status <> 'RETURNED'
+                            )";
             }
             if ($search !== '') {
                 $searchEsc = _esc('%' . $search . '%');
@@ -539,7 +564,7 @@ try {
                     // Auto-expire AST approved requisitions not claimed within 7 days.
                     if (strtoupper((string)$row['module_type']) === 'AST' && $hasApprovedAt) {
                         $rawStatus = strtolower((string)($row['status'] ?? 'pending'));
-                        $isClaimed = !empty($row['claim_assignment_id']) || !empty($row['claimed_at']);
+                        $isClaimed = requisition_is_claimed($row, $hasClaimAssignment, $hasClaimedAt, $hasReqIdInAssignments);
                         $approvedAt = $row['approved_at'] ?? null;
                         if ($rawStatus === 'approved' && !$isClaimed && $approvedAt) {
                             $approvedTs = strtotime($approvedAt);
@@ -557,7 +582,8 @@ try {
                         }
                     }
                     $rawStatus = strtolower((string)($row['status'] ?? 'pending'));
-                    if (!empty($row['claim_assignment_id']) || !empty($row['claimed_at'])) {
+                    $isClaimed = requisition_is_claimed($row, $hasClaimAssignment, $hasClaimedAt, $hasReqIdInAssignments);
+                    if ($isClaimed || $rawStatus === 'claimed') {
                         $row['workflow_status'] = 'claimed';
                     } elseif ($rawStatus === 'approved') {
                         $row['workflow_status'] = 'for_claiming';
@@ -599,6 +625,7 @@ try {
             json_response(['success' => false, 'message' => 'Unknown action.'], 400);
     }
 } catch (Throwable $e) {
+    call_mysql_query("ROLLBACK");
     json_response(['success' => false, 'message' => 'Server error occurred.'], 500);
 }
 
