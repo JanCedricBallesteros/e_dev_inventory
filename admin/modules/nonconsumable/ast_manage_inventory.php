@@ -2106,5 +2106,5 @@ function setupSerialScannerModal() {
 </script>
 </body>
 </html>
-
+// ayoko na huhu
 
