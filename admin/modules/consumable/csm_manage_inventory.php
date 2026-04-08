@@ -1173,12 +1173,14 @@ function applyInventoryFilters() {
     const hasStatusFilter = statusSummaryFilter === 'critical_out';
 
     if (!search && !fromDate && !toDate && !hasStatusFilter) {
+        inventoryTable.deselectRow();
         inventoryTable.clearFilter(true);
         inventoryTable.setSort('created_at', 'desc');
         updateSummary(inventoryTable.getData() || []);
         return;
     }
 
+    inventoryTable.deselectRow();
     inventoryTable.setFilter(function(data) {
         if (hasStatusFilter) {
             const status = parseInt(data.status, 10) || 0;
@@ -1558,6 +1560,9 @@ function initTable() {
             {
                 formatter: 'rowSelection',
                 titleFormatter: 'rowSelection',
+                titleFormatterParams: {
+                    rowRange: 'active'
+                },
                 hozAlign: 'center',
                 headerSort: false,
                 width: 40
