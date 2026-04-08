@@ -226,9 +226,224 @@ if (!(
             color: #64748b;
             margin-top: 2px;
         }
+        .avail-bulk-mode {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 10px;
+            margin-top: 8px;
+        }
+        .avail-bulk-mode .form-check {
+            margin-bottom: 0;
+            border: 1px solid #dbe3f0;
+            border-radius: 14px;
+            background: #fff;
+            padding: 12px 14px;
+            min-height: 100%;
+            transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+        .avail-bulk-mode .form-check:hover {
+            border-color: #93c5fd;
+            box-shadow: 0 4px 14px rgba(30, 58, 138, 0.08);
+        }
+        .avail-bulk-mode .form-check-input {
+            margin-top: .28rem;
+            flex-shrink: 0;
+        }
+        .avail-bulk-mode .form-check-label {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+        .avail-bulk-panel {
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+            padding: 14px;
+            margin-top: 10px;
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+        }
+        .avail-bulk-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+        }
+        .avail-bulk-cap {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            border-radius: 999px;
+            background: #eff6ff;
+            color: #1d4ed8;
+            padding: 6px 10px;
+            font-size: 12px;
+            font-weight: 700;
+        }
+        .avail-bulk-help {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+        .avail-bulk-help-text {
+            font-size: 12px;
+            color: #64748b;
+            margin: 0;
+        }
+        .avail-bulk-table {
+            max-height: 260px;
+            overflow: auto;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            background: #fff;
+        }
+        .avail-bulk-table table {
+            margin-bottom: 0;
+            min-width: 640px;
+        }
+        .avail-bulk-table td,
+        .avail-bulk-table th {
+            vertical-align: middle;
+            font-size: 0.9rem;
+        }
+        .avail-bulk-item-meta {
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 2px;
+        }
+        .avail-bulk-input {
+            width: 100%;
+            max-width: 100%;
+        }
+        .avail-bulk-mode .form-check-input:checked {
+            background-color: #1E3A8A;
+            border-color: #1E3A8A;
+        }
+        .avail-bulk-mode .form-check-input:checked ~ .form-check-label {
+            color: #0f172a;
+        }
+        .avail-bulk-mode-title {
+            display: block;
+            font-weight: 700;
+            color: #0f172a;
+            margin-bottom: 2px;
+            line-height: 1.3;
+        }
+        .avail-bulk-mode-sub {
+            display: block;
+            font-size: 12px;
+            color: #64748b;
+            line-height: 1.35;
+            margin-top: 2px;
+        }
         @media (max-width: 575.98px) {
             .avail-metric-grid {
                 grid-template-columns: 1fr;
+            }
+        }
+        #availabilityModal.is-bulk-mode .modal-dialog {
+            max-width: min(1120px, calc(100vw - 2rem));
+        }
+        #availabilityModal .modal-dialog,
+        #availabilityModal .modal-content,
+        #availabilityModal .modal-body,
+        #availabilityModal .row,
+        #availabilityModal [class*="col-"] {
+            min-width: 0;
+        }
+        #availabilityModal .modal-content {
+            overflow: hidden;
+        }
+        #availabilityModal .modal-body {
+            overflow-x: hidden;
+        }
+        #availabilityModal.is-bulk-mode #availQtyWrap,
+        #availabilityModal.is-bulk-mode #availRulesWrap {
+            align-self: start;
+        }
+        #availabilityModal.is-bulk-mode #availQtyWrap {
+            flex-basis: 42%;
+            max-width: 42%;
+        }
+        #availabilityModal.is-bulk-mode #availRulesWrap {
+            flex-basis: 58%;
+            max-width: 58%;
+        }
+        #availabilityModal.is-bulk-mode #availQtyHint {
+            margin-top: 14px;
+        }
+        @media (max-width: 991.98px) {
+            #availabilityModal.is-bulk-mode #availQtyWrap,
+            #availabilityModal.is-bulk-mode #availRulesWrap {
+                flex-basis: 100%;
+                max-width: 100%;
+            }
+        }
+        @media (max-width: 767.98px) {
+            #availabilityModal .modal-dialog {
+                width: calc(100vw - 1rem);
+                max-width: calc(100vw - 1rem);
+                margin: .5rem auto;
+            }
+            #availabilityModal .modal-header,
+            #availabilityModal .modal-body,
+            #availabilityModal .modal-footer {
+                padding-left: 1rem;
+                padding-right: 1rem;
+            }
+            #availabilityModal .modal-title {
+                font-size: 1.05rem;
+                line-height: 1.3;
+            }
+            #availabilityModal .row.g-3 {
+                --bs-gutter-y: .85rem;
+            }
+            .avail-bulk-panel {
+                padding: 12px;
+            }
+            .avail-bulk-mode .form-check {
+                padding: 10px 12px;
+            }
+            .avail-bulk-head {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .avail-bulk-cap {
+                width: 100%;
+                white-space: normal;
+                justify-content: center;
+            }
+            .avail-bulk-help {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .avail-bulk-help-text,
+            .avail-bulk-mode-sub {
+                font-size: 11px;
+            }
+            .avail-bulk-mode-title,
+            .avail-bulk-head .form-label {
+                font-size: 1rem;
+            }
+            #availUseLowestQty {
+                width: 100%;
+            }
+            #availBulkCurrentQty {
+                width: 100%;
+                min-width: 0;
+            }
+            .avail-bulk-table {
+                max-height: 240px;
+            }
+            #availabilityModal.is-bulk-mode .modal-dialog {
+                width: calc(100vw - 1rem);
+                max-width: calc(100vw - 1rem);
             }
         }
 
@@ -486,6 +701,59 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                         <div class="col-12 col-lg-5" id="availQtyWrap">
                             <label class="form-label fw-semibold">Available Quantity</label>
                             <input type="number" min="0" name="current_quantity" id="availCurrentQty" class="form-control" placeholder="Enter available quantity">
+                            <div id="availBulkControls" class="d-none">
+                                <div class="avail-bulk-mode">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="avail_bulk_qty_mode" id="availBulkQtyModeAll" value="same_for_all" checked>
+                                        <label class="form-check-label" for="availBulkQtyModeAll">
+                                            <span class="avail-bulk-mode-title">Set all selected items</span>
+                                            <span class="avail-bulk-mode-sub">Apply one shared available qty to every selected row.</span>
+                                        </label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="avail_bulk_qty_mode" id="availBulkQtyModeIndividual" value="individual">
+                                        <label class="form-check-label" for="availBulkQtyModeIndividual">
+                                            <span class="avail-bulk-mode-title">Set individually</span>
+                                            <span class="avail-bulk-mode-sub">Use a different available qty for each selected row.</span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div class="avail-bulk-panel" id="availBulkSameWrap">
+                                    <div class="avail-bulk-head">
+                                        <label class="form-label fw-semibold mb-0">Available Qty for All Selected Items</label>
+                                        <div class="avail-bulk-cap" id="availBulkLowestCap">
+                                            <i class="bi bi-arrow-down-circle"></i>
+                                            Lowest Actual Qty: <span id="availBulkLowestQty">-</span>
+                                        </div>
+                                    </div>
+                                    <input type="number" min="0" id="availBulkCurrentQty" class="form-control avail-bulk-input" placeholder="Enter one value for all selected items">
+                                    <div class="avail-bulk-help">
+                                        <p class="avail-bulk-help-text" id="availBulkSameHint">This shared value cannot be higher than the lowest actual qty among the selected items.</p>
+                                        <button type="button" class="btn btn-outline-primary btn-sm" id="availUseLowestQty">Use Lowest Actual Qty</button>
+                                    </div>
+                                </div>
+
+                                <div class="avail-bulk-panel d-none" id="availBulkIndividualWrap">
+                                    <div class="fw-semibold mb-2">Available Qty Per Selected Item</div>
+                                    <div class="avail-bulk-table">
+                                        <table class="table table-sm align-middle">
+                                            <thead class="table-light">
+                                                <tr>
+                                                    <th>Item</th>
+                                                    <th style="width:120px;">Set Avail</th>
+                                                    <th style="width:88px;">Actual</th>
+                                                    <th style="width:88px;">Current</th>
+                                                    <th style="width:88px;">Critical</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="availBulkQtyTbody">
+                                                <tr><td colspan="5" class="text-muted">Select items first.</td></tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
                             <div class="avail-metric-grid" id="availQtyHint">
                                 <div class="avail-metric-card">
                                     <div class="avail-metric-label">Total Quantity</div>
@@ -596,6 +864,8 @@ const NONE_STATUS_VALUE = 'NONE';
 let availStatusLock = false;
 let isBulkAvailMode = false;
 let statusSummaryFilter = '';
+let bulkAvailabilityRows = [];
+let bulkLowestActualQty = 0;
 
 function showFloatingNotice(type, content, opts = {}) {
     const settings = Object.assign({ html: false, delay: 4000 }, opts || {});
@@ -731,6 +1001,140 @@ function threeLineText(value, fallback = '-') {
 function formatMetricNumber(value) {
     const n = parseInt(value, 10);
     return Number.isFinite(n) ? n.toLocaleString('en-US') : '0';
+}
+
+function clampQtyInputToMax(input) {
+    if (!input) return;
+
+    const rawValue = String(input.value || '').trim();
+    const rawMax = String(input.getAttribute('max') || '').trim();
+    if (rawValue === '' || rawMax === '') return;
+
+    const value = parseInt(rawValue, 10);
+    const max = parseInt(rawMax, 10);
+    if (isNaN(value) || isNaN(max)) return;
+
+    if (value > max) {
+        input.value = max;
+    }
+}
+
+function getBulkQtyMode() {
+    return $('input[name="avail_bulk_qty_mode"]:checked').val() || 'same_for_all';
+}
+
+function syncBulkQtyModeUI() {
+    const mode = getBulkQtyMode();
+    $('#availBulkSameWrap').toggleClass('d-none', mode !== 'same_for_all');
+    $('#availBulkIndividualWrap').toggleClass('d-none', mode !== 'individual');
+}
+
+function updateBulkQtySharedState(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+
+    if (!list.length) {
+        bulkLowestActualQty = 0;
+        $('#availBulkLowestQty').text('-');
+        $('#availBulkCurrentQty').attr('max', '').val('');
+        $('#availBulkSameHint').text('This shared value cannot be higher than the lowest actual qty among the selected items.');
+        return;
+    }
+
+    bulkLowestActualQty = Math.min.apply(null, list.map(function(row) {
+        return parseInt(row.quantity, 10) || 0;
+    }));
+
+    $('#availBulkLowestQty').text(formatMetricNumber(bulkLowestActualQty));
+    $('#availBulkCurrentQty').attr('max', String(bulkLowestActualQty));
+    $('#availBulkSameHint').text(`Use exactly ${formatMetricNumber(bulkLowestActualQty)} so the shared value matches the lowest actual qty in the selected rows.`);
+}
+
+function renderBulkAvailabilityRows(rows) {
+    const $tbody = $('#availBulkQtyTbody');
+
+    if (!rows || !rows.length) {
+        $tbody.html('<tr><td colspan="5" class="text-muted">Select items first.</td></tr>');
+        return;
+    }
+
+    let html = '';
+    rows.forEach(function(row) {
+        const code = escHtml(row.inventory_system_item_code || '-');
+        const desc = escHtml(String(row.item_description || '').slice(0, 60));
+        html += `
+            <tr>
+                <td>
+                    <div class="fw-semibold">${code}</div>
+                    <div class="avail-bulk-item-meta">${desc || '-'}</div>
+                </td>
+                <td>
+                    <input
+                        type="number"
+                        min="0"
+                        class="form-control form-control-sm avail-bulk-item-qty"
+                        data-inventory-id="${row.inventory_id}"
+                        max="${parseInt(row.quantity, 10) || 0}"
+                        value="${parseInt(row.current_quantity, 10) || 0}"
+                    >
+                </td>
+                <td class="text-center">${formatMetricNumber(row.quantity || 0)}</td>
+                <td class="text-center">${formatMetricNumber(row.current_quantity || 0)}</td>
+                <td class="text-center">${formatMetricNumber(row.qty_crit_level || 0)}</td>
+            </tr>
+        `;
+    });
+
+    $tbody.html(html);
+}
+
+function getBulkCurrentQtyPayload() {
+    const mode = getBulkQtyMode();
+
+    if (mode === 'same_for_all') {
+        const qtyRaw = ($('#availBulkCurrentQty').val() || '').trim();
+        const qty = parseInt(qtyRaw, 10);
+        if (qtyRaw === '' || isNaN(qty) || qty < 0) {
+            return { ok: false, message: 'Enter a valid available quantity for all selected items.' };
+        }
+        if (qty !== bulkLowestActualQty) {
+            return {
+                ok: false,
+                message: `For "Set all selected items", the available quantity must match the lowest actual qty (${formatMetricNumber(bulkLowestActualQty)}).`
+            };
+        }
+        return { ok: true, mode: mode, current_quantity: qty };
+    }
+
+    const map = {};
+    let hasError = false;
+
+    $('#availBulkQtyTbody .avail-bulk-item-qty').each(function() {
+        const inventoryId = String($(this).data('inventory-id') || '').trim();
+        const qtyRaw = ($(this).val() || '').trim();
+        const qty = parseInt(qtyRaw, 10);
+
+        if (!inventoryId || qtyRaw === '' || isNaN(qty) || qty < 0) {
+            hasError = true;
+            return false;
+        }
+
+        const row = bulkAvailabilityRows.find(function(item) {
+            return String(item.inventory_id) === inventoryId;
+        });
+        const actualQty = row ? (parseInt(row.quantity, 10) || 0) : 0;
+        if (qty > actualQty) {
+            hasError = true;
+            return false;
+        }
+
+        map[inventoryId] = qty;
+    });
+
+    if (hasError) {
+        return { ok: false, message: 'Each individual available quantity must be valid and cannot exceed that item\'s actual qty.' };
+    }
+
+    return { ok: true, mode: mode, current_quantities_json: JSON.stringify(map) };
 }
 
 function statusLabel(status) {
@@ -922,8 +1326,59 @@ function setAvailabilitySelectValues(teachVals, nonVals, mode) {
     availStatusLock = false;
 }
 
+function normalizeStatusIdList(list) {
+    return (Array.isArray(list) ? list : [])
+        .map(v => parseInt(v, 10))
+        .filter(v => !isNaN(v) && v > 0)
+        .sort((a, b) => a - b);
+}
+
+function haveSameRuleSet(a, b) {
+    const modeA = String((a && a.mode) || 'all');
+    const modeB = String((b && b.mode) || 'all');
+    if (modeA !== modeB) return false;
+
+    const teachA = normalizeStatusIdList(a && a.teaching);
+    const teachB = normalizeStatusIdList(b && b.teaching);
+    const nonA = normalizeStatusIdList(a && a.non_teaching);
+    const nonB = normalizeStatusIdList(b && b.non_teaching);
+
+    return JSON.stringify(teachA) === JSON.stringify(teachB)
+        && JSON.stringify(nonA) === JSON.stringify(nonB);
+}
+
+function getBulkRulePreview(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+    if (!list.length) {
+        return { mode: 'none', teaching: [], non_teaching: [] };
+    }
+
+    const first = list[0] && list[0].allowed_employment_status
+        ? list[0].allowed_employment_status
+        : { mode: 'all', teaching: [], non_teaching: [] };
+
+    const allMatch = list.every(function(row) {
+        const current = row && row.allowed_employment_status
+            ? row.allowed_employment_status
+            : { mode: 'all', teaching: [], non_teaching: [] };
+        return haveSameRuleSet(first, current);
+    });
+
+    if (!allMatch) {
+        return { mode: 'none', teaching: [], non_teaching: [] };
+    }
+
+    return {
+        mode: first.mode || 'all',
+        teaching: normalizeStatusIdList(first.teaching),
+        non_teaching: normalizeStatusIdList(first.non_teaching)
+    };
+}
+
 function openAvailabilityModal(inventoryId) {
     isBulkAvailMode = false;
+    bulkAvailabilityRows = [];
+    $('#availabilityModal').removeClass('is-bulk-mode');
     $('#availMsg').html('');
     $('#availInventoryId').val(inventoryId);
     $('#availBulkIds').val('');
@@ -937,6 +1392,15 @@ function openAvailabilityModal(inventoryId) {
     $('#availItemLabel').text('Loading...');
     $('#availStatusLabel').html('-');
     $('#availCurrentQty').val('');
+    $('#availCurrentQty').attr('max', '');
+    $('#availBulkCurrentQty').val('');
+    $('#availBulkControls').addClass('d-none');
+    $('#availCurrentQty').removeClass('d-none');
+    $('#availQtyHint').removeClass('d-none');
+    $('#availBulkQtyModeAll').prop('checked', true);
+    syncBulkQtyModeUI();
+    renderBulkAvailabilityRows([]);
+    updateBulkQtySharedState([]);
     $('#availTotalQtyValue').text('-');
     $('#availTotalQtyUnit').text('Unit: -');
     $('#availCriticalLevelValue').text('-');
@@ -959,6 +1423,7 @@ function openAvailabilityModal(inventoryId) {
             $('#availItemLabel').text(label);
             $('#availStatusLabel').html(statusLabel(d.status || 0));
             $('#availCurrentQty').val(d.current_quantity || 0);
+            $('#availCurrentQty').attr('max', parseInt(d.quantity, 10) || 0);
             $('#availTotalQtyValue').text(formatMetricNumber(d.quantity || 0));
             $('#availTotalQtyUnit').text(`Unit: ${d.unit || '-'}`);
             $('#availCriticalLevelValue').text(formatMetricNumber(d.qty_crit_level || 0));
@@ -984,26 +1449,51 @@ function openAvailabilityModalBulk(ids) {
     if (!ids || !ids.length) return;
 
     isBulkAvailMode = true;
+    $('#availabilityModal').addClass('is-bulk-mode');
+    bulkAvailabilityRows = (inventoryCache || []).filter(function(row) {
+        return ids.includes(parseInt(row.inventory_id, 10));
+    });
     $('#availMsg').html('');
     $('#availInventoryId').val('');
     $('#availBulkIds').val(ids.join(','));
     $('#availBulkNote').removeClass('d-none').text(`${ids.length} item(s) selected`);
-    $('#availQtyWrap').hide();
-    $('#availRulesWrap').removeClass('col-lg-7').addClass('col-12');
+    $('#availQtyWrap').show();
+    $('#availQtyWrap').removeClass('d-none').addClass('col-12 col-lg-5');
+    $('#availRulesWrap').removeClass('col-12').addClass('col-12 col-lg-7');
     $('#availTeachWrap').removeClass('col-md-6 col-md-8 offset-md-4').addClass('col-12');
     $('#availNonTeachWrap').removeClass('col-md-6 col-md-8 offset-md-4 offset-md-0').addClass('col-12');
 
     $('#availItemLabel').text('Bulk rule update');
     $('#availStatusLabel').html('<span class="status-pill status-0">Multiple Items</span>');
     $('#availCurrentQty').val('');
+    $('#availCurrentQty').attr('max', '');
+    $('#availBulkCurrentQty').val('');
+    $('#availCurrentQty').addClass('d-none');
+    $('#availQtyHint').removeClass('d-none');
+    $('#availBulkControls').removeClass('d-none');
+    $('#availBulkQtyModeAll').prop('checked', true);
+    syncBulkQtyModeUI();
     $('#availTotalQtyValue').text('-');
     $('#availTotalQtyUnit').text('Unit: -');
     $('#availCriticalLevelValue').text('-');
+    renderBulkAvailabilityRows(bulkAvailabilityRows);
+    updateBulkQtySharedState(bulkAvailabilityRows);
 
-    availStatusLock = true;
-    $('#availTeachingStatus').val([NONE_STATUS_VALUE]).trigger('change.select2');
-    $('#availNonTeachingStatus').val([NONE_STATUS_VALUE]).trigger('change.select2');
-    availStatusLock = false;
+    if (bulkAvailabilityRows.length) {
+        const totalQty = bulkAvailabilityRows.reduce((sum, row) => sum + (parseInt(row.quantity, 10) || 0), 0);
+        const totalCrit = bulkAvailabilityRows.reduce((sum, row) => sum + (parseInt(row.qty_crit_level, 10) || 0), 0);
+        const units = Array.from(new Set(bulkAvailabilityRows.map(row => String(row.unit || '-').trim()).filter(Boolean)));
+        $('#availTotalQtyValue').text(formatMetricNumber(totalQty));
+        $('#availTotalQtyUnit').text(`Units: ${units.join(', ') || '-'}`);
+        $('#availCriticalLevelValue').text(formatMetricNumber(totalCrit));
+    }
+
+    const bulkRulePreview = getBulkRulePreview(bulkAvailabilityRows);
+    setAvailabilitySelectValues(
+        bulkRulePreview.teaching,
+        bulkRulePreview.non_teaching,
+        bulkRulePreview.mode
+    );
 
     $('#availabilityModal').modal('show');
 }
@@ -1309,15 +1799,30 @@ $(document).ready(function() {
         const bulkIds = ($('#availBulkIds').val() || '').trim();
 
         if (bulkIds) {
+            const bulkQtyPayload = getBulkCurrentQtyPayload();
+            if (!bulkQtyPayload.ok) {
+                showAvailMessage('danger', bulkQtyPayload.message || 'Invalid bulk quantity setup.');
+                return;
+            }
+
+            const requestData = {
+                action: 'update_availability_settings_bulk',
+                inventory_ids: bulkIds,
+                allowed_status: JSON.stringify(rulesPayload),
+                bulk_qty_mode: bulkQtyPayload.mode
+            };
+
+            if (bulkQtyPayload.mode === 'same_for_all') {
+                requestData.current_quantity = bulkQtyPayload.current_quantity;
+            } else {
+                requestData.current_quantities_json = bulkQtyPayload.current_quantities_json;
+            }
+
             $.ajax({
                 url: PROCESS_URL,
                 type: 'POST',
                 dataType: 'json',
-                data: {
-                    action: 'update_availability_settings_bulk',
-                    inventory_ids: bulkIds,
-                    allowed_status: JSON.stringify(rulesPayload)
-                },
+                data: requestData,
                 success: function(res) {
                     if (res && res.success) {
                         showAvailMessage('success', res.message || 'Bulk rules updated.');
@@ -1381,6 +1886,39 @@ $(document).ready(function() {
                 showAvailMessage('danger', msg);
             }
         });
+    });
+
+    $('input[name="avail_bulk_qty_mode"]').on('change', function() {
+        syncBulkQtyModeUI();
+    });
+
+    $('#availCurrentQty, #availBulkCurrentQty').on('input change', function() {
+        clampQtyInputToMax(this);
+    });
+
+    $('#availabilityModal').on('input change', '.avail-bulk-item-qty', function() {
+        clampQtyInputToMax(this);
+    });
+
+    $('#availUseLowestQty').on('click', function() {
+        $('#availBulkCurrentQty').val(bulkLowestActualQty > 0 ? bulkLowestActualQty : 0);
+    });
+
+    $('#availabilityModal').on('hidden.bs.modal', function() {
+        isBulkAvailMode = false;
+        bulkAvailabilityRows = [];
+        bulkLowestActualQty = 0;
+        $('#availabilityModal').removeClass('is-bulk-mode');
+        $('#availBulkIds').val('');
+        $('#availBulkNote').addClass('d-none').text('');
+        $('#availCurrentQty').removeClass('d-none').val('');
+        $('#availBulkCurrentQty').val('');
+        $('#availBulkControls').addClass('d-none');
+        $('#availQtyHint').removeClass('d-none');
+        $('#availBulkQtyModeAll').prop('checked', true);
+        syncBulkQtyModeUI();
+        renderBulkAvailabilityRows([]);
+        updateBulkQtySharedState([]);
     });
 
     $('#exportCsv').on('click', function() {

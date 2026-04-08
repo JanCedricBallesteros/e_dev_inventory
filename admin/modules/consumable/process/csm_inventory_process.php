@@ -782,6 +782,9 @@ try {
 
             $idsRaw = _post('inventory_ids');
             $allowed_norm = normalize_allowed_payload_csm(_post('allowed_status', 'ALL'));
+            $bulk_qty_mode = trim((string)_post('bulk_qty_mode', 'same_for_all'));
+            $current_quantity = _post('current_quantity', '');
+            $current_quantities_json = _post('current_quantities_json', '');
 
             $idParts = preg_split('/\s*,\s*/', $idsRaw);
             $inventoryIds = array_values(array_unique(array_filter(array_map('intval', $idParts))));
@@ -792,13 +795,79 @@ try {
                 exit();
             }
 
+            if (!in_array($bulk_qty_mode, ['same_for_all', 'individual'], true)) {
+                http_response_code(422);
+                echo json_encode(['success' => false, 'message' => 'Invalid bulk quantity mode.']);
+                exit();
+            }
+
             $allowed_json = $allowed_norm['json'];
             $today = _today();
             $updated = 0;
+            $perItemQtyMap = [];
+
+            if ($bulk_qty_mode === 'same_for_all') {
+                if ($current_quantity === '' || !is_numeric($current_quantity)) {
+                    http_response_code(422);
+                    echo json_encode(['success' => false, 'message' => 'Available quantity is required for bulk update.']);
+                    exit();
+                }
+                $current_quantity = (int)$current_quantity;
+                if ($current_quantity < 0) {
+                    http_response_code(422);
+                    echo json_encode(['success' => false, 'message' => 'Available quantity cannot be negative.']);
+                    exit();
+                }
+
+                $lowestActualQty = null;
+                foreach ($inventoryIds as $inventory_id) {
+                    $chk = call_mysql_query("
+                        SELECT quantity
+                        FROM csm_inventory
+                        WHERE inventory_id = {$inventory_id}
+                        LIMIT 1
+                    ");
+                    $row = $chk ? call_mysql_fetch_array($chk) : null;
+                    if (!$row) continue;
+
+                    $qty = (int)$row['quantity'];
+                    if ($lowestActualQty === null || $qty < $lowestActualQty) {
+                        $lowestActualQty = $qty;
+                    }
+                }
+
+                if ($lowestActualQty !== null && $current_quantity !== $lowestActualQty) {
+                    http_response_code(422);
+                    echo json_encode([
+                        'success' => false,
+                        'message' => 'For "Set all selected items", the available quantity must match the lowest actual qty (' . $lowestActualQty . ').'
+                    ]);
+                    exit();
+                }
+            } else {
+                $decoded = json_decode((string)$current_quantities_json, true);
+                if (!is_array($decoded)) {
+                    http_response_code(422);
+                    echo json_encode(['success' => false, 'message' => 'Invalid per-item quantities payload.']);
+                    exit();
+                }
+
+                foreach ($decoded as $inventory_id => $qty) {
+                    $inventory_id = (int)$inventory_id;
+                    if ($inventory_id <= 0 || !is_numeric($qty)) continue;
+                    $qty = (int)$qty;
+                    if ($qty < 0) {
+                        http_response_code(422);
+                        echo json_encode(['success' => false, 'message' => 'Available quantity cannot be negative.']);
+                        exit();
+                    }
+                    $perItemQtyMap[$inventory_id] = $qty;
+                }
+            }
 
             foreach ($inventoryIds as $inventory_id) {
                 $chk = call_mysql_query("
-                    SELECT inventory_id, current_quantity, qty_crit_level
+                    SELECT inventory_id, inventory_system_item_code, current_quantity, qty_crit_level, quantity
                     FROM csm_inventory
                     WHERE inventory_id = {$inventory_id}
                     LIMIT 1
@@ -806,13 +875,27 @@ try {
                 $row = $chk ? call_mysql_fetch_array($chk) : null;
                 if (!$row) continue;
 
-                $currentQty = (int)$row['current_quantity'];
+                $currentQty = ($bulk_qty_mode === 'same_for_all')
+                    ? (int)$current_quantity
+                    : (isset($perItemQtyMap[$inventory_id]) ? (int)$perItemQtyMap[$inventory_id] : (int)$row['current_quantity']);
                 $critLevel = (int)$row['qty_crit_level'];
+                $unitQty = (int)$row['quantity'];
+
+                if ($currentQty > $unitQty) {
+                    http_response_code(422);
+                    echo json_encode([
+                        'success' => false,
+                        'message' => 'Available quantity cannot exceed total quantity for ' . ($row['inventory_system_item_code'] ?: ('ID #' . $inventory_id)) . ' (' . $unitQty . ').'
+                    ]);
+                    exit();
+                }
+
                 $status = _compute_status_from_state($currentQty, $critLevel, $allowed_json);
 
                 $sql = "
                     UPDATE csm_inventory
                     SET
+                        current_quantity = " . (int)$currentQty . ",
                         allowed_employment_status = " . ($allowed_json ? "'" . _esc($allowed_json) . "'" : "NULL") . ",
                         status = " . (int)$status . ",
                         last_updated = '" . _esc($today) . "'
