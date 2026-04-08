@@ -28,13 +28,50 @@ if (!(
     <link href="<?= BASE_URL ?>assets/css/select2.min.css" rel="stylesheet">
     <style>
         .section-card { border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
-        .table-wrap { max-height: 320px; overflow: auto; border: 1px solid #dee2e6; border-radius: 8px; }
         #astIssueTable { min-height: 420px; }
         .item-thumb { width: 36px; height: 36px; border-radius: 6px; object-fit: cover; border: 1px solid #e5e7eb; background: #f8f9fa; }
         .qr-hit { box-shadow: inset 0 0 0 2px #0d6efd; }
         .select2-container { width: 100% !important; }
+        .select2-container--default .select2-selection--single {
+            height: 38px;
+            border: 1px solid #ced4da;
+            border-radius: 0.375rem;
+        }
+        .select2-container--default .select2-selection--single .select2-selection__rendered {
+            line-height: 36px;
+            padding-left: 12px;
+            color: #212529;
+        }
+        .select2-container--default .select2-selection--single .select2-selection__arrow {
+            height: 36px;
+        }
+        .select2-container--default .select2-selection--multiple {
+            min-height: 38px;
+            border: 1px solid #ced4da;
+            border-radius: 0.375rem;
+            height: auto;
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .select2-container--default .select2-selection--multiple .select2-selection__rendered {
+            color: #212529;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            padding: 2px 6px;
+        }
+        .select2-container--default .select2-selection--multiple .select2-search__field {
+            color: #212529 !important;
+            background: transparent !important;
+            min-width: 80px;
+        }
+        .select2-container--default .select2-search--dropdown .select2-search__field {
+            color: #212529;
+            background: #fff;
+        }
         .manager-box { min-height: 38px; background: #f8f9fa; }
-        #selectedItemsBody td { vertical-align: middle; }
+        .tabulator { font-size: 0.875rem; }
         .two-line-cell {
             display: -webkit-box;
             -webkit-line-clamp: 2;
@@ -96,26 +133,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                         <button type="button" class="btn btn-light btn-sm" id="clearSelectionBtn">Clear Selection</button>
                     </div>
                     <div class="card-body mt-3 bg-white">
-                        <div class="table-wrap">
-                            <table class="table table-sm table-striped mb-0">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th style="width: 130px;">Property Tag</th>
-                                        <th style="width: 100px;">Property No.</th>
-                                        <th style="width: 120px;">Category</th>
-                                        <th>Description</th>
-                                        <th style="width: 120px;">Serial No.</th>
-                                        <th style="width: 160px;">Current Location</th>
-                                        <th style="width: 80px;">Action</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="selectedItemsBody">
-                                    <tr>
-                                        <td colspan="7" class="text-muted">No selected items yet.</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
+                        <div id="selectedItemsTable"></div>
                     </div>
                 </div>
             </div>
@@ -145,10 +163,6 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                 <div class="col-12 col-md-6">
                                     <label class="form-label fw-semibold">Extra Managers (optional)</label>
                                     <select class="form-select" id="extraManagerUserIds" multiple></select>
-                                </div>
-                                <div class="col-12">
-                                    <label class="form-label fw-semibold">Remarks (optional)</label>
-                                    <input type="text" class="form-control" id="issueRemarks" maxlength="255">
                                 </div>
                             </div>
                             <div id="issueMsg" class="mt-3"></div>
@@ -203,6 +217,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 <script>
 const PROCESS_URL = '<?= BASE_URL ?>admin/modules/nonconsumable/process/ast_issuance_process.php';
 let astIssueTable = null;
+let selectedItemsTable = null;
 let astIssueTableReady = false;
 let pendingLoadAfterBuild = false;
 let pendingSyncAfterBuild = false;
@@ -250,12 +265,38 @@ function showIssueMsg(type, message) {
     $('#issueMsg').html('<div class="alert alert-' + type + ' mb-0">' + escapeHtml(message) + '</div>');
 }
 
+function notifySuccess(message) {
+    if (!message) return;
+    if (typeof success_notif === 'function') return success_notif(message);
+    if ($.notify) return $.notify({ message: message }, { type: 'success', delay: 2500, placement: { from: 'top', align: 'right' } });
+    alert(message);
+}
+
 function renderThumb(row) {
     const thumb = row.category_photo_thumb_url || row.category_photo_url || '';
     if (!thumb) {
         return '<span class="text-muted">-</span>';
     }
     return '<img class="item-thumb" src="' + escapeHtml(thumb) + '" alt="Category">';
+}
+
+function getSelectedRowsDataSafe() {
+    if (!astIssueTable || !astIssueTableReady) return [];
+    let rows = [];
+    if (typeof astIssueTable.getSelectedRows === 'function') {
+        rows = astIssueTable.getSelectedRows() || [];
+    }
+    if ((!rows || rows.length === 0) && typeof astIssueTable.getRows === 'function') {
+        const allRows = astIssueTable.getRows() || [];
+        rows = allRows.filter(function(r){
+            return r && typeof r.isSelected === 'function' && r.isSelected();
+        });
+    }
+    return (rows || []).map(function(r){
+        return r && typeof r.getData === 'function' ? (r.getData() || {}) : {};
+    }).filter(function(r){
+        return Number(r.source_item_id || 0) > 0;
+    });
 }
 
 function indexRows(rows) {
@@ -272,6 +313,11 @@ function initItemsTable() {
         index: 'source_item_id',
         height: 420,
         layout: 'fitColumns',
+        renderVertical: 'basic',
+        pagination: 'local',
+        paginationSize: 10,
+        paginationSizeSelector: [5, 10, 20, 50, true],
+        paginationCounter: 'rows',
         selectable: true,
         placeholder: 'No available AST item found.',
         columns: [
@@ -280,10 +326,7 @@ function initItemsTable() {
                 titleFormatter: 'rowSelection',
                 hozAlign: 'center',
                 headerSort: false,
-                width: 44,
-                cellClick: function(e, cell) {
-                    cell.getRow().toggleSelect();
-                }
+                width: 44
             },
             { title: 'Image', field: 'category_photo_thumb_url', hozAlign: 'center', width: 70, formatter: function(cell){ return renderThumb(cell.getRow().getData()); } },
             { title: 'Property Tag', field: 'item_code', width: 160 },
@@ -294,13 +337,13 @@ function initItemsTable() {
             { title: 'Current Location', field: 'current_location', width: 170 }
         ],
         rowSelectionChanged: function(data) {
-            renderSelectedItems(data || []);
+            renderSelectedItems((data && data.length ? data : getSelectedRowsDataSafe()));
         },
         rowSelected: function() {
-            renderSelectedItems(astIssueTable ? astIssueTable.getSelectedData() : []);
+            renderSelectedItems(getSelectedRowsDataSafe());
         },
         rowDeselected: function() {
-            renderSelectedItems(astIssueTable ? astIssueTable.getSelectedData() : []);
+            renderSelectedItems(getSelectedRowsDataSafe());
         }
     });
 
@@ -320,13 +363,53 @@ function initItemsTable() {
     }, 80);
 }
 
+function initSelectedItemsTable() {
+    selectedItemsTable = new Tabulator('#selectedItemsTable', {
+        index: 'source_item_id',
+        height: 320,
+        layout: 'fitColumns',
+        renderVertical: 'basic',
+        placeholder: 'No selected items yet.',
+        pagination: 'local',
+        paginationSize: 10,
+        paginationSizeSelector: [5, 10, 20, 50, true],
+        paginationCounter: 'rows',
+        columns: [
+            { title: 'Property Tag', field: 'item_code', width: 150 },
+            { title: 'Property No.', field: 'property_number', width: 110 },
+            { title: 'Category', field: 'item_category_name', width: 130 },
+            { title: 'Description', field: 'item_description', formatter: function(cell){ return '<div class="two-line-cell">' + escapeHtml(cell.getValue() || '-') + '</div>'; } },
+            { title: 'Serial No.', field: 'serial_number', width: 130 },
+            { title: 'Current Location', field: 'current_location', width: 170 },
+            {
+                title: 'Action',
+                field: 'source_item_id',
+                width: 86,
+                hozAlign: 'center',
+                headerSort: false,
+                formatter: function() {
+                    return '<button type="button" class="btn btn-outline-danger btn-sm"><i class="bi bi-x-lg"></i></button>';
+                },
+                cellClick: function(e, cell) {
+                    const row = cell.getRow().getData() || {};
+                    const rowId = Number(row.source_item_id || 0);
+                    if (rowId > 0 && astIssueTable && astIssueTableReady) {
+                        astIssueTable.deselectRow(rowId);
+                        syncSelectedItemsFromTable();
+                    }
+                }
+            }
+        ]
+    });
+}
+
 function loadAvailableItems() {
     if (!astIssueTable || !astIssueTableReady) {
         pendingLoadAfterBuild = true;
         return;
     }
     showPageError('');
-    const selectedIds = astIssueTable.getSelectedData().map(r => Number(r.source_item_id || 0));
+    const selectedIds = getSelectedRowsDataSafe().map(r => Number(r.source_item_id || 0));
     $.post(PROCESS_URL, { action: 'list_available_ast_items' }, function(res){
         if (!res || !res.success) {
             showPageError(res && res.message ? res.message : 'Failed to load available AST items.');
@@ -366,26 +449,27 @@ function applyTableSearch(term) {
 
 function renderSelectedItems(items) {
     const rows = Array.isArray(items) ? items : [];
-    const $body = $('#selectedItemsBody');
     if (rows.length === 0) {
         $('#selectedCountNote').text('No item selected.');
-        $body.html('<tr><td colspan="7" class="text-muted">No selected items yet.</td></tr>');
+        if (selectedItemsTable) selectedItemsTable.setData([]);
         return;
     }
 
     $('#selectedCountNote').text(rows.length + ' item(s) selected.');
-    const html = rows.map(function(r){
-        return '<tr>' +
-            '<td><span class="fw-semibold">' + escapeHtml(r.item_code || '-') + '</span></td>' +
-            '<td>' + escapeHtml(r.property_number || '-') + '</td>' +
-            '<td>' + escapeHtml(r.item_category_name || '-') + '</td>' +
-            '<td><div class="two-line-cell">' + escapeHtml(r.item_description || '-') + '</div></td>' +
-            '<td>' + escapeHtml(r.serial_number || '-') + '</td>' +
-            '<td>' + escapeHtml(r.current_location || '-') + '</td>' +
-            '<td><button type="button" class="btn btn-outline-danger btn-sm js-remove-selected" data-id="' + Number(r.source_item_id || 0) + '"><i class="bi bi-x-lg"></i></button></td>' +
-            '</tr>';
-    }).join('');
-    $body.html(html);
+    if (selectedItemsTable) selectedItemsTable.setData(rows);
+}
+
+function initFacilityUnitSelect2() {
+    if (!$.fn.select2) return;
+    const $sel = $('#issueFacilityUnit');
+    if ($sel.hasClass('select2-hidden-accessible')) {
+        $sel.select2('destroy');
+    }
+    $sel.select2({
+        width: '100%',
+        placeholder: 'Select facility unit',
+        allowClear: true
+    });
 }
 
 function loadFacilityUnitOptions() {
@@ -414,6 +498,7 @@ function loadFacilityUnitOptions() {
         function processNextFacility() {
             if (idx >= regularFacilities.length) {
                 $('#issueFacilityUnit').html(opts.join(''));
+                $('#issueFacilityUnit').val(null).trigger('change');
                 if (!hasUnits) {
                     showIssueMsg('warning', 'No active units found under regular facilities.');
                 } else {
@@ -429,24 +514,29 @@ function loadFacilityUnitOptions() {
 
             $.post(PROCESS_URL, { action: 'list_units', facility_id: facilityId }, function(unitRes){
                 const units = (unitRes && unitRes.success && Array.isArray(unitRes.data)) ? unitRes.data : [];
-                units.forEach(function(u){
+                if (units.length > 0) {
                     hasUnits = true;
-                    const unitId = Number(u.unit_id || 0);
-                    const managedBy = Number(u.managed_by_user_id || 0);
-                    const managerNames = String(u.manager_names || '').trim();
-                    const unitName = String(u.unit_name || '-');
-                    const value = facilityId + '::' + unitId;
-                    const label = facilityName + ' - ' + unitName;
-                    opts.push(
-                        '<option value="' + escapeHtml(value) + '"' +
-                        ' data-facility-id="' + facilityId + '"' +
-                        ' data-unit-id="' + unitId + '"' +
-                        ' data-managed-by="' + managedBy + '"' +
-                        ' data-manager-names="' + escapeHtml(managerNames) + '">' +
-                        escapeHtml(label) +
-                        '</option>'
-                    );
-                });
+                    const group = [];
+                    units.forEach(function(u){
+                        const unitId = Number(u.unit_id || 0);
+                        const managedBy = Number(u.managed_by_user_id || 0);
+                        const managerNames = String(u.manager_names || '').trim();
+                        const managerUserIds = String(u.manager_user_ids || '');
+                        const unitName = String(u.unit_name || '-');
+                        const value = facilityId + '::' + unitId;
+                        group.push(
+                            '<option value="' + escapeHtml(value) + '"' +
+                            ' data-facility-id="' + facilityId + '"' +
+                            ' data-unit-id="' + unitId + '"' +
+                            ' data-managed-by="' + managedBy + '"' +
+                            ' data-manager-user-ids="' + escapeHtml(managerUserIds) + '"' +
+                            ' data-manager-names="' + escapeHtml(managerNames) + '">' +
+                            escapeHtml(unitName) +
+                            '</option>'
+                        );
+                    });
+                    opts.push('<optgroup label="' + escapeHtml(facilityName) + '">' + group.join('') + '</optgroup>');
+                }
                 processNextFacility();
             }, 'json').fail(function(){
                 processNextFacility();
@@ -464,16 +554,32 @@ function syncSelectedItemsFromTable() {
         pendingSyncAfterBuild = true;
         return;
     }
-    renderSelectedItems(astIssueTable.getSelectedData() || []);
+    renderSelectedItems(getSelectedRowsDataSafe());
 }
 
 function initUserSelects() {
-    function buildUserSelect($el, multiple) {
-        $el.select2({
+    function parseManagerUserIds(rawCsv, managedById) {
+        const ids = String(rawCsv || '')
+            .split(',')
+            .map(function(v){ return Number(String(v || '').trim() || 0); })
+            .filter(function(v){ return v > 0; });
+        const fallback = Number(managedById || 0);
+        if (ids.length === 0 && fallback > 0) return [fallback];
+        return Array.from(new Set(ids));
+    }
+
+    function getExcludedManagerIdSet() {
+        const ids = (selectedUnitMeta && Array.isArray(selectedUnitMeta.manager_user_ids))
+            ? selectedUnitMeta.manager_user_ids
+            : [];
+        return new Set(ids.map(function(v){ return Number(v || 0); }).filter(function(v){ return v > 0; }));
+    }
+
+    function setupIssuedToSelect() {
+        $('#issuedToUserId').select2({
             width: '100%',
-            placeholder: multiple ? 'Search users...' : 'Select user',
-            allowClear: !multiple,
-            multiple: !!multiple,
+            placeholder: 'Select user',
+            allowClear: true,
             ajax: {
                 url: PROCESS_URL,
                 type: 'POST',
@@ -500,8 +606,54 @@ function initUserSelects() {
         });
     }
 
-    buildUserSelect($('#issuedToUserId'), false);
-    buildUserSelect($('#extraManagerUserIds'), true);
+    function setupExtraManagersSelect() {
+        $('#extraManagerUserIds').select2({
+            width: '100%',
+            placeholder: 'Search users...',
+            multiple: true,
+            ajax: {
+                url: PROCESS_URL,
+                type: 'POST',
+                dataType: 'json',
+                delay: 250,
+                data: function(params) {
+                    return {
+                        action: 'list_users',
+                        search: params.term || '',
+                        limit: 100
+                    };
+                },
+                processResults: function(res) {
+                    const data = (res && res.success && Array.isArray(res.data)) ? res.data : [];
+                    const excluded = getExcludedManagerIdSet();
+                    const mapped = data
+                        .filter(function(u){ return !excluded.has(Number(u.user_id || 0)); })
+                        .map(function(u){
+                            const name = u.full_name || u.username || ('User #' + u.user_id);
+                            const pos = u.position ? ' - ' + u.position : '';
+                            return { id: String(u.user_id), text: name + pos };
+                        });
+                    return { results: mapped };
+                }
+            }
+        });
+    }
+
+    function enforceExtraManagerSelectionRules() {
+        const excluded = getExcludedManagerIdSet();
+        const selected = $('#extraManagerUserIds').val() || [];
+        const filtered = selected.filter(function(id){ return !excluded.has(Number(id || 0)); });
+        if (filtered.length !== selected.length) {
+            $('#extraManagerUserIds').val(filtered).trigger('change');
+        }
+    }
+
+    setupIssuedToSelect();
+    setupExtraManagersSelect();
+
+    // expose small helpers used by unit-change flow
+    window.__astIssueParseManagerUserIds = parseManagerUserIds;
+    window.__astIssueEnforceExtraManagers = enforceExtraManagerSelectionRules;
 }
 
 function normalizeItemCode(raw) {
@@ -539,15 +691,26 @@ function selectByItemCode(itemCode) {
             return;
         }
 
-        if (!availableRowsById[id]) {
-            availableRowsById[id] = row;
-            astIssueTable.addData([row], true);
+        function finalizeSelectAndSync() {
+            astIssueTable.selectRow(id);
+            astIssueTable.scrollToRow(id, 'center', true).catch(function(){});
+            highlightSelectedRow(id);
+            // Explicit syncs fix mobile timing where selection events may arrive late.
+            syncSelectedItemsFromTable();
+            setTimeout(function(){ syncSelectedItemsFromTable(); }, 120);
+            notifySuccess('Item selected: ' + (row.item_code || code));
         }
 
-        astIssueTable.selectRow(id);
-        astIssueTable.scrollToRow(id, 'center', true).catch(function(){});
-        highlightSelectedRow(id);
-        showIssueMsg('success', 'Item selected: ' + (row.item_code || code));
+        if (!availableRowsById[id]) {
+            availableRowsById[id] = row;
+            astIssueTable.addData([row], true).then(function(){
+                finalizeSelectAndSync();
+            }).catch(function(){
+                finalizeSelectAndSync();
+            });
+            return;
+        }
+        finalizeSelectAndSync();
     }, 'json').fail(function(){
         showIssueMsg('danger', 'Server error while searching scanned code.');
     });
@@ -555,7 +718,7 @@ function selectByItemCode(itemCode) {
 
 function collectSelectedItemsPayload() {
     if (!astIssueTable || !astIssueTableReady) return [];
-    const rows = astIssueTable.getSelectedData();
+    const rows = getSelectedRowsDataSafe();
     return (rows || []).map(function(r){
         return {
             source_item_id: Number(r.source_item_id || 0),
@@ -565,8 +728,10 @@ function collectSelectedItemsPayload() {
 }
 
 $(document).ready(function(){
+    initSelectedItemsTable();
     initItemsTable();
     initUserSelects();
+    initFacilityUnitSelect2();
     loadFacilityUnitOptions();
     loadAvailableItems();
     syncSelectedItemsFromTable();
@@ -584,29 +749,38 @@ $(document).ready(function(){
     $('#astIssueSearch').on('input', function(){
         applyTableSearch($(this).val() || '');
     });
-
-    $('#selectedItemsBody').on('click', '.js-remove-selected', function(){
-        const rowId = Number($(this).data('id') || 0);
-        if (rowId > 0 && astIssueTable) {
-            astIssueTable.deselectRow(rowId);
+    $('#astIssueTable').on('click change', 'input[type="checkbox"], .tabulator-row, .tabulator-cell', function(){
+        setTimeout(function(){
             syncSelectedItemsFromTable();
-        }
+        }, 0);
     });
 
     $('#issueFacilityUnit').on('change', function(){
         const $opt = $(this).find('option:selected');
+        const parseManagerIds = window.__astIssueParseManagerUserIds || function(raw, managedBy){
+            const ids = String(raw || '')
+                .split(',')
+                .map(function(v){ return Number(String(v || '').trim() || 0); })
+                .filter(function(v){ return v > 0; });
+            const mb = Number(managedBy || 0);
+            if (ids.length === 0 && mb > 0) return [mb];
+            return Array.from(new Set(ids));
+        };
         selectedUnitMeta = {
             facility_id: Number($opt.data('facility-id') || 0),
             unit_id: Number($opt.data('unit-id') || 0),
             managed_by_user_id: Number($opt.data('managed-by') || 0),
-            manager_names: String($opt.attr('data-manager-names') || '').trim()
+            manager_names: String($opt.attr('data-manager-names') || '').trim(),
+            manager_user_ids: parseManagerIds($opt.attr('data-manager-user-ids') || '', $opt.data('managed-by'))
         };
         if ((selectedUnitMeta.facility_id || 0) <= 0 || (selectedUnitMeta.unit_id || 0) <= 0) {
             selectedUnitMeta = null;
             $('#unitManagersDisplay').val('-');
+            if (typeof window.__astIssueEnforceExtraManagers === 'function') window.__astIssueEnforceExtraManagers();
             return;
         }
         $('#unitManagersDisplay').val(selectedUnitMeta.manager_names || '-');
+        if (typeof window.__astIssueEnforceExtraManagers === 'function') window.__astIssueEnforceExtraManagers();
     });
 
     $('#issueBatchForm').on('submit', function(e){
@@ -618,7 +792,6 @@ $(document).ready(function(){
         const unitId = Number((selectedUnitMeta && selectedUnitMeta.unit_id) || 0);
         const issuedTo = String($('#issuedToUserId').val() || '').trim();
         const extraManagers = $('#extraManagerUserIds').val() || [];
-        const remarks = ($('#issueRemarks').val() || '').trim();
 
         if (items.length === 0) {
             showIssueMsg('danger', 'Select at least one item before issuing.');
@@ -641,7 +814,6 @@ $(document).ready(function(){
             facility_id: facilityId,
             unit_id: unitId,
             issued_to_user_id: issuedTo,
-            remarks: remarks,
             selected_items: JSON.stringify(items),
             extra_manager_user_ids: JSON.stringify(extraManagers)
         }, function(res){
@@ -649,7 +821,7 @@ $(document).ready(function(){
                 showIssueMsg('success', res.message || 'Items issued successfully.');
                 if (astIssueTable) astIssueTable.deselectRow();
                 $('#issueBatchForm')[0].reset();
-                $('#issueFacilityUnit').val('');
+                $('#issueFacilityUnit').val(null).trigger('change');
                 $('#unitManagersDisplay').val('-');
                 $('#issuedToUserId').val(null).trigger('change');
                 $('#extraManagerUserIds').val(null).trigger('change');

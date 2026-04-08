@@ -255,7 +255,7 @@ function formatPeso(value) {
     if (value === null || value === undefined || value === '') return '';
     const num = Number(value);
     if (!isFinite(num)) return '';
-    return 'â‚±' + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return String.fromCharCode(8369) + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 // Render cards (latest first). Filter by Property Tag, serial, description, or category.
