@@ -442,6 +442,77 @@ function user_has_access($required)
 	return false;
 }
 
+function user_has_managing_facility_unit($user_id = null)
+{
+	global $s_user_id;
+
+	if ($user_id === null) {
+		$user_id = $s_user_id ?? 0;
+	}
+	$user_id = (int)$user_id;
+
+	static $cache = array();
+	if (array_key_exists($user_id, $cache)) {
+		return $cache[$user_id];
+	}
+
+	if ($user_id <= 0) {
+		$cache[$user_id] = false;
+		return false;
+	}
+
+	$unitsTable = 'facility_records_units';
+	$unitManagersTable = 'facility_records_unit_managers';
+
+	$tableExists = function ($tableName) {
+		$tableEsc = addslashes($tableName);
+		$tableRes = @call_mysql_query("SHOW TABLES LIKE '{$tableEsc}'");
+		return ($tableRes && mysqli_num_rows($tableRes) > 0);
+	};
+
+	$columnExists = function ($tableName, $columnName) {
+		$colEsc = addslashes($columnName);
+		$colRes = @call_mysql_query("SHOW COLUMNS FROM `{$tableName}` LIKE '{$colEsc}'");
+		return ($colRes && mysqli_num_rows($colRes) > 0);
+	};
+
+	$hasUnitsTable = $tableExists($unitsTable);
+	$hasUnitManagersTable = $tableExists($unitManagersTable);
+	if (!$hasUnitsTable && !$hasUnitManagersTable) {
+		$cache[$user_id] = false;
+		return false;
+	}
+
+	$hasManagedUnit = false;
+
+	if ($hasUnitManagersTable) {
+		$res = @call_mysql_query("SELECT unit_id FROM `{$unitManagersTable}` WHERE user_id = {$user_id} LIMIT 1");
+		$hasManagedUnit = ($res && mysqli_num_rows($res) > 0);
+	}
+
+	if (!$hasManagedUnit && $hasUnitsTable) {
+		$possibleCols = array('facility_unit_manager_user_id', 'accountable_user_id');
+		foreach ($possibleCols as $col) {
+			if (!$columnExists($unitsTable, $col)) {
+				continue;
+			}
+			$res = @call_mysql_query("SELECT unit_id FROM `{$unitsTable}` WHERE `{$col}` = {$user_id} LIMIT 1");
+			if ($res && mysqli_num_rows($res) > 0) {
+				$hasManagedUnit = true;
+				break;
+			}
+		}
+	}
+
+	if (!$hasManagedUnit && $hasUnitsTable && $columnExists($unitsTable, 'facility_unit_manager_user_ids')) {
+		$res = @call_mysql_query("SELECT unit_id FROM `{$unitsTable}` WHERE FIND_IN_SET({$user_id}, REPLACE(COALESCE(facility_unit_manager_user_ids, ''), ' ', '')) > 0 LIMIT 1");
+		$hasManagedUnit = ($res && mysqli_num_rows($res) > 0);
+	}
+
+	$cache[$user_id] = $hasManagedUnit;
+	return $hasManagedUnit;
+}
+
 function converToTz($time = "", $toTz = '', $fromTz = '', $format = 'Y-m-d H:i:s')
 {
 	$time = ($time == "") ? date('Y-m-d H:i:s') : $time;

@@ -10,6 +10,8 @@ if (!(role_has("USER") || role_has("USERS"))) {
     header("Location: " . BASE_URL);
     exit();
 }
+
+$has_managing_facility_unit = user_has_managing_facility_unit($s_user_id ?? 0);
 ?>
 <!DOCTYPE html>
 <html lang="en" class="h-100">
@@ -28,6 +30,11 @@ if (!(role_has("USER") || role_has("USERS"))) {
         .facility-header:hover { background: #0b5ed7; }
         .facility-header.active { background: #0a58ca; box-shadow: 0 2px 6px rgba(13,110,253,0.3); }
         .facility-header i { margin-right: 6px; }
+        .floor-group { margin-top: 8px; border-left: 3px solid #e2e8f0; padding-left: 8px; }
+        .floor-header { font-weight: 600; font-size: 0.85rem; color: #334155; display: flex; align-items: center; gap: 6px; margin: 6px 0; cursor: pointer; user-select: none; }
+        .floor-header .chevron { margin-left: auto; transition: transform 0.15s ease; }
+        .floor-header.collapsed .chevron { transform: rotate(-90deg); }
+        .floor-header.active { color: #0d6efd; }
         .unit-card { border: 1px solid #dbe2ea; border-radius: 8px; padding: 12px; background: #fff; cursor: pointer; transition: all 0.2s ease; margin-bottom: 8px; }
         .unit-card:hover { border-color: #a5b4fc; background: #f8faff; transform: translateX(4px); }
         .unit-card.active { border-color: #0d6efd; background: #eef5ff; box-shadow: 0 2px 6px rgba(13,110,253,0.2); }
@@ -55,6 +62,10 @@ if (!(role_has("USER") || role_has("USERS"))) {
 
         <section class="section">
             <div id="pageMsg" class="alert alert-danger d-none"></div>
+            <?php if (!$has_managing_facility_unit) { ?>
+                <div class="alert alert-warning">You have no managing facility units.</div>
+            <?php } ?>
+            <?php if ($has_managing_facility_unit) { ?>
             <div class="row g-3">
                 <div class="col-12 col-lg-4">
                     <div class="card section-card h-100">
@@ -87,6 +98,7 @@ if (!(role_has("USER") || role_has("USERS"))) {
                     </div>
                 </div>
             </div>
+            <?php } ?>
         </section>
     </main>
 
@@ -111,9 +123,12 @@ if (!(role_has("USER") || role_has("USERS"))) {
 <script src="<?= BASE_URL ?>assets/js/tabulator.min.js"></script>
 <script>
 const PROCESS_URL = <?php echo json_encode(BASE_URL . 'users/modules/facility_records_process.php'); ?>;
+const HAS_MANAGING_FACILITY_UNIT = <?php echo $has_managing_facility_unit ? 'true' : 'false'; ?>;
 let managedUnits = [];
 let selectedUnit = null;
 let selectedFacility = null;
+let selectedFloor = null;
+let floorCollapseState = {};
 let assignments = [];
 let assignmentTable = null;
 
@@ -142,6 +157,14 @@ function statusBadge(status) {
     };
     const cls = map[s] || 'bg-light text-dark border';
     return `<span class="status-badge ${cls}">${s || ''}</span>`;
+}
+
+function normalizeFloorKey(name) {
+    return String(name || '').trim() || 'Unassigned';
+}
+
+function getRowFloorLabel(row) {
+    return normalizeFloorKey(row ? (row.floor_label || '') : '');
 }
 
 function initAssignmentTable(){
@@ -239,20 +262,57 @@ function renderUnits() {
                 </div>
             </div>
         `);
-        
+
         const unitsContainer = list.find(`.facility-units[data-facility-id="${fac.facility_id}"]`);
+        const floors = {};
         fac.units.forEach(function(u) {
-            const active = selectedUnit && String(selectedUnit.unit_id) === String(u.unit_id) ? 'active' : '';
-            const safeUnitCode = escapeHtml(u.unit_code || '');
-            const safeUnitName = escapeHtml(u.unit_name || '');
+            const floorKey = normalizeFloorKey(u.floor_label);
+            if (!floors[floorKey]) floors[floorKey] = [];
+            floors[floorKey].push(u);
+        });
+
+        const floorKeys = Object.keys(floors).sort(function(a, b) {
+            if (a === 'Unassigned') return 1;
+            if (b === 'Unassigned') return -1;
+            return a.localeCompare(b);
+        });
+        const singleFloor = floorKeys.length === 1;
+
+        const collapseMap = floorCollapseState[String(fac.facility_id)] || {};
+        floorKeys.forEach(function(floorKey) {
+            const isActiveFloor = !selectedUnit
+                && selectedFacility
+                && String(selectedFacility.facility_id) === String(fac.facility_id)
+                && normalizeFloorKey(selectedFloor) === floorKey;
+            let isCollapsed = Object.prototype.hasOwnProperty.call(collapseMap, floorKey) ? !!collapseMap[floorKey] : true;
+            if (isActiveFloor) isCollapsed = false;
+            if (singleFloor) isCollapsed = false;
+
+            const floorData = encodeURIComponent(floorKey);
             unitsContainer.append(`
-                <div class="unit-card ${active}" data-id="${u.unit_id}">
-                    <div class="fw-semibold">${safeUnitCode} - ${safeUnitName}</div>
-                    <div class="small-muted" style="margin-top:4px;">
-                        <i class="bi bi-box-seam"></i> ${u.active_item_count || 0} assigned item(s)
+                <div class="floor-group" data-floor-key="${escapeHtml(floorKey)}">
+                    <div class="floor-header ${isCollapsed ? 'collapsed' : ''} ${isActiveFloor ? 'active' : ''}" data-facility-id="${fac.facility_id}" data-floor="${floorData}">
+                        <i class="bi bi-layers"></i> ${escapeHtml(floorKey)}
+                        <span class="chevron"><i class="bi bi-chevron-down"></i></span>
                     </div>
+                    <div class="floor-body ${isCollapsed ? 'd-none' : ''}"></div>
                 </div>
             `);
+
+            const floorBody = unitsContainer.find(`.floor-header[data-facility-id="${fac.facility_id}"][data-floor="${floorData}"]`).siblings('.floor-body');
+            floors[floorKey].forEach(function(u) {
+                const active = selectedUnit && String(selectedUnit.unit_id) === String(u.unit_id) ? 'active' : '';
+                const safeUnitCode = escapeHtml(u.unit_code || '');
+                const safeUnitName = escapeHtml(u.unit_name || '');
+                floorBody.append(`
+                    <div class="unit-card ${active}" data-id="${u.unit_id}">
+                        <div class="fw-semibold">${safeUnitCode} - ${safeUnitName}</div>
+                        <div class="small-muted" style="margin-top:4px;">
+                            <i class="bi bi-box-seam"></i> ${u.active_item_count || 0} assigned item(s)
+                        </div>
+                    </div>
+                `);
+            });
         });
     });
 }
@@ -260,11 +320,19 @@ function renderUnits() {
 function renderAssignments() {
     if (!assignmentTable) return;
     const q = ($('#assignSearch').val() || '').toLowerCase().trim();
-    assignmentTable.setData(assignments);
+    let rows = assignments;
+    if (!selectedUnit && selectedFacility && selectedFloor) {
+        const floor = normalizeFloorKey(selectedFloor);
+        rows = (rows || []).filter(function(r) {
+            return getRowFloorLabel(r) === floor;
+        });
+    }
+    assignmentTable.setData(rows);
     if (q) {
         assignmentTable.setFilter(function(r) {
             const hay = [r.module_type, r.item_code, r.item_description, r.status,
-                         r.issued_to_name, r.accountable_name, r.managed_by_name].join(' ').toLowerCase();
+                         r.issued_to_name, r.accountable_name, r.managed_by_name,
+                         r.unit_name, r.unit_code, r.floor_label].join(' ').toLowerCase();
             return hay.indexOf(q) !== -1;
         });
     } else {
@@ -278,10 +346,11 @@ function loadAssignments() {
     let postData, infoText;
     if (selectedUnit) {
         postData = { action: 'list_unit_assignments', unit_id: selectedUnit.unit_id };
-        infoText = `${selectedUnit.facility_code || ''} / ${selectedUnit.unit_code || ''} - ${selectedUnit.unit_name || ''}`;
+        const floorText = selectedUnit.floor_label ? ` - ${selectedUnit.floor_label}` : '';
+        infoText = `${selectedUnit.facility_code || ''} / ${selectedUnit.unit_code || ''} - ${selectedUnit.unit_name || ''}${floorText}`;
     } else {
         postData = { action: 'list_facility_assignments', facility_id: selectedFacility.facility_id };
-        infoText = `${selectedFacility.facility_name || ''} (${selectedFacility.facility_code || ''}) - All Units`;
+        infoText = `${selectedFacility.facility_name || ''} (${selectedFacility.facility_code || ''}) - ${selectedFloor ? ('Floor: ' + selectedFloor) : 'All Units'}`;
     }
     
     $.post(PROCESS_URL, postData, function(res) {
@@ -322,6 +391,13 @@ function loadManagedUnits() {
             const stillExists = managedUnits.find(function(u) { return String(u.unit_id) === String(selectedUnit.unit_id); });
             if (!stillExists) selectedUnit = null;
         }
+        if (selectedFacility) {
+            const stillManaged = managedUnits.find(function(u) { return String(u.facility_id) === String(selectedFacility.facility_id); });
+            if (!stillManaged) {
+                selectedFacility = null;
+                selectedFloor = null;
+            }
+        }
         renderUnits();
         loadAssignments();
     }, 'json').fail(function(xhr) {
@@ -349,6 +425,10 @@ function updateStatus(assignmentId, status, label) {
 }
 
 $(document).ready(function() {
+    if (!HAS_MANAGING_FACILITY_UNIT) {
+        return;
+    }
+
     initAssignmentTable();
     loadManagedUnits();
 
@@ -357,7 +437,32 @@ $(document).ready(function() {
         const facUnit = managedUnits.find(function(u) { return String(u.facility_id) === String(facId); });
         if (!facUnit) return;
         selectedUnit = null;
+        selectedFloor = null;
         selectedFacility = { facility_id: facUnit.facility_id, facility_code: facUnit.facility_code, facility_name: facUnit.facility_name };
+        $('#selectedManagedBy').text('Managed By: Multiple');
+        renderUnits();
+        loadAssignments();
+    });
+
+    $('#unitList').on('click', '.floor-header', function() {
+        const facId = $(this).data('facility-id');
+        const floor = normalizeFloorKey(decodeURIComponent($(this).data('floor') || ''));
+        const facUnit = managedUnits.find(function(u) { return String(u.facility_id) === String(facId); });
+        if (!facUnit) return;
+
+        const facKey = String(facId);
+        if (!floorCollapseState[facKey]) {
+            floorCollapseState[facKey] = {};
+        }
+        const currentCollapsed = Object.prototype.hasOwnProperty.call(floorCollapseState[facKey], floor)
+            ? !!floorCollapseState[facKey][floor]
+            : true;
+        const nextCollapsed = !currentCollapsed;
+        floorCollapseState[facKey][floor] = nextCollapsed;
+
+        selectedUnit = null;
+        selectedFacility = { facility_id: facUnit.facility_id, facility_code: facUnit.facility_code, facility_name: facUnit.facility_name };
+        selectedFloor = nextCollapsed ? null : floor;
         $('#selectedManagedBy').text('Managed By: Multiple');
         renderUnits();
         loadAssignments();
@@ -366,6 +471,7 @@ $(document).ready(function() {
     $('#unitList').on('click', '.unit-card', function() {
         const id = $(this).data('id');
         selectedUnit = managedUnits.find(function(u) { return String(u.unit_id) === String(id); }) || null;
+        selectedFloor = null;
         selectedFacility = null;
         if (selectedUnit && selectedUnit.unit_manager_name) {
             $('#selectedManagedBy').text('Managed By: ' + selectedUnit.unit_manager_name);
@@ -382,7 +488,8 @@ $(document).ready(function() {
         if (q) {
             assignmentTable.setFilter(function(r){
                 const hay = [r.module_type, r.item_code, r.item_description, r.status,
-                             r.issued_to_name, r.accountable_name, r.managed_by_name].join(' ').toLowerCase();
+                             r.issued_to_name, r.accountable_name, r.managed_by_name,
+                             r.unit_name, r.unit_code, r.floor_label].join(' ').toLowerCase();
                 return hay.indexOf(q) !== -1;
             });
         } else {

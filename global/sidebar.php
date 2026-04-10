@@ -304,12 +304,14 @@ if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) {
                             <p>Request Items</p>
                         </a>
                     </li>
-                    <li class="nav-item <?php echo navigation_active("facility_records"); ?>">
-                        <a href="<?php echo BASE_URL . "users/modules/facility_records.php"; ?>">
-                            <i class="fas fa-building"></i>
-                            <p>Facility Records</p>
-                        </a>
-                    </li>
+                    <?php if (user_has_managing_facility_unit()) { ?>
+                        <li class="nav-item <?php echo navigation_active("facility_records"); ?>">
+                            <a href="<?php echo BASE_URL . "users/modules/facility_records.php"; ?>">
+                                <i class="fas fa-building"></i>
+                                <p>Facility Records</p>
+                            </a>
+                        </li>
+                    <?php } ?>
                     <li class="nav-item <?php echo navigation_active("personal_records"); ?>">
                         <a href="<?php echo BASE_URL . "users/modules/personal_records.php"; ?>">
                             <i class="fas fa-archive"></i>
