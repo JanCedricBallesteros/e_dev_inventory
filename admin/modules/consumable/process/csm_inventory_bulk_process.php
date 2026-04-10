@@ -387,6 +387,7 @@ if ($action === 'export_csv') {
             i.inventory_system_item_code,
             i.item_description,
             i.item_category_code,
+            c.item_category_name,
             i.cost_value,
             i.unit,
             i.quantity,
@@ -396,6 +397,8 @@ if ($action === 'export_csv') {
             i.status,
             i.allowed_employment_status
         FROM csm_inventory i
+        LEFT JOIN csm_inventory_category c
+            ON c.item_category_code = i.item_category_code
         {$whereSql}
         ORDER BY i.created_at DESC
     ";
@@ -409,6 +412,7 @@ if ($action === 'export_csv') {
         'inventory_system_item_code',
         'item_description',
         'item_category_code',
+        'item_category_name',
         'cost_value',
         'unit',
         'quantity',
@@ -428,6 +432,7 @@ if ($action === 'export_csv') {
                 (string)($row['inventory_system_item_code'] ?? ''),
                 (string)($row['item_description'] ?? ''),
                 (string)($row['item_category_code'] ?? ''),
+                (string)($row['item_category_name'] ?? ''),
                 (string)($row['cost_value'] ?? '0'),
                 (string)($row['unit'] ?? ''),
                 (string)($row['quantity'] ?? '0'),
