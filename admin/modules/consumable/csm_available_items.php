@@ -102,6 +102,13 @@ $unitOptions = getUnitOptions();
         #inventoryTable {
             min-height: 220px;
         }
+        #inventoryTable .tabulator {
+            max-height: 72vh;
+        }
+        #inventoryTable .tabulator-tableholder {
+            max-height: 72vh;
+            overflow-y: auto;
+        }
         .qr-preview-wrap {
             display: flex;
             align-items: center;
@@ -1255,6 +1262,7 @@ function initTable() {
         ajaxURL: PROCESS_URL,
         ajaxParams: { action: 'list_recent_added' },
         ajaxConfig: 'POST',
+        height: '72vh',
         layout: 'fitColumns',
         responsiveLayout: 'collapse',
         placeholder: 'No recently added items found',
