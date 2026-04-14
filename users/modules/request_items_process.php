@@ -252,11 +252,21 @@ try {
             $statusId = get_current_user_status_id();
             $statusMap = get_employment_status_map();
             $positionCategory = get_current_user_position_category();
+            $hasRequisitionItems = table_exists('requisition_items');
 
             if (!in_array($type, ['AST', 'CSM'], true)) $type = 'AST';
 
             if ($type === 'AST') {
                 $where = "WHERE i.is_available = 1";
+                if ($hasRequisitionItems) {
+                    $where .= " AND NOT EXISTS (
+                        SELECT 1
+                        FROM requisition_items r
+                        WHERE r.module_type = 'AST'
+                          AND r.item_code = i.property_code
+                          AND LOWER(COALESCE(r.status, '')) = 'pending'
+                    )";
+                }
                 if ($search !== '') {
                     $searchEsc = _esc('%' . $search . '%');
                     $where .= " AND (i.property_code LIKE '{$searchEsc}' OR i.item_description LIKE '{$searchEsc}')";
@@ -301,7 +311,18 @@ try {
                     $searchEsc = _esc('%' . $search . '%');
                     $where .= " AND (c.inventory_system_item_code LIKE '{$searchEsc}' OR c.item_name LIKE '{$searchEsc}' OR c.item_description LIKE '{$searchEsc}')";
                 }
+                $pendingQtyExpr = $hasRequisitionItems
+                    ? "COALESCE((
+                            SELECT SUM(COALESCE(r.qty_requested, 0))
+                            FROM requisition_items r
+                            WHERE r.module_type = 'CSM'
+                              AND r.item_code = c.inventory_system_item_code
+                              AND LOWER(COALESCE(r.status, '')) = 'pending'
+                        ), 0)"
+                    : "0";
+
                 $sql = "SELECT c.inventory_system_item_code, c.item_name, c.item_description, c.current_unit_quantity,
+                               {$pendingQtyExpr} AS pending_qty,
                                c.item_category_img AS csm_category_img,
                                csm_cat.item_category_name AS csm_category_name
                         FROM csm_inventory c
@@ -315,6 +336,12 @@ try {
                 $rows = [];
                 while ($row = call_mysql_fetch_array($res)) {
                     $desc = $row['item_description'] ?: $row['item_name'];
+                    $currentQty = (int)($row['current_unit_quantity'] ?? 0);
+                    $pendingQty = (int)($row['pending_qty'] ?? 0);
+                    $availableQty = max(0, $currentQty - $pendingQty);
+                    if ($availableQty <= 0) {
+                        continue;
+                    }
                     $csmImg = !empty($row['csm_category_img']) ? $row['csm_category_img'] : '';
                     $csmPhotoUrl = null;
                     $csmThumbUrl = null;
@@ -330,7 +357,7 @@ try {
                     $rows[] = [
                         'item_code' => $row['inventory_system_item_code'],
                         'item_description' => $desc,
-                        'available_qty' => (int)($row['current_unit_quantity'] ?? 0),
+                        'available_qty' => $availableQty,
                         'unit' => '',
                         'allowed_status_names' => 'All',
                         'item_category_name' => $row['csm_category_name'] ?? '',
@@ -458,6 +485,19 @@ try {
                     json_response(['success' => false, 'message' => 'AST requests must be exactly 1 per Property Tag.'], 422);
                 }
                 $itemCodeEsc = _esc($itemCode);
+
+                if (table_exists('requisition_items')) {
+                    $pendingRes = call_mysql_query("SELECT requisition_id
+                                                   FROM requisition_items
+                                                   WHERE module_type = 'AST'
+                                                     AND item_code = '{$itemCodeEsc}'
+                                                     AND LOWER(COALESCE(status, '')) = 'pending'
+                                                   LIMIT 1");
+                    if ($pendingRes && call_mysql_fetch_array($pendingRes)) {
+                        json_response(['success' => false, 'message' => 'Item already has a pending request and is temporarily unavailable.'], 422);
+                    }
+                }
+
                 $invRes = call_mysql_query("SELECT property_code, item_description, is_available, allowed_employment_status 
                                             FROM ast_inventory WHERE property_code = '{$itemCodeEsc}' LIMIT 1");
                 $invRow = $invRes ? call_mysql_fetch_array($invRes) : null;
@@ -508,6 +548,16 @@ try {
                     json_response(['success' => false, 'message' => 'Item is not available for requisition.'], 422);
                 }
                 $availableQty = (int)($invRow['current_unit_quantity'] ?? 0);
+                if (table_exists('requisition_items')) {
+                    $pendingQtyRes = call_mysql_query("SELECT COALESCE(SUM(COALESCE(qty_requested, 0)), 0) AS pending_qty
+                                                      FROM requisition_items
+                                                      WHERE module_type = 'CSM'
+                                                        AND item_code = '{$itemCodeEsc}'
+                                                        AND LOWER(COALESCE(status, '')) = 'pending'");
+                    $pendingQtyRow = $pendingQtyRes ? call_mysql_fetch_array($pendingQtyRes) : null;
+                    $pendingQty = (int)($pendingQtyRow['pending_qty'] ?? 0);
+                    $availableQty = max(0, $availableQty - $pendingQty);
+                }
                 if ($qty > $availableQty) {
                     json_response(['success' => false, 'message' => 'Requested quantity exceeds available.'], 422);
                 }

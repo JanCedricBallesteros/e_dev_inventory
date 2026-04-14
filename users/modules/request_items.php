@@ -265,6 +265,23 @@ function loadRequestFacilityUnits() {
         const regularFacilities = facilities.filter(function(f){
             const code = String(f.facility_code || '').toUpperCase().trim();
             return code !== 'STOCKROOM';
+        }).sort(function(a, b) {
+            const aPersonal = (
+                String(a.is_personal || '0') === '1' ||
+                String(a.facility_code || '').toUpperCase().trim() === 'PERSONAL' ||
+                String(a.facility_name || '').toUpperCase().trim() === 'FOR PERSONAL USE'
+            ) ? 0 : 1;
+            const bPersonal = (
+                String(b.is_personal || '0') === '1' ||
+                String(b.facility_code || '').toUpperCase().trim() === 'PERSONAL' ||
+                String(b.facility_name || '').toUpperCase().trim() === 'FOR PERSONAL USE'
+            ) ? 0 : 1;
+            if (aPersonal !== bPersonal) {
+                return aPersonal - bPersonal;
+            }
+            const aName = String(a.facility_name || '').toLowerCase();
+            const bName = String(b.facility_name || '').toLowerCase();
+            return aName.localeCompare(bName);
         });
         if (regularFacilities.length === 0) {
             $('#reqModalMsg').removeClass('d-none').text('No available facility units for request.');
