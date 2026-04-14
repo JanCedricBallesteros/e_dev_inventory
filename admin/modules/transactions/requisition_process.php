@@ -115,6 +115,39 @@ function table_column_exists($table, $column) {
     return $res && mysqli_num_rows($res) > 0;
 }
 
+function ensure_personal_use_location() {
+    global $db_connect, $s_user_id;
+    if (!table_exists('facility_records_facilities')) {
+        return;
+    }
+
+    $actor = isset($s_user_id) ? (int)$s_user_id : 0;
+
+    $facilityRes = call_mysql_query("SELECT facility_id
+                                     FROM facility_records_facilities
+                                     WHERE UPPER(TRIM(COALESCE(facility_code, ''))) = 'PERSONAL'
+                                     ORDER BY facility_id ASC
+                                     LIMIT 1");
+    $facilityRow = $facilityRes ? call_mysql_fetch_array($facilityRes) : null;
+    $facilityId = (int)($facilityRow['facility_id'] ?? 0);
+    if ($facilityId <= 0) {
+        $okFacility = call_mysql_query("INSERT INTO facility_records_facilities
+                                        (facility_code, facility_name, facility_floor, status, created_by, updated_by)
+                                        VALUES (
+                                            'PERSONAL',
+                                            'For Personal use',
+                                            '" . _esc(json_encode(array('floors' => array()), JSON_UNESCAPED_UNICODE)) . "',
+                                            1,
+                                            " . ($actor > 0 ? $actor : "NULL") . ",
+                                            " . ($actor > 0 ? $actor : "NULL") . "
+                                        )");
+        if (!$okFacility) return;
+        $facilityId = (int)mysqli_insert_id($db_connect);
+    }
+
+    // Personal-use location intentionally has no units (stockroom-like behavior).
+}
+
 function safe_int($v) {
     $n = (int)$v;
     return $n > 0 ? $n : null;
@@ -164,6 +197,8 @@ $action = _post('action', '');
 if ($action === '') {
     json_response(['success' => false, 'message' => 'Missing action.'], 400);
 }
+
+ensure_personal_use_location();
 
 try {
     switch ($action) {
@@ -464,6 +499,30 @@ try {
             if (!table_exists('facility_records_units')) {
                 json_response(['success' => false, 'message' => 'Facility unit table is missing.'], 500);
             }
+            if (table_exists('facility_records_facilities')) {
+                $pf = call_mysql_query("SELECT facility_id
+                                        FROM facility_records_facilities
+                                        WHERE facility_id = {$facilityId}
+                                          AND UPPER(TRIM(COALESCE(facility_code, ''))) = 'PERSONAL'
+                                        LIMIT 1");
+                if ($pf && call_mysql_fetch_array($pf)) {
+                    json_response(array(
+                        'success' => true,
+                        'data' => array(
+                            array(
+                                'unit_id' => 0,
+                                'unit_code' => 'PERSONAL_USE',
+                                'unit_name' => 'For Personal use',
+                                'unit_type' => 'OTHER',
+                                'facility_unit_manager_user_id' => null,
+                                'facility_unit_manager_user_ids' => '',
+                                'unit_manager_names' => '',
+                                'unit_manager_name' => ''
+                            )
+                        )
+                    ));
+                }
+            }
             $hasUnitManager = table_column_exists('facility_records_units', 'facility_unit_manager_user_id');
             $hasUnitManagerLegacy = table_column_exists('facility_records_units', 'accountable_user_id');
             $unitManagerCol = $hasUnitManager ? 'facility_unit_manager_user_id' : ($hasUnitManagerLegacy ? 'accountable_user_id' : '');
@@ -542,7 +601,16 @@ try {
             $unitId = _int(_post('unit_id'));
             $remarks = _post('remarks');
 
-            if ($id <= 0 || $facilityId <= 0 || $unitId <= 0) {
+            $isPersonalFacility = false;
+            if ($facilityId > 0 && table_exists('facility_records_facilities')) {
+                $pf = call_mysql_query("SELECT facility_id
+                                        FROM facility_records_facilities
+                                        WHERE facility_id = {$facilityId}
+                                          AND UPPER(TRIM(COALESCE(facility_code, ''))) = 'PERSONAL'
+                                        LIMIT 1");
+                $isPersonalFacility = ($pf && call_mysql_fetch_array($pf)) ? true : false;
+            }
+            if ($id <= 0 || $facilityId <= 0 || ($unitId <= 0 && !$isPersonalFacility)) {
                 json_response(['success' => false, 'message' => 'Requisition, facility, and unit are required.'], 422);
             }
             if (!table_exists('facility_records_assignments')) {
@@ -590,9 +658,13 @@ try {
             $sourceItemId = 0;
             $itemUnit = '';
 
-            $unitRes = call_mysql_query("SELECT unit_id FROM facility_records_units WHERE unit_id = {$unitId} AND facility_id = {$facilityId} LIMIT 1");
-            if (!$unitRes || !call_mysql_fetch_array($unitRes)) {
-                json_response(['success' => false, 'message' => 'Selected unit does not belong to the facility.'], 422);
+            if (!$isPersonalFacility) {
+                $unitRes = call_mysql_query("SELECT unit_id FROM facility_records_units WHERE unit_id = {$unitId} AND facility_id = {$facilityId} LIMIT 1");
+                if (!$unitRes || !call_mysql_fetch_array($unitRes)) {
+                    json_response(['success' => false, 'message' => 'Selected unit does not belong to the facility.'], 422);
+                }
+            } else {
+                $unitId = 0;
             }
 
             $hasUnitManagersTable = table_exists('facility_records_unit_managers');
@@ -600,13 +672,13 @@ try {
             $hasUnitManagerLegacy = table_column_exists('facility_records_units', 'accountable_user_id');
             $unitManagerCol = $hasUnitManager ? 'facility_unit_manager_user_id' : ($hasUnitManagerLegacy ? 'accountable_user_id' : '');
             $managedByUserId = 0;
-            if ($hasUnitManagersTable) {
+            if (!$isPersonalFacility && $hasUnitManagersTable) {
                 $mgrRes = call_mysql_query("SELECT MIN(user_id) AS unit_manager_user_id
                                             FROM facility_records_unit_managers
                                             WHERE unit_id = {$unitId}");
                 $mgrRow = $mgrRes ? call_mysql_fetch_array($mgrRes) : null;
                 $managedByUserId = (int)($mgrRow['unit_manager_user_id'] ?? 0);
-            } elseif ($unitManagerCol !== '') {
+            } elseif (!$isPersonalFacility && $unitManagerCol !== '') {
                 $mgrRes = call_mysql_query("SELECT {$unitManagerCol} AS unit_manager_user_id
                                             FROM facility_records_units
                                             WHERE unit_id = {$unitId}
@@ -618,7 +690,11 @@ try {
             call_mysql_query("START TRANSACTION");
 
             if ($moduleType === 'AST') {
-                $invRes = call_mysql_query("SELECT item_id, property_code, item_description, unit FROM ast_inventory WHERE property_code = '{$itemCode}' LIMIT 1");
+                $invRes = call_mysql_query("SELECT item_id, property_code, item_description, unit
+                                            FROM ast_inventory
+                                            WHERE property_code = '{$itemCode}'
+                                            LIMIT 1
+                                            FOR UPDATE");
                 $inv = $invRes ? call_mysql_fetch_array($invRes) : null;
                 if (!$inv) {
                     call_mysql_query("ROLLBACK");
@@ -628,6 +704,18 @@ try {
                 $itemDescription = $inv['item_description'] ?: $itemDescription;
                 $itemUnit = (string)($inv['unit'] ?? '');
                 $qtyRequested = 1;
+
+                $activeRes = call_mysql_query("SELECT assignment_id
+                                               FROM facility_records_assignments
+                                               WHERE module_type = 'AST'
+                                                 AND source_item_id = {$sourceItemId}
+                                                 AND status <> 'RETURNED'
+                                               LIMIT 1
+                                               FOR UPDATE");
+                if ($activeRes && call_mysql_fetch_array($activeRes)) {
+                    call_mysql_query("ROLLBACK");
+                    json_response(['success' => false, 'message' => 'AST item is no longer claimable because it already has an active assignment.'], 409);
+                }
             } else {
                 $moduleType = 'CSM';
                 $invRes = call_mysql_query("SELECT inventory_id, inventory_system_item_code, item_description, item_name, current_unit_quantity
@@ -730,6 +818,58 @@ try {
                 'managed_by_user_id' => safe_int($managedByUserId)
             ));
             json_response(['success' => true, 'message' => 'Requisition claimed and assigned to facility unit.']);
+            break;
+
+        case 'decline_requisition_claim':
+            $id = _int(_post('requisition_id'));
+            if ($id <= 0) json_response(['success' => false, 'message' => 'Invalid requisition.'], 422);
+            $reqRes = call_mysql_query("SELECT * FROM requisition_items WHERE requisition_id = {$id} LIMIT 1");
+            $req = $reqRes ? call_mysql_fetch_array($reqRes) : null;
+            if (!$req) json_response(['success' => false, 'message' => 'Requisition not found.'], 404);
+            if (!can_access_module_type((string)($req['module_type'] ?? ''))) {
+                json_response(['success' => false, 'message' => 'Access denied for this module.'], 403);
+            }
+            $status = strtolower((string)($req['status'] ?? ''));
+            if (!in_array($status, ['approved', 'reviewed'], true)) {
+                json_response(['success' => false, 'message' => 'Only for-claiming requisitions can be moved back to storage.'], 409);
+            }
+            $hasClaimAssignment = table_column_exists('requisition_items', 'claim_assignment_id');
+            $hasClaimedAt = table_column_exists('requisition_items', 'claimed_at');
+            $hasReqIdInAssignments = table_column_exists('facility_records_assignments', 'requisition_id');
+            if (requisition_is_claimed($req, $hasClaimAssignment, $hasClaimedAt, $hasReqIdInAssignments)) {
+                json_response(['success' => false, 'message' => 'Requisition is already claimed.'], 409);
+            }
+
+            call_mysql_query("START TRANSACTION");
+            if (strtoupper((string)($req['module_type'] ?? '')) === 'AST') {
+                $itemCode = _esc((string)($req['item_code'] ?? ''));
+                $itemRes = call_mysql_query("SELECT item_id
+                                             FROM ast_inventory
+                                             WHERE property_code = '{$itemCode}'
+                                             LIMIT 1
+                                             FOR UPDATE");
+                $item = $itemRes ? call_mysql_fetch_array($itemRes) : null;
+                if ($item) {
+                    call_mysql_query("UPDATE ast_inventory SET is_available = 1 WHERE item_id = " . (int)$item['item_id'] . " LIMIT 1");
+                }
+            }
+            $ok = call_mysql_query("UPDATE requisition_items
+                                    SET status = 'not_claimed',
+                                        updated_at = NOW()
+                                    WHERE requisition_id = {$id}
+                                      AND status IN ('approved','reviewed')
+                                    LIMIT 1");
+            if (!$ok || mysqli_affected_rows($db_connect) < 1) {
+                call_mysql_query("ROLLBACK");
+                json_response(['success' => false, 'message' => 'Failed to move requisition back to storage.'], 500);
+            }
+            call_mysql_query("COMMIT");
+            activity_log_new("REQUISITION BACK TO STORAGE", "SUCCESS", array(
+                'requisition_id' => $id,
+                'module_type' => $req['module_type'] ?? '',
+                'item_code' => $req['item_code'] ?? ''
+            ));
+            json_response(['success' => true, 'message' => 'Requisition moved back to storage.']);
             break;
 
         case 'disapprove_requisition':

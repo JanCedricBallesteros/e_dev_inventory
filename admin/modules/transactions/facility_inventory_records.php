@@ -34,6 +34,9 @@ if (!(role_has("ADMIN") || $staffAccess)) {
         .facility-header.stockroom { background: #0f766e; }
         .facility-header.stockroom:hover { background: #0d9488; }
         .facility-header.stockroom.active { background: #0f766e; box-shadow: 0 2px 6px rgba(15,118,110,0.35); }
+        .facility-header.personal { background: #4c1d95; }
+        .facility-header.personal:hover { background: #5b21b6; }
+        .facility-header.personal.active { background: #4c1d95; box-shadow: 0 2px 6px rgba(76,29,149,0.35); }
         .stockroom-note { font-size: 0.82rem; opacity: 0.95; }
         .facility-code { font-family: monospace; font-weight: 700; }
         .floor-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
@@ -367,6 +370,16 @@ function isStockroomFacility(facility){
     return String(facility.facility_code || '').trim().toUpperCase() === 'STOCKROOM';
 }
 
+function isPersonalFacility(facility){
+    if (!facility) return false;
+    if (String(facility.is_personal || '0') === '1') return true;
+    return String(facility.facility_code || '').trim().toUpperCase() === 'PERSONAL';
+}
+
+function isSystemFacility(facility){
+    return isStockroomFacility(facility) || isPersonalFacility(facility);
+}
+
 function getRowFloorLabel(row){
     const floor = row ? (row.floor_label ?? row.unit_floor ?? row.unit_floor_label ?? row.floor ?? row.unit_floor_name) : '';
     let normalized = normalizeFloorKey(floor);
@@ -504,6 +517,9 @@ function applyInitialSelectionFromQuery(){
     if (isStockroomFacility(selectedFacility)) {
         $('#selectedUnitInfo').text((selectedFacility.facility_name || 'Stockroom') + ' — Unassigned Inventory');
         $('#selectedManagedBy').text('Managed By: System');
+    } else if (isPersonalFacility(selectedFacility)) {
+        $('#selectedUnitInfo').text((selectedFacility.facility_name || 'For Personal use') + ' — Personal Assignments');
+        $('#selectedManagedBy').text('Managed By: System');
     } else {
         $('#selectedUnitInfo').text((selectedFacility.facility_name || '') + ' (' + (selectedFacility.facility_code || '') + ') — All Units');
         $('#selectedManagedBy').text('Managed By: Multiple');
@@ -538,6 +554,7 @@ function renderFacilities(){
     facilityList.forEach(function(f){
         const isActive = selectedFacility && String(selectedFacility.facility_id) === String(f.facility_id);
         const isStockroom = isStockroomFacility(f);
+        const isPersonal = isPersonalFacility(f);
         const facilityCode = escapeHtml(f.facility_code || '');
         const facilityName = escapeHtml(f.facility_name || '');
         const totalItems = parseInt(f.active_item_count || 0, 10) || 0;
@@ -548,24 +565,24 @@ function renderFacilities(){
             : '<span class="floor-empty">No floors set</span>';
         wrap.append(`
             <div class="facility-group">
-                <div class="facility-header ${isActive ? 'active' : ''} ${isStockroom ? 'stockroom' : ''}" data-id="${f.facility_id}">
+                <div class="facility-header ${isActive ? 'active' : ''} ${isStockroom ? 'stockroom' : ''} ${isPersonal ? 'personal' : ''}" data-id="${f.facility_id}">
                     <div class="facility-meta">
                         <div class="title-row">
-                            <i class="bi ${isStockroom ? 'bi-box-seam' : 'bi-building'}"></i>
+                            <i class="bi ${(isStockroom || isPersonal) ? 'bi-box-seam' : 'bi-building'}"></i>
                             <span>${facilityName}</span>
                             <span class="badge bg-light text-dark facility-code">${facilityCode}</span>
-                            ${isStockroom ? '<span class="badge bg-warning text-dark">SYSTEM</span>' : ''}
+                            ${(isStockroom || isPersonal) ? '<span class="badge bg-warning text-dark">SYSTEM</span>' : ''}
                         </div>
                         <div class="small" style="opacity:0.9;">${isStockroom ? 'No units' : (totalUnits + ' unit(s)')} &middot; ${totalItems} item(s)</div>
-                        ${isStockroom ? '<div class="stockroom-note">System-managed default location for unassigned inventory.</div>' : '<div class="floor-badges">' + floorBadges + '</div>'}
+                        ${isStockroom ? '<div class="stockroom-note">System-managed default location for unassigned inventory.</div>' : (isPersonal ? '<div class="stockroom-note">System-managed location for personal-use assignments.</div>' : '<div class="floor-badges">' + floorBadges + '</div>')}
                     </div>
-                    ${isStockroom ? '' : `<div class="facility-actions">
+                    ${(isStockroom || isPersonal) ? '' : `<div class="facility-actions">
                         <button class="btn btn-light btn-sm btn-add-unit" data-id="${f.facility_id}"><i class="bi bi-plus-lg"></i> Add Unit</button>
                         <button class="btn btn-outline-light btn-sm btn-edit-facility" data-id="${f.facility_id}"><i class="bi bi-pencil"></i></button>
                     </div>`}
                 </div>
                 <div class="facility-units mt-2" data-facility-id="${f.facility_id}">
-                    ${isActive ? (isStockroom ? '<div class="small-muted">Stockroom has no units.</div>' : '<div class="small-muted">Loading units...</div>') : (isStockroom ? '<div class="small-muted">Stockroom has no units.</div>' : '<div class="small-muted">Select to view units.</div>')}
+                    ${isActive ? ((isStockroom || isPersonal) ? '<div class="small-muted">This system location has no units.</div>' : '<div class="small-muted">Loading units...</div>') : ((isStockroom || isPersonal) ? '<div class="small-muted">This system location has no units.</div>' : '<div class="small-muted">Select to view units.</div>')}
                 </div>
             </div>
         `);
@@ -574,7 +591,7 @@ function renderFacilities(){
 
 function loadUnits(cb){
     if (!selectedFacility) return;
-    if (isStockroomFacility(selectedFacility)) {
+    if (isStockroomFacility(selectedFacility) || isPersonalFacility(selectedFacility)) {
         unitList = [];
         selectedUnit = null;
         renderUnits();
@@ -723,10 +740,11 @@ function renderUnits(){
     if (!selectedFacility) return;
     const container = $(`.facility-units[data-facility-id="${selectedFacility.facility_id}"]`);
     if (!container.length) return;
-    if (isStockroomFacility(selectedFacility)) {
-        container.html('<div class="small-muted">Stockroom is a system location and does not contain units.</div>');
+    if (isStockroomFacility(selectedFacility) || isPersonalFacility(selectedFacility)) {
+        container.html('<div class="small-muted">This system location does not contain units.</div>');
         return;
     }
+    const isPersonal = isPersonalFacility(selectedFacility);
     container.empty();
     const facilityFloors = Array.isArray(selectedFacility.floors) ? selectedFacility.floors : [];
     const groups = {};
@@ -774,9 +792,7 @@ function renderUnits(){
                     <div class="unit-card ${active}" data-id="${u.unit_id}">
                         <div class="d-flex justify-content-between align-items-center">
                             <div class="fw-semibold">${unitCode} - ${unitName} (${u.active_item_count || 0})</div>
-                            <button class="btn btn-outline-secondary btn-sm btn-edit-unit" data-id="${u.unit_id}" title="Edit Unit">
-                                <i class="bi bi-pencil"></i>
-                            </button>
+                            ${isPersonal ? '<span class="badge bg-warning text-dark">SYSTEM</span>' : `<button class="btn btn-outline-secondary btn-sm btn-edit-unit" data-id="${u.unit_id}" title="Edit Unit"><i class="bi bi-pencil"></i></button>`}
                         </div>
                         ${officer ? `<div class="small-muted mt-1">Manager: ${officer}</div>` : ''}
                     </div>
@@ -976,6 +992,9 @@ $(document).ready(function(){
         if (selectedFacility && isStockroomFacility(selectedFacility)) {
             $('#selectedUnitInfo').text((selectedFacility.facility_name || 'Stockroom') + ' — Unassigned Inventory');
             $('#selectedManagedBy').text('Managed By: System');
+        } else if (selectedFacility && isPersonalFacility(selectedFacility)) {
+            $('#selectedUnitInfo').text((selectedFacility.facility_name || 'For Personal use') + ' — Personal Assignments');
+            $('#selectedManagedBy').text('Managed By: System');
         } else {
             $('#selectedUnitInfo').text(selectedFacility ? (selectedFacility.facility_name || '') + ' (' + (selectedFacility.facility_code || '') + ') — All Units' : '');
             $('#selectedManagedBy').text('Managed By: Multiple');
@@ -1029,8 +1048,8 @@ $(document).ready(function(){
         const id = $(this).data('id');
         const f = facilityList.find(x => String(x.facility_id) === String(id));
         if (!f) return;
-        if (isStockroomFacility(f)) {
-            notifyError('Stockroom is system-managed and cannot be edited.');
+        if (isSystemFacility(f)) {
+            notifyError((f.facility_name || 'This facility') + ' is system-managed and cannot be edited.');
             return;
         }
         $('#facilityId').val(f.facility_id);
@@ -1088,8 +1107,8 @@ $(document).ready(function(){
         e.stopPropagation();
         const id = $(this).data('id');
         selectedFacility = facilityList.find(x => String(x.facility_id) === String(id)) || null;
-        if (selectedFacility && isStockroomFacility(selectedFacility)) {
-            notifyError('Stockroom has no units.');
+        if (selectedFacility && isSystemFacility(selectedFacility)) {
+            notifyError((selectedFacility.facility_name || 'This facility') + ' is system-managed and cannot be modified.');
             return;
         }
         facilityItems = [];
@@ -1131,8 +1150,8 @@ $(document).ready(function(){
     $('#facilityList').on('click', '.btn-edit-unit', function(e){
         e.preventDefault();
         e.stopPropagation();
-        if (selectedFacility && isStockroomFacility(selectedFacility)) {
-            notifyError('Stockroom has no units.');
+        if (selectedFacility && isSystemFacility(selectedFacility)) {
+            notifyError((selectedFacility.facility_name || 'This facility') + ' is system-managed and cannot be modified.');
             return;
         }
         const id = $(this).data('id');
@@ -1170,8 +1189,8 @@ $(document).ready(function(){
             $('#unitMsg').html('<div class="alert alert-danger mb-0">Select facility first.</div>');
             return;
         }
-        if (isStockroomFacility(selectedFacility)) {
-            $('#unitMsg').html('<div class="alert alert-danger mb-0">Stockroom has no units.</div>');
+        if (isSystemFacility(selectedFacility)) {
+            $('#unitMsg').html('<div class="alert alert-danger mb-0">' + escapeHtml(selectedFacility.facility_name || 'This facility') + ' is system-managed and cannot be modified.</div>');
             return;
         }
         const unitIdVal = $('#unitId').val() || $('#unitModal').data('edit-id') || '';

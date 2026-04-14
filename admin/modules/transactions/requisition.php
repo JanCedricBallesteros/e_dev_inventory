@@ -83,6 +83,16 @@ if (($type === 'AST' && !$canAST) || ($type === 'CSM' && !$canCSM)) {
             word-break: break-word;
             line-height: 1.25;
         }
+        .req-actions-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+            width: 100%;
+        }
+        .req-actions-stack .btn {
+            width: 100%;
+            white-space: nowrap;
+        }
         .tabulator { font-size: 0.875rem; }
     </style>
 </head>
@@ -249,6 +259,27 @@ if (($type === 'AST' && !$canAST) || ($type === 'CSM' && !$canCSM)) {
             <div class="modal-footer">
                 <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
                 <button class="btn btn-primary btn-sm" id="btnConfirmClaim">Confirm Claim</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="backStorageModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-semibold"><i class="bi bi-exclamation-triangle text-warning"></i>&ensp;Move Back To Storage</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="backStorageReqId">
+                <p class="mb-2">Move this requisition back to storage?</p>
+                <div class="alert alert-warning mb-0" id="backStorageInfo">This will update the requisition workflow status.</div>
+                <div id="backStorageMsg" class="alert alert-danger d-none mt-2 mb-0"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                <button class="btn btn-outline-secondary btn-sm" id="btnConfirmBackStorage">Confirm Move</button>
             </div>
         </div>
     </div>
@@ -472,13 +503,23 @@ function initReqTable() {
                 if (wf === 'not_claimed') {
                     return `<span class="badge bg-secondary">Not Claimed</span>`;
                 }
-                const canApprove = wf === 'pending' || wf === 'reviewed';
-                const canClaim = wf === 'for_claiming' || wf === 'approved';
-                return `
-                    <button class="btn btn-sm btn-success me-1 btn-approve" data-id="${id}" ${canApprove ? '' : 'disabled'}>Approve</button>
-                    <button class="btn btn-sm btn-danger btn-disapprove" data-id="${id}" ${canApprove ? '' : 'disabled'}>Disapprove</button>
-                    ${canClaim ? `<button class="btn btn-sm btn-primary mt-1 btn-claim" data-id="${id}">Claim</button>` : ''}
-                `;
+                if (wf === 'pending' || wf === 'reviewed') {
+                    return `
+                        <div class="req-actions-stack">
+                            <button class="btn btn-sm btn-success btn-approve" data-id="${id}">Approve</button>
+                            <button class="btn btn-sm btn-danger btn-disapprove" data-id="${id}">Disapprove</button>
+                        </div>
+                    `;
+                }
+                if (wf === 'for_claiming' || wf === 'approved') {
+                    return `
+                        <div class="req-actions-stack">
+                            <button class="btn btn-sm btn-primary btn-claim" data-id="${id}">Mark Claimed</button>
+                            <button class="btn btn-sm btn-outline-secondary btn-back-storage" data-id="${id}">Back to Storage</button>
+                        </div>
+                    `;
+                }
+                return `<span class="badge bg-light text-dark border">No Actions</span>`;
             }}
         ]
     });
@@ -564,6 +605,39 @@ function initReqTable() {
         $('#claimManagedByName').val('');
         $('#claimMsg').html('');
         $('#claimModal').modal('show');
+    });
+
+    $('#reqTable').on('click', '.btn-back-storage', function() {
+        const id = $(this).data('id');
+        if (!id) return;
+        $('#backStorageReqId').val(String(id));
+        $('#backStorageInfo').text('This will update requisition #' + String(id) + ' and move it back to storage.');
+        $('#backStorageMsg').addClass('d-none').text('');
+        $('#backStorageModal').modal('show');
+    });
+
+    $('#btnConfirmBackStorage').on('click', function(){
+        const id = $('#backStorageReqId').val();
+        if (!id) {
+            $('#backStorageMsg').removeClass('d-none').text('Invalid requisition id.');
+            return;
+        }
+        const $btn = $(this);
+        $btn.prop('disabled', true).text('Processing...');
+        $.post(PROCESS_URL, { action: 'decline_requisition_claim', requisition_id: id }, function(res){
+            if (res && res.success) {
+                $('#backStorageModal').modal('hide');
+                loadReqData();
+                success_notif(res.message || 'Requisition moved back to storage.');
+            } else {
+                $('#backStorageMsg').removeClass('d-none').text((res && res.message) ? res.message : 'Unable to move requisition back to storage.');
+            }
+        }, 'json').fail(function(xhr){
+            const msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Server error while updating requisition.';
+            $('#backStorageMsg').removeClass('d-none').text(msg);
+        }).always(function(){
+            $btn.prop('disabled', false).text('Confirm Move');
+        });
     });
 
     $('#claimFacilityId').on('change', function(){

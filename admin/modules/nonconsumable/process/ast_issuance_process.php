@@ -78,6 +78,16 @@ function stockroom_name()
     return 'Stockroom';
 }
 
+function personal_code()
+{
+    return 'PERSONAL';
+}
+
+function personal_name()
+{
+    return 'For Personal use';
+}
+
 function get_stockroom_facility($ensure = true)
 {
     global $s_user_id;
@@ -111,6 +121,39 @@ function get_stockroom_facility($ensure = true)
     );
 }
 
+function get_personal_facility($ensure = true)
+{
+    global $db_connect, $s_user_id;
+    $code = personal_code();
+    $res = call_mysql_query("SELECT facility_id, facility_code, facility_name
+                             FROM facility_records_facilities
+                             WHERE UPPER(TRIM(facility_code)) = '" . _esc($code) . "'
+                             ORDER BY facility_id ASC
+                             LIMIT 1");
+    $row = $res ? call_mysql_fetch_array($res) : null;
+    if ($row) return $row;
+    if (!$ensure) return null;
+
+    $actor = isset($s_user_id) ? (int)$s_user_id : 0;
+    $ok = call_mysql_query("INSERT INTO facility_records_facilities
+                            (facility_code, facility_name, facility_floor, status, created_by, updated_by)
+                            VALUES (
+                                '" . _esc($code) . "',
+                                '" . _esc(personal_name()) . "',
+                                '" . _esc(json_encode(array('floors' => array()), JSON_UNESCAPED_UNICODE)) . "',
+                                1,
+                                " . ($actor > 0 ? $actor : "NULL") . ",
+                                " . ($actor > 0 ? $actor : "NULL") . "
+                            )");
+    if (!$ok) return null;
+
+    return array(
+        'facility_id' => (int)mysqli_insert_id($db_connect),
+        'facility_code' => $code,
+        'facility_name' => personal_name()
+    );
+}
+
 function is_stockroom_facility($facility_id)
 {
     $facility_id = (int)$facility_id;
@@ -119,6 +162,18 @@ function is_stockroom_facility($facility_id)
                              FROM facility_records_facilities
                              WHERE facility_id = {$facility_id}
                                AND UPPER(TRIM(facility_code)) = '" . _esc(stockroom_code()) . "'
+                             LIMIT 1");
+    return ($res && call_mysql_fetch_array($res)) ? true : false;
+}
+
+function is_personal_facility($facility_id)
+{
+    $facility_id = (int)$facility_id;
+    if ($facility_id <= 0) return false;
+    $res = call_mysql_query("SELECT facility_id
+                             FROM facility_records_facilities
+                             WHERE facility_id = {$facility_id}
+                               AND UPPER(TRIM(facility_code)) = '" . _esc(personal_code()) . "'
                              LIMIT 1");
     return ($res && call_mysql_fetch_array($res)) ? true : false;
 }
@@ -166,6 +221,7 @@ if (!require_core_tables()) {
 }
 
 get_stockroom_facility(true);
+get_personal_facility(true);
 
 try {
     switch ($action) {
@@ -301,7 +357,11 @@ try {
                     FROM facility_records_facilities f
                     WHERE f.status = 1 OR UPPER(TRIM(f.facility_code)) = '" . _esc(stockroom_code()) . "'
                     ORDER BY
-                        CASE WHEN UPPER(TRIM(f.facility_code)) = '" . _esc(stockroom_code()) . "' THEN 0 ELSE 1 END,
+                        CASE
+                            WHEN UPPER(TRIM(f.facility_code)) = '" . _esc(stockroom_code()) . "' THEN 0
+                            WHEN UPPER(TRIM(f.facility_code)) = '" . _esc(personal_code()) . "' THEN 1
+                            ELSE 2
+                        END,
                         f.facility_name ASC";
             $res = call_mysql_query($sql);
             $rows = array();
@@ -320,6 +380,21 @@ try {
             }
             if (is_stockroom_facility($facility_id)) {
                 json_response(array('success' => true, 'data' => array()));
+            }
+            if (is_personal_facility($facility_id)) {
+                json_response(array('success' => true, 'data' => array(
+                    array(
+                        'unit_id' => 0,
+                        'facility_id' => $facility_id,
+                        'unit_code' => 'PERSONAL_USE',
+                        'unit_name' => personal_name(),
+                        'floor_label' => '',
+                        'status' => 1,
+                        'managed_by_user_id' => null,
+                        'manager_user_ids' => '',
+                        'manager_names' => ''
+                    )
+                )));
             }
 
             $hasUnitManagersTable = table_exists('facility_records_unit_managers');
@@ -434,8 +509,9 @@ try {
                 return _int($id, 0);
             }, $extraManagersPayload))));
 
-            if ($facility_id <= 0 || $unit_id <= 0) {
-                json_response(array('success' => false, 'message' => 'Facility and unit are required.'), 422);
+            $isPersonalFacility = is_personal_facility($facility_id);
+            if ($facility_id <= 0 || ($unit_id <= 0 && !$isPersonalFacility)) {
+                json_response(array('success' => false, 'message' => 'Facility / Unit is required.'), 422);
             }
             if ($issued_to_user_id <= 0) {
                 json_response(array('success' => false, 'message' => 'Issued To is required.'), 422);
@@ -444,9 +520,13 @@ try {
                 json_response(array('success' => false, 'message' => 'Stockroom has no issuable units. Please select a regular facility unit.'), 422);
             }
 
-            $unitRes = call_mysql_query("SELECT unit_id FROM facility_records_units WHERE unit_id = {$unit_id} AND facility_id = {$facility_id} LIMIT 1");
-            if (!$unitRes || !call_mysql_fetch_array($unitRes)) {
-                json_response(array('success' => false, 'message' => 'Selected unit does not belong to the selected facility.'), 422);
+            if (!$isPersonalFacility) {
+                $unitRes = call_mysql_query("SELECT unit_id FROM facility_records_units WHERE unit_id = {$unit_id} AND facility_id = {$facility_id} LIMIT 1");
+                if (!$unitRes || !call_mysql_fetch_array($unitRes)) {
+                    json_response(array('success' => false, 'message' => 'Selected unit does not belong to the selected facility.'), 422);
+                }
+            } else {
+                $unit_id = 0;
             }
 
             $normalizedItems = array();
@@ -478,13 +558,13 @@ try {
             $hasUnitManager = column_exists('facility_records_units', 'facility_unit_manager_user_id');
             $hasUnitManagerLegacy = column_exists('facility_records_units', 'accountable_user_id');
             $unitManagerCol = $hasUnitManager ? 'facility_unit_manager_user_id' : ($hasUnitManagerLegacy ? 'accountable_user_id' : '');
-            if ($hasUnitManagersTable) {
+            if (!$isPersonalFacility && $hasUnitManagersTable) {
                 $mgrRes = call_mysql_query("SELECT MIN(user_id) AS unit_manager_user_id
                                             FROM facility_records_unit_managers
                                             WHERE unit_id = {$unit_id}");
                 $mgrRow = $mgrRes ? call_mysql_fetch_array($mgrRes) : null;
                 $managed_by_user_id = (int)($mgrRow['unit_manager_user_id'] ?? 0);
-            } elseif ($unitManagerCol !== '') {
+            } elseif (!$isPersonalFacility && $unitManagerCol !== '') {
                 $mgrRes = call_mysql_query("SELECT {$unitManagerCol} AS unit_manager_user_id
                                             FROM facility_records_units
                                             WHERE unit_id = {$unit_id}

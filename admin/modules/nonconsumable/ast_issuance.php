@@ -528,6 +528,7 @@ function loadFacilityUnitOptions() {
                             '<option value="' + escapeHtml(value) + '"' +
                             ' data-facility-id="' + facilityId + '"' +
                             ' data-unit-id="' + unitId + '"' +
+                            ' data-is-personal="' + (unitId === 0 ? '1' : '0') + '"' +
                             ' data-managed-by="' + managedBy + '"' +
                             ' data-manager-user-ids="' + escapeHtml(managerUserIds) + '"' +
                             ' data-manager-names="' + escapeHtml(managerNames) + '">' +
@@ -769,11 +770,12 @@ $(document).ready(function(){
         selectedUnitMeta = {
             facility_id: Number($opt.data('facility-id') || 0),
             unit_id: Number($opt.data('unit-id') || 0),
+            is_personal: Number($opt.data('is-personal') || 0) === 1 ? 1 : 0,
             managed_by_user_id: Number($opt.data('managed-by') || 0),
             manager_names: String($opt.attr('data-manager-names') || '').trim(),
             manager_user_ids: parseManagerIds($opt.attr('data-manager-user-ids') || '', $opt.data('managed-by'))
         };
-        if ((selectedUnitMeta.facility_id || 0) <= 0 || (selectedUnitMeta.unit_id || 0) <= 0) {
+        if ((selectedUnitMeta.facility_id || 0) <= 0 || ((selectedUnitMeta.unit_id || 0) <= 0 && selectedUnitMeta.is_personal !== 1)) {
             selectedUnitMeta = null;
             $('#unitManagersDisplay').val('-');
             if (typeof window.__astIssueEnforceExtraManagers === 'function') window.__astIssueEnforceExtraManagers();
@@ -790,6 +792,7 @@ $(document).ready(function(){
         const items = collectSelectedItemsPayload();
         const facilityId = Number((selectedUnitMeta && selectedUnitMeta.facility_id) || 0);
         const unitId = Number((selectedUnitMeta && selectedUnitMeta.unit_id) || 0);
+        const isPersonal = Number((selectedUnitMeta && selectedUnitMeta.is_personal) || 0) === 1;
         const issuedTo = String($('#issuedToUserId').val() || '').trim();
         const extraManagers = $('#extraManagerUserIds').val() || [];
 
@@ -797,7 +800,7 @@ $(document).ready(function(){
             showIssueMsg('danger', 'Select at least one item before issuing.');
             return;
         }
-        if (facilityId <= 0 || unitId <= 0) {
+        if (facilityId <= 0 || (unitId <= 0 && !isPersonal)) {
             showIssueMsg('danger', 'Facility / Unit is required.');
             return;
         }

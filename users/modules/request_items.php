@@ -554,8 +554,10 @@ $(document).ready(function() {
             return;
         }
         const $picked = $('#reqFacilityUnit option:selected');
-        const facilityId = String($picked.data('facility-id') || '');
-        const unitId = String($picked.data('unit-id') || '');
+        const facilityRaw = $picked.attr('data-facility-id');
+        const unitRaw = $picked.attr('data-unit-id');
+        const facilityId = facilityRaw != null ? String(facilityRaw) : '';
+        const unitId = unitRaw != null ? String(unitRaw) : '';
         if (!facilityId || !unitId) {
             $('#reqModalMsg').removeClass('d-none').text('Facility / Unit is required.');
             return;
@@ -592,6 +594,5 @@ $(document).ready(function() {
 });
 </script>
 </html>
-
 
 

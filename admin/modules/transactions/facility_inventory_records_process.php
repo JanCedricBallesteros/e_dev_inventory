@@ -118,6 +118,26 @@ function fr_stockroom_name()
     return 'Stockroom';
 }
 
+function fr_personal_code()
+{
+    return 'PERSONAL';
+}
+
+function fr_personal_name()
+{
+    return 'For Personal use';
+}
+
+function fr_personal_unit_code()
+{
+    return 'PERSONAL_USE';
+}
+
+function fr_personal_unit_name()
+{
+    return 'For Personal use';
+}
+
 function fr_get_stockroom_facility($ensure = true)
 {
     global $db_connect, $s_user_id;
@@ -153,6 +173,41 @@ function fr_get_stockroom_facility($ensure = true)
     );
 }
 
+function fr_get_personal_facility($ensure = true)
+{
+    global $db_connect, $s_user_id;
+    $code = fr_personal_code();
+    $res = call_mysql_query("SELECT facility_id, facility_code, facility_name, facility_floor, status
+                             FROM facility_records_facilities
+                             WHERE UPPER(TRIM(facility_code)) = '" . _esc($code) . "'
+                             ORDER BY facility_id ASC
+                             LIMIT 1");
+    $row = $res ? call_mysql_fetch_array($res) : null;
+    if ($row) return $row;
+    if (!$ensure) return null;
+
+    $creator = isset($s_user_id) ? (int)$s_user_id : 0;
+    $ok = call_mysql_query("INSERT INTO facility_records_facilities
+                            (facility_code, facility_name, facility_floor, status, created_by, updated_by)
+                            VALUES (
+                                '" . _esc($code) . "',
+                                '" . _esc(fr_personal_name()) . "',
+                                '" . _esc(json_encode(array('floors' => array()), JSON_UNESCAPED_UNICODE)) . "',
+                                1,
+                                " . ($creator > 0 ? $creator : "NULL") . ",
+                                " . ($creator > 0 ? $creator : "NULL") . "
+                            )");
+    if (!$ok) return null;
+    $id = (int)mysqli_insert_id($db_connect);
+    return array(
+        'facility_id' => $id,
+        'facility_code' => $code,
+        'facility_name' => fr_personal_name(),
+        'facility_floor' => json_encode(array('floors' => array()), JSON_UNESCAPED_UNICODE),
+        'status' => 1
+    );
+}
+
 function fr_is_stockroom_facility_id($facility_id)
 {
     $facility_id = (int)$facility_id;
@@ -161,6 +216,36 @@ function fr_is_stockroom_facility_id($facility_id)
                              FROM facility_records_facilities
                              WHERE facility_id = {$facility_id}
                                AND UPPER(TRIM(facility_code)) = '" . _esc(fr_stockroom_code()) . "'
+                             LIMIT 1");
+    return ($res && call_mysql_fetch_array($res)) ? true : false;
+}
+
+function fr_is_personal_facility_id($facility_id)
+{
+    $facility_id = (int)$facility_id;
+    if ($facility_id <= 0) return false;
+    $res = call_mysql_query("SELECT facility_id
+                             FROM facility_records_facilities
+                             WHERE facility_id = {$facility_id}
+                               AND UPPER(TRIM(facility_code)) = '" . _esc(fr_personal_code()) . "'
+                             LIMIT 1");
+    return ($res && call_mysql_fetch_array($res)) ? true : false;
+}
+
+function fr_is_system_facility_id($facility_id)
+{
+    return fr_is_stockroom_facility_id($facility_id) || fr_is_personal_facility_id($facility_id);
+}
+
+function fr_is_personal_unit_id($unit_id)
+{
+    $unit_id = (int)$unit_id;
+    if ($unit_id <= 0) return false;
+    $res = call_mysql_query("SELECT u.unit_id
+                             FROM facility_records_units u
+                             INNER JOIN facility_records_facilities f ON f.facility_id = u.facility_id
+                             WHERE u.unit_id = {$unit_id}
+                               AND UPPER(TRIM(f.facility_code)) = '" . _esc(fr_personal_code()) . "'
                              LIMIT 1");
     return ($res && call_mysql_fetch_array($res)) ? true : false;
 }
@@ -233,6 +318,7 @@ if (!fr_required_tables_ready()) {
 
 // Ensure system stockroom exists for default-location behavior.
 fr_get_stockroom_facility(true);
+fr_get_personal_facility(true);
 
 try {
     switch ($action) {
@@ -292,17 +378,25 @@ try {
                         ) AS active_item_count
                     FROM facility_records_facilities f
                     ORDER BY
-                        CASE WHEN UPPER(TRIM(f.facility_code)) = '" . _esc(fr_stockroom_code()) . "' THEN 0 ELSE 1 END,
+                        CASE
+                            WHEN UPPER(TRIM(f.facility_code)) = '" . _esc(fr_stockroom_code()) . "' THEN 0
+                            WHEN UPPER(TRIM(f.facility_code)) = '" . _esc(fr_personal_code()) . "' THEN 1
+                            ELSE 2
+                        END,
                         f.facility_name ASC";
             $res = call_mysql_query($sql);
             $rows = array();
             if ($res) {
                 while ($row = call_mysql_fetch_array($res)) {
                     $isStockroom = (strtoupper(trim((string)($row['facility_code'] ?? ''))) === fr_stockroom_code());
+                    $isPersonal = (strtoupper(trim((string)($row['facility_code'] ?? ''))) === fr_personal_code());
                     $row['is_stockroom'] = $isStockroom ? 1 : 0;
+                    $row['is_personal'] = $isPersonal ? 1 : 0;
                     if ($isStockroom) {
                         $row['unit_count'] = 0;
                         $row['active_item_count'] = fr_count_stockroom_items();
+                    } elseif ($isPersonal) {
+                        $row['unit_count'] = 0;
                     }
                     $rows[] = $row;
                 }
@@ -334,13 +428,13 @@ try {
             if ($facility_code === '' || $facility_name === '') {
                 json_response(array('success' => false, 'message' => 'Facility code and name are required.'), 422);
             }
-            if (strtoupper(trim($facility_code)) === fr_stockroom_code()) {
-                json_response(array('success' => false, 'message' => 'Stockroom is system-managed and cannot be edited manually.'), 403);
+            if (in_array(strtoupper(trim($facility_code)), array(fr_stockroom_code(), fr_personal_code()), true)) {
+                json_response(array('success' => false, 'message' => 'System-managed facilities cannot be edited manually.'), 403);
             }
 
             if ($facility_id > 0) {
-                if (fr_is_stockroom_facility_id($facility_id)) {
-                    json_response(array('success' => false, 'message' => 'Stockroom is system-managed and cannot be edited manually.'), 403);
+                if (fr_is_system_facility_id($facility_id)) {
+                    json_response(array('success' => false, 'message' => 'System-managed facilities cannot be edited manually.'), 403);
                 }
                 $dup = call_mysql_query("SELECT facility_id FROM facility_records_facilities WHERE facility_code = '" . _esc($facility_code) . "' AND facility_id <> {$facility_id} LIMIT 1");
                 if ($dup && mysqli_num_rows($dup) > 0) {
@@ -373,6 +467,9 @@ try {
             $facility_id = _int(_post('facility_id'), 0);
             if ($facility_id <= 0) json_response(array('success' => false, 'message' => 'Facility is required.'), 422);
             if (fr_is_stockroom_facility_id($facility_id)) {
+                json_response(array('success' => true, 'data' => array()));
+            }
+            if (fr_is_personal_facility_id($facility_id)) {
                 json_response(array('success' => true, 'data' => array()));
             }
             $hasUnitManager = fr_column_exists('facility_records_units', 'facility_unit_manager_user_id');
@@ -461,6 +558,12 @@ try {
             }
             if (fr_is_stockroom_facility_id($facility_id)) {
                 json_response(array('success' => false, 'message' => 'Stockroom has no units and cannot be modified.'), 403);
+            }
+            if (fr_is_personal_facility_id($facility_id)) {
+                json_response(array('success' => false, 'message' => 'For Personal use unit is system-managed and cannot be modified.'), 403);
+            }
+            if ($unit_id > 0 && fr_is_personal_unit_id($unit_id)) {
+                json_response(array('success' => false, 'message' => 'For Personal use unit is system-managed and cannot be modified.'), 403);
             }
             if (!in_array($unit_type, $allowed, true)) {
                 $unit_type = 'ROOM';

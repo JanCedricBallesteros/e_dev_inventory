@@ -37,6 +37,39 @@ function table_column_exists($table, $column) {
     $res = call_mysql_query("SHOW COLUMNS FROM `" . _esc($table) . "` LIKE '" . _esc($column) . "'");
     return $res && mysqli_num_rows($res) > 0;
 }
+
+function ensure_personal_use_location() {
+    global $db_connect, $s_user_id;
+    if (!table_exists('facility_records_facilities')) {
+        return;
+    }
+
+    $creator = isset($s_user_id) ? (int)$s_user_id : 0;
+
+    $facilityRes = call_mysql_query("SELECT facility_id
+                                     FROM facility_records_facilities
+                                     WHERE UPPER(TRIM(COALESCE(facility_code, ''))) = 'PERSONAL'
+                                     ORDER BY facility_id ASC
+                                     LIMIT 1");
+    $facilityRow = $facilityRes ? call_mysql_fetch_array($facilityRes) : null;
+    $facilityId = (int)($facilityRow['facility_id'] ?? 0);
+    if ($facilityId <= 0) {
+        $okFacility = call_mysql_query("INSERT INTO facility_records_facilities
+                                        (facility_code, facility_name, facility_floor, status, created_by, updated_by)
+                                        VALUES (
+                                            'PERSONAL',
+                                            'For Personal use',
+                                            '" . _esc(json_encode(array('floors' => array()), JSON_UNESCAPED_UNICODE)) . "',
+                                            1,
+                                            " . ($creator > 0 ? $creator : "NULL") . ",
+                                            " . ($creator > 0 ? $creator : "NULL") . "
+                                        )");
+        if (!$okFacility) return;
+        $facilityId = (int)mysqli_insert_id($db_connect);
+    }
+
+    // Personal-use location intentionally has no units (stockroom-like behavior).
+}
 function _json_array($v) {
     if ($v === null || $v === '') return [];
     if (is_array($v)) return $v;
@@ -209,6 +242,8 @@ if ($action === '') {
     json_response(['success' => false, 'message' => 'Missing action.'], 400);
 }
 
+ensure_personal_use_location();
+
 try {
     switch ($action) {
         case 'list_available_items':
@@ -340,6 +375,23 @@ try {
                 if ($chk && call_mysql_fetch_array($chk)) {
                     json_response(['success' => true, 'data' => []]);
                 }
+                $chkPersonal = call_mysql_query("SELECT facility_id
+                                                 FROM facility_records_facilities
+                                                 WHERE facility_id = {$facilityId}
+                                                   AND UPPER(TRIM(COALESCE(facility_code, ''))) = 'PERSONAL'
+                                                 LIMIT 1");
+                if ($chkPersonal && call_mysql_fetch_array($chkPersonal)) {
+                    json_response(array(
+                        'success' => true,
+                        'data' => array(
+                            array(
+                                'unit_id' => 0,
+                                'unit_code' => 'PERSONAL_USE',
+                                'unit_name' => 'For Personal use'
+                            )
+                        )
+                    ));
+                }
             }
             $res = call_mysql_query("SELECT unit_id, unit_code, unit_name
                                      FROM facility_records_units
@@ -364,7 +416,18 @@ try {
             if ($itemCode === '') json_response(['success' => false, 'message' => 'Item code is required.'], 422);
             if ($qty <= 0) json_response(['success' => false, 'message' => 'Invalid quantity.'], 422);
             if ($facilityId <= 0 || $unitId <= 0) {
-                json_response(['success' => false, 'message' => 'Facility and unit are required.'], 422);
+                $isPersonal = false;
+                if ($facilityId > 0 && table_exists('facility_records_facilities')) {
+                    $facRes = call_mysql_query("SELECT facility_id
+                                                FROM facility_records_facilities
+                                                WHERE facility_id = {$facilityId}
+                                                  AND UPPER(TRIM(COALESCE(facility_code, ''))) = 'PERSONAL'
+                                                LIMIT 1");
+                    $isPersonal = ($facRes && call_mysql_fetch_array($facRes)) ? true : false;
+                }
+                if (!$isPersonal || $facilityId <= 0) {
+                    json_response(['success' => false, 'message' => 'Facility and unit are required.'], 422);
+                }
             }
 
             $userId = (int)$s_user_id;
@@ -372,9 +435,22 @@ try {
             if (!table_exists('facility_records_units')) {
                 json_response(['success' => false, 'message' => 'Facility tables are missing.'], 500);
             }
-            $unitRes = call_mysql_query("SELECT unit_id FROM facility_records_units WHERE unit_id = {$unitId} AND facility_id = {$facilityId} LIMIT 1");
-            if (!$unitRes || !call_mysql_fetch_array($unitRes)) {
-                json_response(['success' => false, 'message' => 'Selected unit does not belong to the facility.'], 422);
+            $isPersonalFacility = false;
+            if (table_exists('facility_records_facilities')) {
+                $pf = call_mysql_query("SELECT facility_id
+                                        FROM facility_records_facilities
+                                        WHERE facility_id = {$facilityId}
+                                          AND UPPER(TRIM(COALESCE(facility_code, ''))) = 'PERSONAL'
+                                        LIMIT 1");
+                $isPersonalFacility = ($pf && call_mysql_fetch_array($pf)) ? true : false;
+            }
+            if (!$isPersonalFacility) {
+                $unitRes = call_mysql_query("SELECT unit_id FROM facility_records_units WHERE unit_id = {$unitId} AND facility_id = {$facilityId} LIMIT 1");
+                if (!$unitRes || !call_mysql_fetch_array($unitRes)) {
+                    json_response(['success' => false, 'message' => 'Selected unit does not belong to the facility.'], 422);
+                }
+            } else {
+                $unitId = 0;
             }
 
             if ($type === 'AST') {
