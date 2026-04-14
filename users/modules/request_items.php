@@ -79,8 +79,18 @@ if (!(role_has("USER") || role_has("USERS"))) {
                     <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
                         <input type="text" id="itemSearch" class="form-control" placeholder="Search item code or description..." style="max-width:280px;">
                         <button class="btn btn-outline-secondary" id="refreshItems">Refresh</button>
+                        <div class="ms-auto d-flex align-items-center gap-2">
+                            <span class="small text-muted" id="selectedItemsCount">No item selected.</span>
+                            <button class="btn btn-primary" id="requestSelectedBtn" disabled>Batch Request (AST only)</button>
+                            <button class="btn btn-outline-secondary" id="clearSelectedItems">Clear Selected</button>
+                        </div>
                     </div>
                     <div id="itemsTable"></div>
+                    <div class="mt-3 border rounded p-2 bg-light-subtle">
+                        <div class="small fw-semibold mb-2">Selected Items</div>
+                        <div id="selectedItemsHint" class="small text-muted mb-2">Batch request is available for AST only.</div>
+                        <div id="selectedItemsList" class="d-flex flex-column gap-2"></div>
+                    </div>
                 </div>
             </div>
         </section>
@@ -134,21 +144,29 @@ if (!(role_has("USER") || role_has("USERS"))) {
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title fw-semibold"><i class="bi bi-bag-plus"></i>&ensp;Request Item</h5>
+                    <h5 class="modal-title fw-semibold" id="reqModalTitle"><i class="bi bi-bag-plus"></i>&ensp;Request Item</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <div class="mb-2">
-                        <div class="small text-muted">Item Code</div>
-                        <div class="fw-semibold" id="reqItemCode">-</div>
+                    <div id="reqSingleInfo">
+                        <div class="mb-2">
+                            <div class="small text-muted">Item Code</div>
+                            <div class="fw-semibold" id="reqItemCode">-</div>
+                        </div>
+                        <div class="mb-2">
+                            <div class="small text-muted">Description</div>
+                            <div id="reqItemDesc">-</div>
+                        </div>
+                        <div class="mb-2">
+                            <div class="small text-muted" id="reqAvailLabel">Availability</div>
+                            <div><span id="reqItemAvail">0</span> <span id="reqItemUnit"></span></div>
+                        </div>
                     </div>
-                    <div class="mb-2">
-                        <div class="small text-muted">Description</div>
-                        <div id="reqItemDesc">-</div>
-                    </div>
-                    <div class="mb-2">
-                        <div class="small text-muted" id="reqAvailLabel">Availability</div>
-                        <div><span id="reqItemAvail">0</span> <span id="reqItemUnit"></span></div>
+                    <div id="reqBatchInfo" class="d-none mb-2">
+                        <div class="small text-muted">Selected AST Items</div>
+                        <div class="fw-semibold mb-2"><span id="reqBatchCount">0</span> item(s)</div>
+                        <div id="reqBatchList" class="border rounded p-2" style="max-height:180px;overflow:auto;"></div>
+                        <div class="small text-muted mt-2">Quantity is fixed to 1 per selected AST item.</div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label fw-semibold" id="reqQtyLabel">Quantity to request</label>
@@ -184,6 +202,188 @@ let itemSearchTimer = null;
 let myReqSearchTimer = null;
 let myReqLoading = false;
 let myReqPending = false;
+let reqMode = 'single';
+let reqBatchItems = [];
+let suppressSelectionSync = false;
+let selectedItemCodesByType = { AST: {}, CSM: {} };
+let itemCacheByType = { AST: {}, CSM: {} };
+
+function getItemKey(row) {
+    return String((row && row.item_code) || '').trim();
+}
+
+function cacheItems(type, rows) {
+    const t = String(type || '').toUpperCase() === 'CSM' ? 'CSM' : 'AST';
+    if (!itemCacheByType[t]) itemCacheByType[t] = {};
+    (rows || []).forEach(function(row) {
+        const key = getItemKey(row);
+        if (!key) return;
+        itemCacheByType[t][key] = row;
+    });
+}
+
+function getSelectedCodes(type) {
+    const map = selectedItemCodesByType[type] || {};
+    return Object.keys(map);
+}
+
+function getSelectedItemsByType(type) {
+    const cache = itemCacheByType[type] || {};
+    return getSelectedCodes(type).map(function(code) {
+        return cache[code] || { item_code: code, item_description: '', unit: '', available_qty: 0 };
+    });
+}
+
+function updateBatchButtonState() {
+    const selectedCount = getSelectedCodes(currentType).length;
+    const $btn = $('#requestSelectedBtn');
+    if (currentType !== 'AST') {
+        $btn.prop('disabled', true).text('Batch Request (AST only)');
+        return;
+    }
+    $btn.prop('disabled', selectedCount === 0).text('Request Selected (' + selectedCount + ')');
+}
+
+function renderSelectedItemsReview() {
+    const selected = getSelectedItemsByType(currentType);
+    const selectedCount = selected.length;
+    $('#selectedItemsCount').text(selectedCount > 0 ? (selectedCount + ' item(s) selected in ' + currentType) : 'No item selected.');
+    $('#selectedItemsHint').text(currentType === 'AST' ? 'Batch request is available for AST only.' : 'CSM batch request is not available yet.');
+    updateBatchButtonState();
+
+    if (selectedCount === 0) {
+        $('#selectedItemsList').html('<div class="small text-muted">No item selected.</div>');
+        return;
+    }
+
+    const html = selected.map(function(item) {
+        const code = escapeHtml(item.item_code || '-');
+        const desc = escapeHtml(item.item_description || '-');
+        const qtyUnit = currentType === 'AST'
+            ? ('1' + ((item.unit || '').trim() ? ' / ' + escapeHtml(item.unit) : ''))
+            : ((parseInt(item.available_qty, 10) || 0) + (((item.unit || '').trim()) ? (' / ' + escapeHtml(item.unit)) : ''));
+        return '<div class="border rounded px-2 py-1 bg-white d-flex align-items-start justify-content-between gap-2">'
+            + '<div>'
+            + '<div class="small fw-semibold">' + code + '</div>'
+            + '<div class="small text-muted">' + desc + '</div>'
+            + '<div class="small">Qty / Unit: ' + qtyUnit + '</div>'
+            + '</div>'
+            + '<button type="button" class="btn btn-sm btn-outline-danger js-remove-selected" data-code="' + code + '"><i class="bi bi-x-lg"></i></button>'
+            + '</div>';
+    }).join('');
+
+    $('#selectedItemsList').html(html);
+}
+
+function restoreSelectionForCurrentType() {
+    if (!table) return;
+    const targetCodes = getSelectedCodes(currentType);
+    suppressSelectionSync = true;
+    table.deselectRow();
+    if (targetCodes.length > 0) {
+        const rowsToSelect = table.getRows().filter(function(row) {
+            const key = getItemKey(row.getData());
+            return !!selectedItemCodesByType[currentType][key];
+        });
+        rowsToSelect.forEach(function(row) {
+            row.select();
+        });
+    }
+    suppressSelectionSync = false;
+}
+
+function getSelectedRowsDataSafe() {
+    if (!table) return [];
+    let rows = [];
+    if (typeof table.getSelectedRows === 'function') {
+        rows = table.getSelectedRows() || [];
+    }
+    if ((!rows || rows.length === 0) && typeof table.getRows === 'function') {
+        const allRows = table.getRows() || [];
+        rows = allRows.filter(function(r) {
+            return r && typeof r.isSelected === 'function' && r.isSelected();
+        });
+    }
+    return (rows || []).map(function(r) {
+        return r && typeof r.getData === 'function' ? (r.getData() || {}) : {};
+    });
+}
+
+function syncCurrentTabSelectionFromTable() {
+    if (!table || suppressSelectionSync) return;
+
+    const selectedRows = getSelectedRowsDataSafe();
+    const selectedMap = {};
+    selectedRows.forEach(function(row) {
+        const key = getItemKey(row);
+        if (!key) return;
+        selectedMap[key] = true;
+        cacheItems(currentType, [row]);
+    });
+
+    const nextMap = Object.assign({}, selectedItemCodesByType[currentType] || {});
+    const visibleRows = (typeof table.getRows === 'function' ? (table.getRows() || []) : []).map(function(r) {
+        return r.getData ? (r.getData() || {}) : {};
+    });
+    visibleRows.forEach(function(row) {
+        const key = getItemKey(row);
+        if (!key) return;
+        if (selectedMap[key]) {
+            nextMap[key] = true;
+        } else {
+            delete nextMap[key];
+        }
+    });
+
+    selectedItemCodesByType[currentType] = nextMap;
+    renderSelectedItemsReview();
+}
+
+function setRequestModalMode(mode, batchItems) {
+    reqMode = mode === 'batch' ? 'batch' : 'single';
+    if (reqMode === 'batch') {
+        reqSelected = null;
+        reqBatchItems = Array.isArray(batchItems) ? batchItems : [];
+        $('#reqModalTitle').html('<i class="bi bi-bag-plus"></i>&ensp;Batch Request Items');
+        $('#reqSingleInfo').addClass('d-none');
+        $('#reqBatchInfo').removeClass('d-none');
+        $('#reqBatchCount').text(reqBatchItems.length);
+        const batchHtml = reqBatchItems.map(function(item) {
+            const code = escapeHtml(item.item_code || '-');
+            const desc = escapeHtml(item.item_description || '-');
+            return '<div class="small"><span class="fw-semibold">' + code + '</span> - ' + desc + '</div>';
+        }).join('');
+        $('#reqBatchList').html(batchHtml || '<div class="small text-muted">No selected item.</div>');
+        $('#btnSubmitRequest').text('Submit Batch Request');
+        $('#reqQtyLabel').text('Quantity per selected item (fixed)');
+        $('#reqQtyHelp').text('AST batch requests create one pending request per selected item.');
+        $('#reqQtyInput').val(1).prop('readonly', true);
+        return;
+    }
+    reqBatchItems = [];
+    $('#reqModalTitle').html('<i class="bi bi-bag-plus"></i>&ensp;Request Item');
+    $('#reqSingleInfo').removeClass('d-none');
+    $('#reqBatchInfo').addClass('d-none');
+    $('#btnSubmitRequest').text('Submit Request');
+    syncRequestQtyUI();
+}
+
+function openBatchRequestModal() {
+    if (currentType !== 'AST') {
+        showReqMessage('Batch request is currently available for AST only.');
+        return;
+    }
+    const items = getSelectedItemsByType('AST');
+    if (items.length === 0) {
+        showReqMessage('Select at least one AST item for batch request.');
+        return;
+    }
+    setRequestModalMode('batch', items);
+    $('#reqModalMsg').addClass('d-none').text('');
+    $('#reqFacilityUnit').val(null).trigger('change');
+    loadRequestFacilityUnits();
+    $('#requestModal').modal('show');
+}
 
 function showReqMessage(msg) {
     const el = $('#reqMsg');
@@ -236,7 +436,10 @@ function statusBadge(raw) {
 function loadItems() {
     const search = ($('#itemSearch').val() || '').trim();
     if (!table) return;
-    table.setData(PROCESS_URL, { action: 'list_available_items', type: currentType, search }, 'POST');
+    suppressSelectionSync = true;
+    table.setData(PROCESS_URL, { action: 'list_available_items', type: currentType, search }, 'POST').catch(function() {
+        suppressSelectionSync = false;
+    });
 }
 
 function initReqFacilityUnitSelect() {
@@ -347,6 +550,7 @@ function syncRequestQtyUI() {
         table = new Tabulator('#itemsTable', {
             ajaxURL: PROCESS_URL,
             ajaxParams: { action: 'list_available_items', type: currentType },
+        selectable: true,
         ajaxConfig: 'POST',
         layout: 'fitColumns',
         responsiveLayout: 'collapse',
@@ -354,15 +558,36 @@ function syncRequestQtyUI() {
         pagination: 'local',
         paginationSize: 10,
         paginationSizeSelector: [5, 10, 20, 50, true],
+        dataLoaded: function() {
+            restoreSelectionForCurrentType();
+            syncCurrentTabSelectionFromTable();
+            suppressSelectionSync = false;
+        },
+        dataLoadError: function() {
+            suppressSelectionSync = false;
+        },
+        rowSelectionChanged: function() {
+            syncCurrentTabSelectionFromTable();
+        },
+        rowSelected: function(row) {
+            syncCurrentTabSelectionFromTable();
+        },
+        rowDeselected: function(row) {
+            syncCurrentTabSelectionFromTable();
+        },
         ajaxResponse: function(url, params, response) {
             if (response && response.success === false) {
                 showReqMessage(response.message || 'Failed to load items.');
                 return [];
             }
             showReqMessage('');
-            return response.data || [];
+            const rows = response.data || [];
+            const t = (params && params.type) ? String(params.type).toUpperCase() : currentType;
+            cacheItems(t, rows);
+            return rows;
         },
         columns: [
+            { formatter: 'rowSelection', titleFormatter: 'rowSelection', hozAlign: 'center', headerSort: false, width: 44 },
             { title: 'Image', field: 'category_photo_thumb_url', width: 62, hozAlign: 'center', headerSort: false, formatter: function(cell){
                 const url = cell.getValue();
                 const full = cell.getRow().getData().category_photo_url;
@@ -380,48 +605,19 @@ function syncRequestQtyUI() {
             { title: 'Description', field: 'item_description', widthGrow: 2, minWidth: 180, headerFilter: 'input', formatter: function(cell){
                 return threeLineText(cell.getValue());
             }},
-            { title: 'Stock', field: 'available_qty', width: 85, hozAlign: 'center', formatter: function(cell){
-                if (currentType === 'AST') return 'Available';
-                const v = parseInt(cell.getValue(), 10);
-                return Number.isFinite(v) ? v : 0;
-            }},
-            { title: 'Unit', field: 'unit', width: 80 },
-            { title: 'Allowed Status', field: 'allowed_status_names', widthGrow: 1, minWidth: 140, formatter: function(cell){
-                const v = cell.getValue();
-                return v ? `<span class="text-muted small">${escapeHtml(v)}</span>` : 'All';
-            }},
-            { title: 'Action', field: 'item_code', width: 110, hozAlign: 'center', formatter: function(cell){
-                const code = escapeHtml(cell.getValue() || '');
-                return `<button class="btn btn-sm btn-primary btn-request" data-code="${code}">Request</button>`;
+            { title: 'Qty / Unit', field: 'unit', width: 120, hozAlign: 'center', formatter: function(cell){
+                const row = cell.getRow().getData();
+                const unit = String(row.unit || '').trim();
+                if (currentType === 'AST') {
+                    return unit ? ('1 / ' + escapeHtml(unit)) : '1';
+                }
+                const qty = parseInt(row.available_qty, 10);
+                const safeQty = Number.isFinite(qty) ? qty : 0;
+                return unit ? (safeQty + ' / ' + escapeHtml(unit)) : String(safeQty);
             }}
         ]
     });
 
-    $('#itemsTable').on('click', '.btn-request', function() {
-        const code = $(this).data('code');
-        const row = table.getRows().find(r => r.getData().item_code === code);
-        const data = row ? row.getData() : null;
-        if (!data) {
-            showReqMessage('Item not found in table.');
-            return;
-        }
-        reqSelected = data;
-        $('#reqItemCode').text(data.item_code || '-');
-        $('#reqItemDesc').text(data.item_description || '-');
-        if (currentType === 'AST') {
-            $('#reqItemAvail').text('Available');
-            $('#reqItemUnit').text('');
-        } else {
-            $('#reqItemAvail').text(data.available_qty || 0);
-            $('#reqItemUnit').text(data.unit || '');
-        }
-        $('#reqQtyInput').val(1);
-        syncRequestQtyUI();
-        $('#reqModalMsg').addClass('d-none').text('');
-        $('#reqFacilityUnit').val(null).trigger('change');
-        loadRequestFacilityUnits();
-        $('#requestModal').modal('show');
-    });
 }
 
 function loadMyReqs() {
@@ -491,15 +687,6 @@ function initMyReqTable() {
             { title: 'Workflow', field: 'workflow_status', width: 120, formatter: function(cell){
                 return statusBadge(cell.getValue());
             }},
-            { title: 'Updated', field: 'updated_at', width: 130, formatter: function(cell){
-                const v = String(cell.getValue() || '');
-                if (!v) return '-';
-                const parts = v.split(/\s+/);
-                if (parts.length >= 2) {
-                    return `<div style="line-height:1.2;white-space:normal;">${escapeHtml(parts[0])}<br><span class="text-muted">${escapeHtml(parts.slice(1).join(' '))}</span></div>`;
-                }
-                return escapeHtml(v);
-            }},
             { title: 'Claimed', field: 'claimed_at', width: 130, formatter: function(cell){
                 const v = String(cell.getValue() || '');
                 if (!v) return '-';
@@ -553,9 +740,33 @@ $(document).ready(function() {
         $(this).addClass('active');
         currentType = $(this).data('type');
         syncRequestQtyUI();
-        if (table) {
-            table.setData(PROCESS_URL, { action: 'list_available_items', type: currentType }, 'POST');
+        loadItems();
+        renderSelectedItemsReview();
+    });
+
+    $('#requestSelectedBtn').on('click', function() {
+        openBatchRequestModal();
+    });
+
+    $('#clearSelectedItems').on('click', function() {
+        selectedItemCodesByType[currentType] = {};
+        suppressSelectionSync = true;
+        if (table) table.deselectRow();
+        suppressSelectionSync = false;
+        renderSelectedItemsReview();
+    });
+
+    $('body').on('click', '.js-remove-selected', function() {
+        const code = String($(this).data('code') || '').trim();
+        if (!code) return;
+        delete selectedItemCodesByType[currentType][code];
+        const row = table ? table.getRows().find(function(r) { return getItemKey(r.getData()) === code; }) : null;
+        if (row && row.isSelected()) {
+            suppressSelectionSync = true;
+            row.deselect();
+            suppressSelectionSync = false;
         }
+        renderSelectedItemsReview();
     });
 
     $('body').on('click', '.js-thumb-preview', function() {
@@ -565,11 +776,13 @@ $(document).ready(function() {
         $('#imagePreviewModal').modal('show');
     });
 
+    $('#itemsTable').on('click change', 'input[type="checkbox"], .tabulator-row, .tabulator-cell', function() {
+        setTimeout(function() {
+            syncCurrentTabSelectionFromTable();
+        }, 0);
+    });
+
     $('#btnSubmitRequest').on('click', function() {
-        if (!reqSelected) {
-            $('#reqModalMsg').removeClass('d-none').text('No item selected.');
-            return;
-        }
         const $picked = $('#reqFacilityUnit option:selected');
         const facilityRaw = $picked.attr('data-facility-id');
         const unitRaw = $picked.attr('data-unit-id');
@@ -580,11 +793,57 @@ $(document).ready(function() {
             return;
         }
         const qtyVal = parseInt($('#reqQtyInput').val(), 10);
-        const maxQty = currentType === 'CSM' ? (parseInt(reqSelected.available_qty, 10) || 0) : 1;
         if (isNaN(qtyVal) || qtyVal <= 0) {
             $('#reqModalMsg').removeClass('d-none').text('Invalid quantity.');
             return;
         }
+
+        if (reqMode === 'batch') {
+            if (currentType !== 'AST') {
+                $('#reqModalMsg').removeClass('d-none').text('Batch request is currently available for AST only.');
+                return;
+            }
+            const payloadItems = reqBatchItems.map(function(item) {
+                return {
+                    item_code: String(item.item_code || '').trim(),
+                    qty_requested: 1
+                };
+            }).filter(function(item) {
+                return item.item_code !== '';
+            });
+            if (payloadItems.length === 0) {
+                $('#reqModalMsg').removeClass('d-none').text('No selected AST item found for batch request.');
+                return;
+            }
+            $.post(PROCESS_URL, {
+                action: 'create_batch_request',
+                type: 'AST',
+                facility_id: facilityId,
+                unit_id: unitId,
+                items: JSON.stringify(payloadItems)
+            }, function(res) {
+                if (res && res.success) {
+                    $('#requestModal').modal('hide');
+                    selectedItemCodesByType.AST = {};
+                    showReqMessage(res.message || 'Batch request submitted.');
+                    loadItems();
+                    setTimeout(loadMyReqs, 400);
+                    renderSelectedItemsReview();
+                } else {
+                    $('#reqModalMsg').removeClass('d-none').text((res && res.message) || 'Batch request failed.');
+                }
+            }, 'json').fail(function(xhr) {
+                const msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Server error while submitting batch request.';
+                $('#reqModalMsg').removeClass('d-none').text(msg);
+            });
+            return;
+        }
+
+        if (!reqSelected) {
+            $('#reqModalMsg').removeClass('d-none').text('No item selected.');
+            return;
+        }
+        const maxQty = currentType === 'CSM' ? (parseInt(reqSelected.available_qty, 10) || 0) : 1;
         if (currentType === 'AST' && qtyVal !== 1) {
             $('#reqModalMsg').removeClass('d-none').text('AST requests must be exactly 1.');
             return;
@@ -608,6 +867,7 @@ $(document).ready(function() {
         });
     });
     syncRequestQtyUI();
+    renderSelectedItemsReview();
 });
 </script>
 </html>

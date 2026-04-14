@@ -321,7 +321,7 @@ try {
                         ), 0)"
                     : "0";
 
-                $sql = "SELECT c.inventory_system_item_code, c.item_name, c.item_description, c.current_unit_quantity,
+                  $sql = "SELECT c.inventory_system_item_code, c.item_name, c.item_description, c.current_unit_quantity, c.unit,
                                {$pendingQtyExpr} AS pending_qty,
                                c.item_category_img AS csm_category_img,
                                csm_cat.item_category_name AS csm_category_name
@@ -358,7 +358,7 @@ try {
                         'item_code' => $row['inventory_system_item_code'],
                         'item_description' => $desc,
                         'available_qty' => $availableQty,
-                        'unit' => '',
+                        'unit' => $row['unit'] ?? '',
                         'allowed_status_names' => 'All',
                         'item_category_name' => $row['csm_category_name'] ?? '',
                         'category_photo_url' => $csmPhotoUrl,
@@ -587,6 +587,167 @@ try {
                     "claim_unit_id" => $unitId
                 ));
                 json_response(['success' => true, 'message' => 'Request submitted.']);
+            }
+            break;
+
+        case 'create_batch_request':
+            $type = strtoupper(_post('type', 'AST'));
+            if ($type !== 'AST') {
+                json_response(['success' => false, 'message' => 'Batch request is currently available for AST only.'], 422);
+            }
+
+            $items = _json_array(_post('items', ''));
+            if (empty($items)) {
+                json_response(['success' => false, 'message' => 'Select at least one AST item for batch request.'], 422);
+            }
+
+            $facilityId = _int(_post('facility_id'), 0);
+            $unitId = _int(_post('unit_id'), 0);
+            if ($facilityId <= 0 || $unitId <= 0) {
+                $isPersonal = false;
+                if ($facilityId > 0 && table_exists('facility_records_facilities')) {
+                    $facRes = call_mysql_query("SELECT facility_id
+                                                FROM facility_records_facilities
+                                                WHERE facility_id = {$facilityId}
+                                                  AND UPPER(TRIM(COALESCE(facility_code, ''))) = 'PERSONAL'
+                                                LIMIT 1");
+                    $isPersonal = ($facRes && call_mysql_fetch_array($facRes)) ? true : false;
+                }
+                if (!$isPersonal || $facilityId <= 0) {
+                    json_response(['success' => false, 'message' => 'Facility and unit are required.'], 422);
+                }
+            }
+
+            $userId = (int)$s_user_id;
+            if ($userId <= 0) {
+                json_response(['success' => false, 'message' => 'Invalid user.'], 403);
+            }
+            if (!table_exists('facility_records_units')) {
+                json_response(['success' => false, 'message' => 'Facility tables are missing.'], 500);
+            }
+
+            $isPersonalFacility = false;
+            if (table_exists('facility_records_facilities')) {
+                $pf = call_mysql_query("SELECT facility_id
+                                        FROM facility_records_facilities
+                                        WHERE facility_id = {$facilityId}
+                                          AND UPPER(TRIM(COALESCE(facility_code, ''))) = 'PERSONAL'
+                                        LIMIT 1");
+                $isPersonalFacility = ($pf && call_mysql_fetch_array($pf)) ? true : false;
+            }
+            if (!$isPersonalFacility) {
+                $unitRes = call_mysql_query("SELECT unit_id
+                                             FROM facility_records_units
+                                             WHERE unit_id = {$unitId} AND facility_id = {$facilityId}
+                                             LIMIT 1");
+                if (!$unitRes || !call_mysql_fetch_array($unitRes)) {
+                    json_response(['success' => false, 'message' => 'Selected unit does not belong to the facility.'], 422);
+                }
+            } else {
+                $unitId = 0;
+            }
+
+            if (!table_exists('requisition_items')) {
+                json_response(['success' => false, 'message' => 'Requisition table not found.'], 500);
+            }
+
+            $statusId = get_current_user_status_id();
+            $posCat = get_current_user_position_category();
+            $hasFacilityCol = table_column_exists('requisition_items', 'claim_facility_id');
+            $hasUnitCol = table_column_exists('requisition_items', 'claim_unit_id');
+
+            $seenCodes = [];
+            $submittedCodes = [];
+            $submittedCount = 0;
+
+            call_mysql_query("START TRANSACTION");
+            try {
+                foreach ($items as $item) {
+                    $itemCode = strtoupper(trim((string)($item['item_code'] ?? '')));
+                    $qty = (int)($item['qty_requested'] ?? 1);
+                    if ($itemCode === '') {
+                        throw new Exception('One or more selected items are invalid.');
+                    }
+                    if ($qty !== 1) {
+                        throw new Exception('AST batch requests must be exactly 1 per Property Tag.');
+                    }
+                    if (isset($seenCodes[$itemCode])) {
+                        throw new Exception('Duplicate selected item found: ' . $itemCode);
+                    }
+                    $seenCodes[$itemCode] = true;
+
+                    $itemCodeEsc = _esc($itemCode);
+
+                    $pendingRes = call_mysql_query("SELECT requisition_id
+                                                   FROM requisition_items
+                                                   WHERE module_type = 'AST'
+                                                     AND item_code = '{$itemCodeEsc}'
+                                                     AND LOWER(COALESCE(status, '')) = 'pending'
+                                                   LIMIT 1");
+                    if ($pendingRes && call_mysql_fetch_array($pendingRes)) {
+                        throw new Exception('Item already has a pending request: ' . $itemCode);
+                    }
+
+                    $invRes = call_mysql_query("SELECT property_code, item_description, is_available, allowed_employment_status
+                                               FROM ast_inventory
+                                               WHERE property_code = '{$itemCodeEsc}'
+                                               LIMIT 1
+                                               FOR UPDATE");
+                    $invRow = $invRes ? call_mysql_fetch_array($invRes) : null;
+                    if (!$invRow) {
+                        throw new Exception('Item not found: ' . $itemCode);
+                    }
+                    if ((int)$invRow['is_available'] !== 1) {
+                        throw new Exception('Item is not available for requisition: ' . $itemCode);
+                    }
+
+                    $norm = normalize_allowed_employment($invRow['allowed_employment_status'] ?? '');
+                    if (!is_allowed_for_user($norm, (int)$statusId, (string)$posCat)) {
+                        throw new Exception('Item is not available for your employment settings: ' . $itemCode);
+                    }
+
+                    $descEsc = _esc($invRow['item_description'] ?? '');
+                    $cols = "module_type, item_code, item_description, qty_requested, requester_user_id, status, created_at, updated_at";
+                    $vals = "'AST', '{$itemCodeEsc}', '{$descEsc}', 1, {$userId}, 'pending', NOW(), NOW()";
+                    if ($hasFacilityCol) {
+                        $cols .= ", claim_facility_id";
+                        $vals .= ", {$facilityId}";
+                    }
+                    if ($hasUnitCol) {
+                        $cols .= ", claim_unit_id";
+                        $vals .= ", {$unitId}";
+                    }
+                    $ok = call_mysql_query("INSERT INTO requisition_items ({$cols}) VALUES ({$vals})");
+                    if (!$ok) {
+                        throw new Exception('Failed to submit batch request.');
+                    }
+                    $submittedCount++;
+                    $submittedCodes[] = $itemCode;
+                }
+
+                if ($submittedCount <= 0) {
+                    throw new Exception('No request was submitted.');
+                }
+
+                call_mysql_query("COMMIT");
+                activity_log_new("USER BATCH REQUISITION SUBMIT", "SUCCESS", array(
+                    "module_type" => "AST",
+                    "item_codes" => $submittedCodes,
+                    "submitted_count" => $submittedCount,
+                    "claim_facility_id" => $facilityId,
+                    "claim_unit_id" => $unitId
+                ));
+                json_response([
+                    'success' => true,
+                    'message' => $submittedCount . ' AST request(s) submitted.',
+                    'submitted_count' => $submittedCount
+                ]);
+            } catch (Throwable $inner) {
+                call_mysql_query("ROLLBACK");
+                json_response([
+                    'success' => false,
+                    'message' => $inner->getMessage() ?: 'Batch request failed.'
+                ], 422);
             }
             break;
 
