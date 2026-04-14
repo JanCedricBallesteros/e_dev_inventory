@@ -509,6 +509,25 @@ function user_has_managing_facility_unit($user_id = null)
 		$hasManagedUnit = ($res && mysqli_num_rows($res) > 0);
 	}
 
+	if (!$hasManagedUnit && $tableExists('facility_records_assignments')) {
+		$hasManagedByCol = $columnExists('facility_records_assignments', 'managed_by_user_id');
+
+		$actorWhere = "(a.issued_to_user_id = {$user_id} OR a.accountable_user_id = {$user_id}";
+		if ($hasManagedByCol) {
+			$actorWhere .= " OR a.managed_by_user_id = {$user_id}";
+		}
+		$actorWhere .= ")";
+
+		$res = @call_mysql_query(
+			"SELECT a.assignment_id
+			 FROM facility_records_assignments a
+			 WHERE {$actorWhere}
+			   AND a.status IN ('ACTIVE','REPORTED','RETURN_REQUESTED')
+			 LIMIT 1"
+		);
+		$hasManagedUnit = ($res && mysqli_num_rows($res) > 0);
+	}
+
 	$cache[$user_id] = $hasManagedUnit;
 	return $hasManagedUnit;
 }

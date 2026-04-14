@@ -57,6 +57,161 @@ function fr_required_tables_ready() {
         && fr_table_exists('facility_records_history');
 }
 
+function fr_assignment_actor_where($userId, $alias = 'a') {
+    $uid = (int)$userId;
+    $safeAlias = preg_replace('/[^a-zA-Z0-9_]/', '', (string)$alias);
+    if ($safeAlias === '') $safeAlias = 'a';
+    $hasManagedBy = fr_column_exists('facility_records_assignments', 'managed_by_user_id');
+    $where = "({$safeAlias}.issued_to_user_id = {$uid} OR {$safeAlias}.accountable_user_id = {$uid}";
+    if ($hasManagedBy) {
+        $where .= " OR {$safeAlias}.managed_by_user_id = {$uid}";
+    }
+    $where .= ")";
+    return $where;
+}
+
+function fr_user_assignment_unit_ids($userId, $onlyActive = true) {
+    $uid = (int)$userId;
+    if ($uid <= 0) return array();
+
+    $actorWhere = fr_assignment_actor_where($uid, 'a');
+    $activeWhere = $onlyActive ? " AND a.status IN ('ACTIVE','REPORTED','RETURN_REQUESTED')" : '';
+    $sql = "SELECT DISTINCT a.unit_id
+            FROM facility_records_assignments a
+            WHERE a.unit_id IS NOT NULL
+              AND a.unit_id > 0
+              AND {$actorWhere}{$activeWhere}";
+
+    $ids = array();
+    $res = call_mysql_query($sql);
+    if ($res) {
+        while ($row = call_mysql_fetch_array($res)) {
+            $id = (int)($row['unit_id'] ?? 0);
+            if ($id > 0 && !in_array($id, $ids, true)) {
+                $ids[] = $id;
+            }
+        }
+    }
+    return $ids;
+}
+
+function fr_user_assignment_facility_ids($userId, $onlyActive = true) {
+    $uid = (int)$userId;
+    if ($uid <= 0) return array();
+
+    $actorWhere = fr_assignment_actor_where($uid, 'a');
+    $activeWhere = $onlyActive ? " AND a.status IN ('ACTIVE','REPORTED','RETURN_REQUESTED')" : '';
+    $sql = "SELECT DISTINCT a.facility_id
+            FROM facility_records_assignments a
+            WHERE a.facility_id IS NOT NULL
+              AND a.facility_id > 0
+              AND {$actorWhere}{$activeWhere}";
+
+    $ids = array();
+    $res = call_mysql_query($sql);
+    if ($res) {
+        while ($row = call_mysql_fetch_array($res)) {
+            $id = (int)($row['facility_id'] ?? 0);
+            if ($id > 0 && !in_array($id, $ids, true)) {
+                $ids[] = $id;
+            }
+        }
+    }
+    return $ids;
+}
+
+function fr_user_has_active_assignment_in_unit($userId, $unitId) {
+    $uid = (int)$userId;
+    $unitId = (int)$unitId;
+    if ($uid <= 0 || $unitId <= 0) return false;
+
+    $actorWhere = fr_assignment_actor_where($uid, 'a');
+    $sql = "SELECT a.assignment_id
+            FROM facility_records_assignments a
+            WHERE a.unit_id = {$unitId}
+              AND {$actorWhere}
+              AND a.status IN ('ACTIVE','REPORTED','RETURN_REQUESTED')
+            LIMIT 1";
+    $res = call_mysql_query($sql);
+    return ($res && call_mysql_fetch_array($res)) ? true : false;
+}
+
+function fr_is_personal_facility_id($facilityId) {
+    $facilityId = (int)$facilityId;
+    if ($facilityId <= 0) return false;
+
+    $where = "UPPER(TRIM(f.facility_code)) = 'PERSONAL'";
+    if (fr_column_exists('facility_records_facilities', 'is_personal')) {
+        $where .= " OR f.is_personal = 1";
+    }
+
+    $sql = "SELECT f.facility_id
+            FROM facility_records_facilities f
+            WHERE f.facility_id = {$facilityId}
+              AND ({$where})
+            LIMIT 1";
+    $res = call_mysql_query($sql);
+    return ($res && call_mysql_fetch_array($res)) ? true : false;
+}
+
+function fr_user_has_personal_facility_assignment($userId, $facilityId) {
+    $uid = (int)$userId;
+    $fid = (int)$facilityId;
+    if ($uid <= 0 || $fid <= 0) return false;
+
+    $actorWhere = fr_assignment_actor_where($uid, 'a');
+    $sql = "SELECT a.assignment_id
+            FROM facility_records_assignments a
+            WHERE a.facility_id = {$fid}
+              AND {$actorWhere}
+              AND a.status IN ('ACTIVE','REPORTED','RETURN_REQUESTED')
+            LIMIT 1";
+    $res = call_mysql_query($sql);
+    return ($res && call_mysql_fetch_array($res)) ? true : false;
+}
+
+function fr_user_personal_facility_rows($userId) {
+    $uid = (int)$userId;
+    if ($uid <= 0) return array();
+
+    $facilityWhere = "UPPER(TRIM(f.facility_code)) = 'PERSONAL'";
+    if (fr_column_exists('facility_records_facilities', 'is_personal')) {
+        $facilityWhere .= " OR f.is_personal = 1";
+    }
+
+    $actorWhere = fr_assignment_actor_where($uid, 'a');
+    $sql = "SELECT
+                NULL AS unit_id,
+                f.facility_id,
+                'SYSTEM' AS unit_type,
+                '' AS unit_code,
+                '' AS unit_name,
+                NULL AS floor_label,
+                1 AS status,
+                f.facility_code,
+                f.facility_name,
+                NULL AS facility_unit_manager_user_id,
+                NULL AS facility_unit_manager_user_ids,
+                'System' AS unit_manager_name,
+                COUNT(*) AS active_item_count
+            FROM facility_records_assignments a
+            INNER JOIN facility_records_facilities f ON f.facility_id = a.facility_id
+            WHERE ({$facilityWhere})
+              AND {$actorWhere}
+              AND a.status IN ('ACTIVE','REPORTED','RETURN_REQUESTED')
+            GROUP BY f.facility_id, f.facility_code, f.facility_name
+            ORDER BY f.facility_name ASC";
+
+    $rows = array();
+    $res = call_mysql_query($sql);
+    if ($res) {
+        while ($row = call_mysql_fetch_array($res)) {
+            $rows[] = $row;
+        }
+    }
+    return $rows;
+}
+
 function fr_user_managed_unit_where($userId, $alias = 'u') {
     $uid = (int)$userId;
     if ($uid <= 0) return '0=1';
@@ -122,6 +277,32 @@ function user_managed_facility_ids($userId) {
         }
     }
     return $ids;
+}
+
+function user_visible_unit_ids($userId) {
+    $managed = user_managed_unit_ids($userId);
+    $assigned = fr_user_assignment_unit_ids($userId, true);
+    $all = array();
+    foreach (array_merge($managed, $assigned) as $id) {
+        $id = (int)$id;
+        if ($id > 0 && !in_array($id, $all, true)) {
+            $all[] = $id;
+        }
+    }
+    return $all;
+}
+
+function user_visible_facility_ids($userId) {
+    $managed = user_managed_facility_ids($userId);
+    $assigned = fr_user_assignment_facility_ids($userId, true);
+    $all = array();
+    foreach (array_merge($managed, $assigned) as $id) {
+        $id = (int)$id;
+        if ($id > 0 && !in_array($id, $all, true)) {
+            $all[] = $id;
+        }
+    }
+    return $all;
 }
 
 function user_is_unit_manager($userId, $unitId) {
@@ -242,7 +423,7 @@ try {
             if ($uid <= 0) json_response(array('success' => false, 'message' => 'Invalid user.'), 403);
 
             $where = fr_user_managed_unit_where($uid, 'u');
-            if ($where === '0=1') json_response(array('success' => true, 'data' => array()));
+            $actorWhere = fr_assignment_actor_where($uid, 'a');
 
             $hasUnitManagersTable = fr_table_exists('facility_records_unit_managers');
             $hasManagerIdsCsv = fr_column_exists('facility_records_units', 'facility_unit_manager_user_ids');
@@ -290,30 +471,55 @@ try {
                 $mgrJoin = "LEFT JOIN users mgr ON mgr.user_id = u.{$managerCol}";
             }
 
-            $sql = "SELECT
-                        u.unit_id,
-                        u.facility_id,
-                        u.unit_type,
-                        u.unit_code,
-                        u.unit_name,
-                        u.floor_label,
-                        u.status,
-                        f.facility_code,
-                        f.facility_name,
-                        {$mgrSelect}
-                        (SELECT COUNT(*) FROM facility_records_assignments a WHERE a.unit_id = u.unit_id AND a.status IN ('ACTIVE','REPORTED','RETURN_REQUESTED')) AS active_item_count
-                    FROM facility_records_units u
-                    INNER JOIN facility_records_facilities f ON f.facility_id = u.facility_id
-                    {$mgrJoin}
-                    WHERE {$where}
-                    ORDER BY f.facility_name ASC, COALESCE(u.floor_label,''), u.unit_name ASC";
-            $res = call_mysql_query($sql);
             $rows = array();
-            if ($res) {
-                while ($row = call_mysql_fetch_array($res)) {
-                    $rows[] = $row;
+
+            $visibilityWhereParts = array();
+            if ($where !== '0=1') {
+                $visibilityWhereParts[] = $where;
+            }
+            $visibilityWhereParts[] = "EXISTS (SELECT 1 FROM facility_records_assignments a WHERE a.unit_id = u.unit_id AND {$actorWhere} AND a.status IN ('ACTIVE','REPORTED','RETURN_REQUESTED'))";
+            $visibilityWhere = '(' . implode(' OR ', $visibilityWhereParts) . ')';
+
+            if (!empty($visibilityWhereParts)) {
+                $sql = "SELECT
+                            u.unit_id,
+                            u.facility_id,
+                            u.unit_type,
+                            u.unit_code,
+                            u.unit_name,
+                            u.floor_label,
+                            u.status,
+                            f.facility_code,
+                            f.facility_name,
+                            {$mgrSelect}
+                            (SELECT COUNT(*) FROM facility_records_assignments a WHERE a.unit_id = u.unit_id AND a.status IN ('ACTIVE','REPORTED','RETURN_REQUESTED')) AS active_item_count
+                        FROM facility_records_units u
+                        INNER JOIN facility_records_facilities f ON f.facility_id = u.facility_id
+                        {$mgrJoin}
+                        WHERE {$visibilityWhere}
+                        ORDER BY f.facility_name ASC, COALESCE(u.floor_label,''), u.unit_name ASC";
+                $res = call_mysql_query($sql);
+                if ($res) {
+                    while ($row = call_mysql_fetch_array($res)) {
+                        $rows[] = $row;
+                    }
                 }
             }
+
+            $personalRows = fr_user_personal_facility_rows($uid);
+            foreach ($personalRows as $prow) {
+                $exists = false;
+                foreach ($rows as $existing) {
+                    if ((int)($existing['facility_id'] ?? 0) === (int)($prow['facility_id'] ?? 0)) {
+                        $exists = true;
+                        break;
+                    }
+                }
+                if (!$exists) {
+                    $rows[] = $prow;
+                }
+            }
+
             json_response(array('success' => true, 'data' => $rows));
             break;
 
@@ -324,10 +530,19 @@ try {
             if ($uid <= 0) json_response(array('success' => false, 'message' => 'Invalid user.'), 403);
             if ($unit_id <= 0) json_response(array('success' => false, 'message' => 'Unit is required.'), 422);
             $managed = user_managed_unit_ids($uid);
-            if (!in_array($unit_id, $managed, true)) {
+            $isManagerUnit = in_array($unit_id, $managed, true);
+            if ($isManagerUnit) {
+                $rows = fr_fetch_assignments("a.unit_id = {$unit_id}");
+                json_response(array('success' => true, 'data' => $rows));
+            }
+
+            $hasActiveAssignment = fr_user_has_active_assignment_in_unit($uid, $unit_id);
+            if (!$hasActiveAssignment) {
                 json_response(array('success' => false, 'message' => 'You are not allowed to view this unit.'), 403);
             }
-            $rows = fr_fetch_assignments("a.unit_id = {$unit_id}");
+
+            $actorWhere = fr_assignment_actor_where($uid, 'a');
+            $rows = fr_fetch_assignments("a.unit_id = {$unit_id} AND {$actorWhere}");
             json_response(array('success' => true, 'data' => $rows));
             break;
 
@@ -337,10 +552,24 @@ try {
             $facility_id = _int(_post('facility_id'), 0);
             if ($uid <= 0) json_response(array('success' => false, 'message' => 'Invalid user.'), 403);
             if ($facility_id <= 0) json_response(array('success' => false, 'message' => 'Facility is required.'), 422);
+
+            $isPersonalFacility = fr_is_personal_facility_id($facility_id);
+            $hasPersonalAccess = $isPersonalFacility ? fr_user_has_personal_facility_assignment($uid, $facility_id) : false;
+
             $managedFacilities = user_managed_facility_ids($uid);
-            if (!in_array($facility_id, $managedFacilities, true)) {
+            $isManagerFacility = in_array($facility_id, $managedFacilities, true);
+            $visibleFacilities = user_visible_facility_ids($uid);
+            $hasAssignedFacilityAccess = in_array($facility_id, $visibleFacilities, true);
+            if (!$isManagerFacility && !$hasPersonalAccess && !$hasAssignedFacilityAccess) {
                 json_response(array('success' => false, 'message' => 'You are not allowed to view this facility.'), 403);
             }
+
+            if ($hasPersonalAccess || !$isManagerFacility) {
+                $actorWhere = fr_assignment_actor_where($uid, 'a');
+                $rows = fr_fetch_assignments("a.facility_id = {$facility_id} AND {$actorWhere}");
+                json_response(array('success' => true, 'data' => $rows));
+            }
+
             // Get all unit_ids in this facility that the user manages
             $managed = user_managed_unit_ids($uid);
             $facilityUnitIds = array();

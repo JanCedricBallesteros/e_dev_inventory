@@ -29,7 +29,11 @@ $has_managing_facility_unit = user_has_managing_facility_unit($s_user_id ?? 0);
         .facility-header { background: #0d6efd; color: white; padding: 10px 14px; border-radius: 8px; font-weight: 600; margin-bottom: 10px; font-size: 0.95rem; cursor: pointer; transition: background 0.2s ease; }
         .facility-header:hover { background: #0b5ed7; }
         .facility-header.active { background: #0a58ca; box-shadow: 0 2px 6px rgba(13,110,253,0.3); }
+        .facility-header.personal { background: #4c1d95; }
+        .facility-header.personal:hover { background: #5b21b6; }
+        .facility-header.personal.active { background: #4c1d95; box-shadow: 0 2px 6px rgba(76,29,149,0.35); }
         .facility-header i { margin-right: 6px; }
+        .system-note { display: block; font-size: 0.82rem; opacity: 0.95; margin-top: 2px; }
         .floor-group { margin-top: 8px; border-left: 3px solid #e2e8f0; padding-left: 8px; }
         .floor-header { font-weight: 600; font-size: 0.85rem; color: #334155; display: flex; align-items: center; gap: 6px; margin: 6px 0; cursor: pointer; user-select: none; }
         .floor-header .chevron { margin-left: auto; transition: transform 0.15s ease; }
@@ -167,6 +171,15 @@ function getRowFloorLabel(row) {
     return normalizeFloorKey(row ? (row.floor_label || '') : '');
 }
 
+function isPersonalFacility(facility) {
+    if (!facility) return false;
+    if (String(facility.is_personal || '0') === '1') return true;
+    const code = String(facility.facility_code || '').trim().toUpperCase();
+    if (code === 'PERSONAL') return true;
+    const name = String(facility.facility_name || '').trim().toUpperCase();
+    return name === 'FOR PERSONAL USE';
+}
+
 function initAssignmentTable(){
     assignmentTable = new Tabulator('#assignmentTable', {
         layout: "fitColumns",
@@ -245,27 +258,49 @@ function renderUnits() {
         }
         grouped[facId].units.push(u);
     });
+
+    const facilities = Object.values(grouped).sort(function(a, b) {
+        const aPersonal = isPersonalFacility(a) ? 0 : 1;
+        const bPersonal = isPersonalFacility(b) ? 0 : 1;
+        if (aPersonal !== bPersonal) {
+            return aPersonal - bPersonal;
+        }
+        const aName = String(a.facility_name || '').toLowerCase();
+        const bName = String(b.facility_name || '').toLowerCase();
+        return aName.localeCompare(bName);
+    });
     
     // Render each facility group
-    Object.values(grouped).forEach(function(fac) {
-        const facActive = !selectedUnit && selectedFacility && String(selectedFacility.facility_id) === String(fac.facility_id) ? 'active' : '';
+    facilities.forEach(function(fac) {
+        const isFacSelected = selectedFacility && String(selectedFacility.facility_id) === String(fac.facility_id);
+        const facActive = isFacSelected ? 'active' : '';
+        const isPersonal = isPersonalFacility(fac);
         const totalItems = fac.units.reduce(function(sum, u) { return sum + (parseInt(u.active_item_count) || 0); }, 0);
         const safeFacName = escapeHtml(fac.facility_name || 'Unknown Facility');
         const safeFacCode = escapeHtml(fac.facility_code || '');
         list.append(`
             <div class="facility-group">
-                <div class="facility-header ${facActive}" data-facility-id="${fac.facility_id}">
-                    <i class="bi bi-building"></i>${safeFacName}
+                <div class="facility-header ${facActive} ${isPersonal ? 'personal' : ''}" data-facility-id="${fac.facility_id}">
+                    <i class="bi ${isPersonal ? 'bi-box-seam' : 'bi-building'}"></i>${safeFacName}
+                    ${isPersonal ? '<span class="badge bg-warning text-dark ms-1">SYSTEM</span>' : ''}
                     <span class="small" style="opacity:0.9;">(${safeFacCode}) &middot; ${totalItems} item(s)</span>
+                    ${isPersonal ? '<span class="system-note">System-managed location for personal-use assignments.</span>' : ''}
                 </div>
                 <div class="facility-units" data-facility-id="${fac.facility_id}">
+                    ${isFacSelected ? '' : '<div class="small-muted">Select facility to view units.</div>'}
                 </div>
             </div>
         `);
 
         const unitsContainer = list.find(`.facility-units[data-facility-id="${fac.facility_id}"]`);
+        if (!isFacSelected) {
+            return;
+        }
         const floors = {};
         fac.units.forEach(function(u) {
+            if (!u || !u.unit_id) {
+                return;
+            }
             const floorKey = normalizeFloorKey(u.floor_label);
             if (!floors[floorKey]) floors[floorKey] = [];
             floors[floorKey].push(u);
@@ -276,6 +311,10 @@ function renderUnits() {
             if (b === 'Unassigned') return -1;
             return a.localeCompare(b);
         });
+        if (!floorKeys.length) {
+            unitsContainer.append('<div class="small-muted">No facility units. Click the facility header to view assignments.</div>');
+            return;
+        }
         const singleFloor = floorKeys.length === 1;
 
         const collapseMap = floorCollapseState[String(fac.facility_id)] || {};
@@ -350,7 +389,11 @@ function loadAssignments() {
         infoText = `${selectedUnit.facility_code || ''} / ${selectedUnit.unit_code || ''} - ${selectedUnit.unit_name || ''}${floorText}`;
     } else {
         postData = { action: 'list_facility_assignments', facility_id: selectedFacility.facility_id };
-        infoText = `${selectedFacility.facility_name || ''} (${selectedFacility.facility_code || ''}) - ${selectedFloor ? ('Floor: ' + selectedFloor) : 'All Units'}`;
+        if (isPersonalFacility(selectedFacility)) {
+            infoText = `${selectedFacility.facility_name || 'For Personal use'} - Personal Assignments`;
+        } else {
+            infoText = `${selectedFacility.facility_name || ''} (${selectedFacility.facility_code || ''}) - ${selectedFloor ? ('Floor: ' + selectedFloor) : 'All Units'}`;
+        }
     }
     
     $.post(PROCESS_URL, postData, function(res) {
@@ -366,7 +409,7 @@ function loadAssignments() {
         if (selectedUnit && selectedUnit.unit_manager_name) {
             $('#selectedManagedBy').text('Managed By: ' + selectedUnit.unit_manager_name);
         } else if (selectedFacility) {
-            $('#selectedManagedBy').text('Managed By: Multiple');
+            $('#selectedManagedBy').text(isPersonalFacility(selectedFacility) ? 'Managed By: System' : 'Managed By: Multiple');
         } else {
             $('#selectedManagedBy').text('');
         }
@@ -436,10 +479,23 @@ $(document).ready(function() {
         const facId = $(this).data('facility-id');
         const facUnit = managedUnits.find(function(u) { return String(u.facility_id) === String(facId); });
         if (!facUnit) return;
+
+        if (selectedFacility && String(selectedFacility.facility_id) === String(facId) && !selectedUnit) {
+            selectedFacility = null;
+            selectedUnit = null;
+            selectedFloor = null;
+            assignments = [];
+            $('#selectedUnitInfo').text('Select a facility or unit to view assignments.');
+            $('#selectedManagedBy').text('');
+            renderUnits();
+            renderAssignments();
+            return;
+        }
+
         selectedUnit = null;
         selectedFloor = null;
         selectedFacility = { facility_id: facUnit.facility_id, facility_code: facUnit.facility_code, facility_name: facUnit.facility_name };
-        $('#selectedManagedBy').text('Managed By: Multiple');
+        $('#selectedManagedBy').text(isPersonalFacility(selectedFacility) ? 'Managed By: System' : 'Managed By: Multiple');
         renderUnits();
         loadAssignments();
     });
@@ -463,7 +519,7 @@ $(document).ready(function() {
         selectedUnit = null;
         selectedFacility = { facility_id: facUnit.facility_id, facility_code: facUnit.facility_code, facility_name: facUnit.facility_name };
         selectedFloor = nextCollapsed ? null : floor;
-        $('#selectedManagedBy').text('Managed By: Multiple');
+        $('#selectedManagedBy').text(isPersonalFacility(selectedFacility) ? 'Managed By: System' : 'Managed By: Multiple');
         renderUnits();
         loadAssignments();
     });
@@ -472,7 +528,13 @@ $(document).ready(function() {
         const id = $(this).data('id');
         selectedUnit = managedUnits.find(function(u) { return String(u.unit_id) === String(id); }) || null;
         selectedFloor = null;
-        selectedFacility = null;
+        if (selectedUnit) {
+            selectedFacility = {
+                facility_id: selectedUnit.facility_id,
+                facility_code: selectedUnit.facility_code,
+                facility_name: selectedUnit.facility_name
+            };
+        }
         if (selectedUnit && selectedUnit.unit_manager_name) {
             $('#selectedManagedBy').text('Managed By: ' + selectedUnit.unit_manager_name);
         } else {
