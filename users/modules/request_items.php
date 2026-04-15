@@ -50,6 +50,16 @@ if (!(role_has("USER") || role_has("USERS"))) {
             line-height: 1.25;
         }
         .tabulator { font-size: 0.875rem; }
+        .batch-qty-wrap { display: flex; justify-content: center; }
+        .batch-qty-group { width: 120px; }
+        .batch-qty-input {
+            width: 58px;
+            min-width: 58px;
+            height: 28px;
+            padding: 0.1rem 0.35rem;
+            text-align: center;
+        }
+        .batch-qty-unit { min-width: 52px; justify-content: center; }
     </style>
 </head>
 
@@ -86,11 +96,6 @@ if (!(role_has("USER") || role_has("USERS"))) {
                         </div>
                     </div>
                     <div id="itemsTable"></div>
-                    <div class="mt-3 border rounded p-2 bg-light-subtle">
-                        <div class="small fw-semibold mb-2">Selected Items</div>
-                        <div id="selectedItemsHint" class="small text-muted mb-2">Batch request is available for AST only.</div>
-                        <div id="selectedItemsList" class="d-flex flex-column gap-2"></div>
-                    </div>
                 </div>
             </div>
         </section>
@@ -141,7 +146,7 @@ if (!(role_has("USER") || role_has("USERS"))) {
 
     <!-- Request Modal -->
     <div class="modal fade" id="requestModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title fw-semibold" id="reqModalTitle"><i class="bi bi-bag-plus"></i>&ensp;Request Item</h5>
@@ -150,7 +155,7 @@ if (!(role_has("USER") || role_has("USERS"))) {
                 <div class="modal-body">
                     <div id="reqSingleInfo">
                         <div class="mb-2">
-                            <div class="small text-muted">Item Code</div>
+                            <div class="small text-muted">Property Tag</div>
                             <div class="fw-semibold" id="reqItemCode">-</div>
                         </div>
                         <div class="mb-2">
@@ -165,10 +170,10 @@ if (!(role_has("USER") || role_has("USERS"))) {
                     <div id="reqBatchInfo" class="d-none mb-2">
                         <div class="small text-muted">Selected AST Items</div>
                         <div class="fw-semibold mb-2"><span id="reqBatchCount">0</span> item(s)</div>
-                        <div id="reqBatchList" class="border rounded p-2" style="max-height:180px;overflow:auto;"></div>
-                        <div class="small text-muted mt-2">Quantity is fixed to 1 per selected AST item.</div>
+                        <div id="reqBatchItemsTable" class="border rounded"></div>
+                        <div class="small text-muted mt-2">Set quantity per item in the table.</div>
                     </div>
-                    <div class="mb-3">
+                    <div class="mb-3" id="reqQtyGroup">
                         <label class="form-label fw-semibold" id="reqQtyLabel">Quantity to request</label>
                         <input type="number" class="form-control" id="reqQtyInput" min="1" value="1">
                         <div class="small text-muted mt-1" id="reqQtyHelp">Must be exactly 1 for AST requests.</div>
@@ -204,9 +209,40 @@ let myReqLoading = false;
 let myReqPending = false;
 let reqMode = 'single';
 let reqBatchItems = [];
+let reqBatchTable = null;
+let reqBatchTableReady = false;
+let pendingReqBatchRows = [];
 let suppressSelectionSync = false;
 let selectedItemCodesByType = { AST: {}, CSM: {} };
 let itemCacheByType = { AST: {}, CSM: {} };
+
+function setReqBatchTableData(rows) {
+    const safeRows = Array.isArray(rows) ? rows : [];
+    pendingReqBatchRows = safeRows;
+    if (!reqBatchTable || !reqBatchTableReady) {
+        return;
+    }
+    reqBatchTable.setData(safeRows).then(function() {
+        pendingReqBatchRows = [];
+    }).catch(function() {
+        // Keep pending rows for retry after table/modal becomes ready.
+    });
+}
+
+function getBatchItemMaxQty(item) {
+    if (currentType === 'AST') return 1;
+    const avail = parseInt(item && item.available_qty, 10);
+    return Number.isFinite(avail) && avail > 0 ? avail : 1;
+}
+
+function normalizeBatchQty(item) {
+    const maxQty = getBatchItemMaxQty(item);
+    const rawQty = parseInt(item && item.qty_requested, 10);
+    let qty = Number.isFinite(rawQty) ? rawQty : 1;
+    if (qty < 1) qty = 1;
+    if (qty > maxQty) qty = maxQty;
+    return qty;
+}
 
 function getItemKey(row) {
     return String((row && row.item_code) || '').trim();
@@ -245,34 +281,9 @@ function updateBatchButtonState() {
 }
 
 function renderSelectedItemsReview() {
-    const selected = getSelectedItemsByType(currentType);
-    const selectedCount = selected.length;
+    const selectedCount = getSelectedCodes(currentType).length;
     $('#selectedItemsCount').text(selectedCount > 0 ? (selectedCount + ' item(s) selected in ' + currentType) : 'No item selected.');
-    $('#selectedItemsHint').text(currentType === 'AST' ? 'Batch request is available for AST only.' : 'CSM batch request is not available yet.');
     updateBatchButtonState();
-
-    if (selectedCount === 0) {
-        $('#selectedItemsList').html('<div class="small text-muted">No item selected.</div>');
-        return;
-    }
-
-    const html = selected.map(function(item) {
-        const code = escapeHtml(item.item_code || '-');
-        const desc = escapeHtml(item.item_description || '-');
-        const qtyUnit = currentType === 'AST'
-            ? ('1' + ((item.unit || '').trim() ? ' / ' + escapeHtml(item.unit) : ''))
-            : ((parseInt(item.available_qty, 10) || 0) + (((item.unit || '').trim()) ? (' / ' + escapeHtml(item.unit)) : ''));
-        return '<div class="border rounded px-2 py-1 bg-white d-flex align-items-start justify-content-between gap-2">'
-            + '<div>'
-            + '<div class="small fw-semibold">' + code + '</div>'
-            + '<div class="small text-muted">' + desc + '</div>'
-            + '<div class="small">Qty / Unit: ' + qtyUnit + '</div>'
-            + '</div>'
-            + '<button type="button" class="btn btn-sm btn-outline-danger js-remove-selected" data-code="' + code + '"><i class="bi bi-x-lg"></i></button>'
-            + '</div>';
-    }).join('');
-
-    $('#selectedItemsList').html(html);
 }
 
 function restoreSelectionForCurrentType() {
@@ -339,32 +350,146 @@ function syncCurrentTabSelectionFromTable() {
     renderSelectedItemsReview();
 }
 
+function toReqBatchRows(items) {
+    return (Array.isArray(items) ? items : []).map(function(item) {
+        const unit = String(item.unit || '').trim();
+        const maxQty = getBatchItemMaxQty(item);
+        return {
+            item_code: item.item_code || '',
+            item_category_name: item.item_category_name || '-',
+            item_description: item.item_description || '-',
+            unit: unit,
+            qty_requested: normalizeBatchQty(item),
+            max_qty: maxQty
+        };
+    });
+}
+
+function removeBatchItemByCode(code) {
+    const key = String(code || '').trim();
+    if (!key) return;
+
+    reqBatchItems = reqBatchItems.filter(function(item) {
+        return String(item.item_code || '').trim() !== key;
+    });
+
+    delete selectedItemCodesByType.AST[key];
+
+    const row = table ? table.getRows().find(function(r) { return getItemKey(r.getData()) === key; }) : null;
+    if (row && row.isSelected()) {
+        suppressSelectionSync = true;
+        row.deselect();
+        suppressSelectionSync = false;
+    }
+
+    $('#reqBatchCount').text(reqBatchItems.length);
+    setReqBatchTableData(toReqBatchRows(reqBatchItems));
+    renderSelectedItemsReview();
+
+    if (reqBatchItems.length === 0) {
+        $('#btnSubmitRequest').prop('disabled', true);
+        $('#reqModalMsg').removeClass('d-none').text('No item left in batch. Select at least one AST item.');
+        return;
+    }
+
+    $('#btnSubmitRequest').prop('disabled', false);
+    $('#reqModalMsg').addClass('d-none').text('');
+}
+
 function setRequestModalMode(mode, batchItems) {
     reqMode = mode === 'batch' ? 'batch' : 'single';
     if (reqMode === 'batch') {
         reqSelected = null;
-        reqBatchItems = Array.isArray(batchItems) ? batchItems : [];
-        $('#reqModalTitle').html('<i class="bi bi-bag-plus"></i>&ensp;Batch Request Items');
+        reqBatchItems = (Array.isArray(batchItems) ? batchItems : []).map(function(item) {
+            const cloned = Object.assign({}, item);
+            cloned.qty_requested = normalizeBatchQty(cloned);
+            return cloned;
+        });
+        const batchRows = toReqBatchRows(reqBatchItems);
+        $('#reqModalTitle').html('<i class="bi bi-bag-plus"></i>&ensp;Request items');
         $('#reqSingleInfo').addClass('d-none');
         $('#reqBatchInfo').removeClass('d-none');
+        $('#reqQtyGroup').addClass('d-none');
         $('#reqBatchCount').text(reqBatchItems.length);
-        const batchHtml = reqBatchItems.map(function(item) {
-            const code = escapeHtml(item.item_code || '-');
-            const desc = escapeHtml(item.item_description || '-');
-            return '<div class="small"><span class="fw-semibold">' + code + '</span> - ' + desc + '</div>';
-        }).join('');
-        $('#reqBatchList').html(batchHtml || '<div class="small text-muted">No selected item.</div>');
-        $('#btnSubmitRequest').text('Submit Batch Request');
-        $('#reqQtyLabel').text('Quantity per selected item (fixed)');
-        $('#reqQtyHelp').text('AST batch requests create one pending request per selected item.');
-        $('#reqQtyInput').val(1).prop('readonly', true);
+        if (!reqBatchTable) {
+            reqBatchTableReady = false;
+            reqBatchTable = new Tabulator('#reqBatchItemsTable', {
+                data: batchRows,
+                layout: 'fitColumns',
+                responsiveLayout: 'collapse',
+                placeholder: 'No selected item.',
+                columns: [
+                    { title: 'Property Tag', field: 'item_code', width: 135, formatter: function(cell){
+                        const v = escapeHtml(cell.getValue() || '');
+                        return v ? '<span class="badge bg-light text-dark border">' + v + '</span>' : '-';
+                    }},
+                    { title: 'Category', field: 'item_category_name', width: 130, formatter: function(cell){
+                        return twoLineText(cell.getValue() || '-', '-');
+                    }},
+                    { title: 'Description', field: 'item_description', widthGrow: 2, minWidth: 180, formatter: function(cell){
+                        return twoLineText(cell.getValue() || '-', '-');
+                    }},
+                    { title: 'Qty/Unit', field: 'qty_requested', width: 150, hozAlign: 'center', formatter: function(cell){
+                        const row = cell.getRow().getData() || {};
+                        const maxQty = Number(row.max_qty || 1);
+                        const val = Number(cell.getValue() || 1);
+                        const unit = String(row.unit || '').trim();
+                        const unitLabel = unit ? escapeHtml(unit) : 'Unit';
+                        const safeVal = (Number.isFinite(val) && val > 0) ? Math.min(val, maxQty) : 1;
+                        return '<div class="batch-qty-wrap">'
+                            + '<div class="input-group input-group-sm batch-qty-group">'
+                            + '<input type="number" class="form-control js-batch-qty-input batch-qty-input" '
+                            + 'min="1" max="' + maxQty + '" step="1" inputmode="numeric" '
+                            + 'data-code="' + escapeHtml(row.item_code || '') + '" value="' + safeVal + '">'
+                            + '<span class="input-group-text batch-qty-unit">' + unitLabel + '</span>'
+                            + '</div>'
+                            + '</div>';
+                    }},
+                    {
+                        title: 'Action',
+                        field: 'item_code',
+                        width: 84,
+                        hozAlign: 'center',
+                        headerSort: false,
+                        formatter: function() {
+                            return '<button type="button" class="btn btn-outline-danger btn-sm"><i class="bi bi-x-lg"></i></button>';
+                        },
+                        cellClick: function(e, cell) {
+                            const row = cell.getRow().getData() || {};
+                            removeBatchItemByCode(row.item_code || '');
+                        }
+                    }
+                ]
+            });
+            if (reqBatchTable && typeof reqBatchTable.on === 'function') {
+                reqBatchTable.on('tableBuilt', function() {
+                    reqBatchTableReady = true;
+                    if (pendingReqBatchRows.length > 0) {
+                        setReqBatchTableData(pendingReqBatchRows);
+                    }
+                });
+            }
+            setTimeout(function() {
+                if (!reqBatchTableReady) {
+                    reqBatchTableReady = true;
+                    if (pendingReqBatchRows.length > 0) {
+                        setReqBatchTableData(pendingReqBatchRows);
+                    }
+                }
+            }, 80);
+            pendingReqBatchRows = batchRows;
+        } else {
+            setReqBatchTableData(batchRows);
+        }
+        $('#btnSubmitRequest').prop('disabled', reqBatchItems.length === 0).text('Submit Batch Request');
         return;
     }
     reqBatchItems = [];
     $('#reqModalTitle').html('<i class="bi bi-bag-plus"></i>&ensp;Request Item');
     $('#reqSingleInfo').removeClass('d-none');
     $('#reqBatchInfo').addClass('d-none');
-    $('#btnSubmitRequest').text('Submit Request');
+    $('#reqQtyGroup').removeClass('d-none');
+    $('#btnSubmitRequest').prop('disabled', false).text('Submit Request');
     syncRequestQtyUI();
 }
 
@@ -598,7 +723,7 @@ function syncRequestQtyUI() {
                 const initials = (String(name).trim().split(/\s+/).map(function(w){ return w.charAt(0); }).filter(Boolean).slice(0,2).join('') || 'IT').toUpperCase();
                 return `<div class="thumb-wrap"><div class="item-badge" title="${escapeHtml(name)}">${escapeHtml(initials)}</div></div>`;
             }},
-            { title: 'Item Code', field: 'item_code', width: 125, headerFilter: 'input', formatter: function(cell){
+            { title: 'Property Tag', field: 'item_code', width: 125, headerFilter: 'input', formatter: function(cell){
                 const v = escapeHtml(cell.getValue() || '');
                 return v ? `<span class="badge bg-light text-dark border">${v}</span>` : '-';
             }},
@@ -756,24 +881,38 @@ $(document).ready(function() {
         renderSelectedItemsReview();
     });
 
-    $('body').on('click', '.js-remove-selected', function() {
-        const code = String($(this).data('code') || '').trim();
-        if (!code) return;
-        delete selectedItemCodesByType[currentType][code];
-        const row = table ? table.getRows().find(function(r) { return getItemKey(r.getData()) === code; }) : null;
-        if (row && row.isSelected()) {
-            suppressSelectionSync = true;
-            row.deselect();
-            suppressSelectionSync = false;
-        }
-        renderSelectedItemsReview();
-    });
-
     $('body').on('click', '.js-thumb-preview', function() {
         const full = $(this).data('full') || $(this).attr('data-full');
         if (!full) return;
         $('#imagePreviewImg').attr('src', full);
         $('#imagePreviewModal').modal('show');
+    });
+
+    $('#requestModal').on('shown.bs.modal', function() {
+        if (reqMode === 'batch' && reqBatchTable && typeof reqBatchTable.redraw === 'function') {
+            reqBatchTable.redraw(true);
+            if (pendingReqBatchRows.length > 0) {
+                setReqBatchTableData(pendingReqBatchRows);
+            }
+        }
+    });
+
+    $('#reqBatchItemsTable').on('input change', '.js-batch-qty-input', function() {
+        const code = String($(this).data('code') || '').trim();
+        if (!code) return;
+        const idx = reqBatchItems.findIndex(function(item) {
+            return String(item.item_code || '').trim() === code;
+        });
+        if (idx < 0) return;
+
+        const item = reqBatchItems[idx];
+        const maxQty = getBatchItemMaxQty(item);
+        let qty = parseInt($(this).val(), 10);
+        if (!Number.isFinite(qty)) qty = 1;
+        if (qty < 1) qty = 1;
+        if (qty > maxQty) qty = maxQty;
+        item.qty_requested = qty;
+        $(this).val(qty);
     });
 
     $('#itemsTable').on('click change', 'input[type="checkbox"], .tabulator-row, .tabulator-cell', function() {
@@ -804,9 +943,10 @@ $(document).ready(function() {
                 return;
             }
             const payloadItems = reqBatchItems.map(function(item) {
+                const qty = normalizeBatchQty(item);
                 return {
                     item_code: String(item.item_code || '').trim(),
-                    qty_requested: 1
+                    qty_requested: qty
                 };
             }).filter(function(item) {
                 return item.item_code !== '';
