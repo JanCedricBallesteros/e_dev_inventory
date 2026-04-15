@@ -523,12 +523,13 @@ function loadFacilityUnitOptions() {
                         const managerNames = String(u.manager_names || '').trim();
                         const managerUserIds = String(u.manager_user_ids || '');
                         const unitName = String(u.unit_name || '-');
+                        const isPersonalUse = (unitId === 0) || (unitName.toUpperCase() === 'FOR PERSONAL USE');
                         const value = facilityId + '::' + unitId;
                         group.push(
                             '<option value="' + escapeHtml(value) + '"' +
                             ' data-facility-id="' + facilityId + '"' +
                             ' data-unit-id="' + unitId + '"' +
-                            ' data-is-personal="' + (unitId === 0 ? '1' : '0') + '"' +
+                            ' data-is-personal="' + (isPersonalUse ? '1' : '0') + '"' +
                             ' data-managed-by="' + managedBy + '"' +
                             ' data-manager-user-ids="' + escapeHtml(managerUserIds) + '"' +
                             ' data-manager-names="' + escapeHtml(managerNames) + '">' +
@@ -781,7 +782,7 @@ $(document).ready(function(){
             if (typeof window.__astIssueEnforceExtraManagers === 'function') window.__astIssueEnforceExtraManagers();
             return;
         }
-        $('#unitManagersDisplay').val(selectedUnitMeta.manager_names || '-');
+        $('#unitManagersDisplay').val(selectedUnitMeta.is_personal === 1 ? 'System' : (selectedUnitMeta.manager_names || '-'));
         if (typeof window.__astIssueEnforceExtraManagers === 'function') window.__astIssueEnforceExtraManagers();
     });
 
