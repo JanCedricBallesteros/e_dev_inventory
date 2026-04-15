@@ -415,6 +415,7 @@ function setRequestModalMode(mode, batchItems) {
             reqBatchTableReady = false;
             reqBatchTable = new Tabulator('#reqBatchItemsTable', {
                 data: batchRows,
+                height: 320,
                 layout: 'fitColumns',
                 responsiveLayout: 'collapse',
                 placeholder: 'No selected item.',
@@ -675,6 +676,7 @@ function syncRequestQtyUI() {
         table = new Tabulator('#itemsTable', {
             ajaxURL: PROCESS_URL,
             ajaxParams: { action: 'list_available_items', type: currentType },
+        height: 420,
         selectable: true,
         ajaxConfig: 'POST',
         layout: 'fitColumns',
@@ -760,6 +762,7 @@ function initMyReqTable() {
     myReqTable = new Tabulator('#myReqTable', {
         ajaxURL: PROCESS_URL,
         ajaxParams: { action: 'list_my_requisitions' },
+        height: 420,
         ajaxConfig: 'POST',
         layout: 'fitColumns',
         responsiveLayout: 'collapse',
