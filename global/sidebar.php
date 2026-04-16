@@ -269,13 +269,13 @@ if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) {
                 <?php } ?>
 
                 <?php if (role_has("ADMIN") || ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && ($staffHasAST || $staffHasCSM || $staffHasPO))) { ?>
-                    <li class="nav-item <?php echo navigation_active("requisition,manage_issuance,manage_returns,facility_inventory_records", "active submenu"); ?>">
+                    <li class="nav-item <?php echo navigation_active("requisition,manage_returns,facility_inventory_records", "active submenu"); ?>">
                         <a class="collapsed" aria-expanded="false" data-bs-toggle="collapse" href="#tx_nav">
                             <i class="fas fa-exchange-alt"></i>
                             <p>Transactions</p>
                             <span class="caret"></span>
                         </a>
-                        <div class="collapse <?php echo navigation_active("requisition,manage_issuance,manage_returns,facility_inventory_records", "show"); ?>" id="tx_nav">
+                        <div class="collapse <?php echo navigation_active("requisition,manage_returns,facility_inventory_records", "show"); ?>" id="tx_nav">
                             <ul class="nav nav-collapse">
                                 <?php if (role_has("ADMIN") || $staffHasAST) { ?>
                                     <li class="<?php echo navigation_active("manage_returns"); ?>">
@@ -287,11 +287,6 @@ if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) {
                                 <li class="<?php echo navigation_active("requisition", "active", array("type" => array("AST", "CSM"))); ?>">
                                     <a href="<?php echo BASE_URL . "admin/modules/transactions/requisition.php?type=AST"; ?>">
                                         <span class="sub-item">Requisition Item</span>
-                                    </a>
-                                </li>
-                                <li class="<?php echo navigation_active("manage_issuance"); ?>">
-                                    <a href="<?php echo BASE_URL . "admin/modules/transactions/manage_issuance.php"; ?>">
-                                        <span class="sub-item">Issuance</span>
                                     </a>
                                 </li>
                                 <li class="<?php echo navigation_active("facility_inventory_records"); ?>">

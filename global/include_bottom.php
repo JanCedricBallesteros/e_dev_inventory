@@ -178,7 +178,6 @@
                 crumbs.push({ label: 'Transactions', url: '' });
                 var mapTx = {
                     'requisition': 'Requisition Item',
-                    'manage_issuance': 'Property Report',
                     'manage_returns': 'Property Return',
                     'facility_inventory_records': 'Facility Inventory Records'
                 };
