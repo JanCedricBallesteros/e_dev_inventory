@@ -71,7 +71,7 @@
                 </li>
 
                 <!-- messages [remove if not needed] -->
-                <li class="nav-item topbar-icon dropdown hidden-caret">
+                <li class="nav-item topbar-icon dropdown hidden-caret d-none">
                     <a class="nav-link dropdown-toggle" href="#" id="messageDropdown" role="button" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
                         <i class="fa fa-envelope"></i>
                     </a>
@@ -204,7 +204,7 @@
                 </li>
 
                 <!-- quick actions [remove if not needed] -->
-                <li class="nav-item topbar-icon dropdown hidden-caret">
+                <li class="nav-item topbar-icon dropdown hidden-caret d-none">
                     <a class="nav-link" data-bs-toggle="dropdown" href="#" aria-expanded="false">
                         <i class="fas fa-layer-group"></i>
                     </a>
