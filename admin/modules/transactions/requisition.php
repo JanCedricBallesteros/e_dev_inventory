@@ -6,11 +6,7 @@ require CONNECT_PATH;
 require VALIDATOR_PATH;
 require ISLOGIN;
 
-$staffAccess = (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && user_has_access(array("AST", "CSM"));
-if (!(
-    role_has("ADMIN") ||
-    $staffAccess
-)) {
+if (!role_has("ADMIN")) {
     header("Location: " . BASE_URL);
     exit();
 }
@@ -93,6 +89,49 @@ if (($type === 'AST' && !$canAST) || ($type === 'CSM' && !$canCSM)) {
             width: 100%;
             white-space: nowrap;
         }
+        .req-group-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 0.75rem;
+            width: 100%;
+            flex-wrap: wrap;
+        }
+        .req-group-meta {
+            min-width: 240px;
+            display: grid;
+            gap: 0.2rem;
+            line-height: 1.2;
+        }
+        .req-group-title {
+            font-weight: 600;
+        }
+        .req-group-sub {
+            color: #6c757d;
+            font-size: 0.8rem;
+        }
+        .req-group-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+        }
+        .req-group-actions .btn {
+            white-space: nowrap;
+        }
+        #approveModal .modal-dialog {
+            max-width: 96vw;
+            margin: 0.75rem auto;
+        }
+        .approve-row-excluded td {
+            background: #fff5f5 !important;
+        }
+        .approve-reason-input {
+            min-width: 170px;
+        }
+        .approve-qty-input {
+            width: 88px;
+            margin: 0 auto;
+        }
         .tabulator { font-size: 0.875rem; }
     </style>
 </head>
@@ -164,28 +203,32 @@ if (($type === 'AST' && !$canAST) || ($type === 'CSM' && !$canCSM)) {
 </div>
 
 <div class="modal fade" id="approveModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">Approve Requisition</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <input type="hidden" id="approveReqId">
+                <input type="hidden" id="approveReqIds">
                 <p class="mb-2">Approve this requisition?</p>
                 <div class="table-responsive">
                     <table class="table table-sm table-bordered align-middle mb-0">
                         <thead class="table-light">
                             <tr>
+                                <th style="width:70px;" class="text-center">Req ID</th>
+                                <th style="width:70px;" class="text-center">Image</th>
                                 <th style="width:120px;">Item Code</th>
                                 <th>Description</th>
                                 <th style="width:60px;" class="text-center">Qty</th>
                                 <th style="width:110px;">Requester</th>
+                                <th style="width:220px;">Not Approved Reason</th>
+                                <th style="width:70px;" class="text-center">Action</th>
                             </tr>
                         </thead>
                         <tbody id="approvePreviewBody">
                             <tr>
-                                <td colspan="4" class="text-muted small">No request selected.</td>
+                                <td colspan="8" class="text-muted small">No request selected.</td>
                             </tr>
                         </tbody>
                     </table>
@@ -207,7 +250,7 @@ if (($type === 'AST' && !$canAST) || ($type === 'CSM' && !$canCSM)) {
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <input type="hidden" id="disapproveReqId">
+                <input type="hidden" id="disapproveReqIds">
                 <label class="form-label fw-semibold">Reason</label>
                 <textarea id="disapproveReason" class="form-control" rows="3" placeholder="Provide reason..."></textarea>
                 <div id="disapproveMsg" class="alert alert-danger d-none mt-2"></div>
@@ -227,7 +270,7 @@ if (($type === 'AST' && !$canAST) || ($type === 'CSM' && !$canCSM)) {
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <input type="hidden" id="claimReqId">
+                <input type="hidden" id="claimReqIds">
                 <div class="row g-2">
                     <div class="col-md-6">
                         <label class="form-label fw-semibold">Facility</label>
@@ -272,7 +315,7 @@ if (($type === 'AST' && !$canAST) || ($type === 'CSM' && !$canCSM)) {
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <input type="hidden" id="backStorageReqId">
+                <input type="hidden" id="backStorageReqIds">
                 <p class="mb-2">Move this requisition back to storage?</p>
                 <div class="alert alert-warning mb-0" id="backStorageInfo">This will update the requisition workflow status.</div>
                 <div id="backStorageMsg" class="alert alert-danger d-none mt-2 mb-0"></div>
@@ -289,10 +332,130 @@ if (($type === 'AST' && !$canAST) || ($type === 'CSM' && !$canCSM)) {
 const BASE_URL = <?php echo json_encode(BASE_URL); ?>;
 const REQ_TYPE = <?php echo json_encode($type); ?>;
 const PROCESS_URL = BASE_URL + 'admin/modules/transactions/requisition_process.php';
+const DEFAULT_DISAPPROVE_REASON_FROM_APPROVE = 'Not approved during grouped approval.';
 let reqTable = null;
 let claimFacilities = [];
 let claimUnits = [];
 let reqSearchTimer = null;
+
+function normalizeGroupStatus(statuses) {
+    const list = Array.from(new Set((statuses || []).map(function(s){ return String(s || '').toLowerCase(); })));
+    if (!list.length) return '';
+    if (list.length === 1) return list[0];
+    const pendingLike = list.every(function(s){ return s === 'pending' || s === 'reviewed'; });
+    if (pendingLike) return 'pending';
+    const claimLike = list.every(function(s){ return s === 'for_claiming' || s === 'approved'; });
+    if (claimLike) return 'for_claiming';
+    return 'mixed';
+}
+
+function safeNumber(value, fallback) {
+    const n = parseInt(value, 10);
+    return Number.isFinite(n) ? n : (fallback || 0);
+}
+
+function toIsoSecond(value) {
+    const v = String(value || '').trim();
+    if (!v) return '';
+    return v.slice(0, 19);
+}
+
+function buildBatchGroupKey(row) {
+    const requesterId = safeNumber(row.requester_user_id, 0);
+    const createdPart = toIsoSecond(row.created_at || row.updated_at || '');
+    const facilityId = String(row.claim_facility_id || '0');
+    const unitId = String(row.claim_unit_id || '0');
+    const type = String(row.module_type || REQ_TYPE || '');
+    return [type, requesterId, createdPart, facilityId, unitId].join('|');
+}
+
+function enrichRowsWithBatch(rows) {
+    const mapped = (rows || []).map(function(row) {
+        const next = Object.assign({}, row);
+        next.batch_group_key = buildBatchGroupKey(next);
+        return next;
+    });
+
+    const grouped = {};
+    mapped.forEach(function(row) {
+        const k = String(row.batch_group_key || '');
+        if (!grouped[k]) grouped[k] = [];
+        grouped[k].push(row);
+    });
+
+    Object.keys(grouped).forEach(function(k) {
+        const bucket = grouped[k] || [];
+        const statuses = bucket.map(function(r){ return r.workflow_status; });
+        const normalized = normalizeGroupStatus(statuses);
+        const itemCount = bucket.length;
+        const qtyTotal = bucket.reduce(function(sum, r){ return sum + safeNumber(r.qty_requested, 0); }, 0);
+        const ids = bucket.map(function(r){ return safeNumber(r.requisition_id, 0); }).filter(function(id){ return id > 0; });
+        const requesterNames = Array.from(new Set(bucket.map(function(r){ return String(r.requester_name || '').trim(); }).filter(Boolean)));
+
+        bucket.forEach(function(r) {
+            r.batch_item_count = itemCount;
+            r.batch_qty_total = qtyTotal;
+            r.batch_requisition_ids = ids;
+            r.batch_workflow_status = normalized;
+            r.batch_requester_name = requesterNames.length === 1 ? requesterNames[0] : 'Multiple Requesters';
+            r.batch_has_multiple_requesters = requesterNames.length > 1;
+            r.batch_created_at = bucket[0] && bucket[0].created_at ? bucket[0].created_at : (r.created_at || '');
+        });
+    });
+
+    return mapped;
+}
+
+function getBatchRowsByKey(batchKey) {
+    if (!reqTable || !batchKey) return [];
+    const rows = reqTable.getRows() || [];
+    return rows
+        .map(function(r){ return r.getData(); })
+        .filter(function(d){ return String(d.batch_group_key || '') === String(batchKey); })
+        .sort(function(a, b){ return safeNumber(a.requisition_id, 0) - safeNumber(b.requisition_id, 0); });
+}
+
+function getBatchReqIds(batchRows) {
+    return (batchRows || []).map(function(r){ return safeNumber(r.requisition_id, 0); }).filter(function(id){ return id > 0; });
+}
+
+function getStoredIds(selector) {
+    try {
+        const raw = $(selector).val() || '[]';
+        const arr = JSON.parse(raw);
+        return Array.isArray(arr) ? arr.map(function(id){ return safeNumber(id, 0); }).filter(function(id){ return id > 0; }) : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function setStoredIds(selector, ids) {
+    $(selector).val(JSON.stringify(Array.isArray(ids) ? ids : []));
+}
+
+function runBatchAction(ids, runOne, onDone) {
+    const queue = Array.isArray(ids) ? ids.slice() : [];
+    const failed = [];
+    let okCount = 0;
+
+    function next() {
+        if (!queue.length) {
+            onDone({ successCount: okCount, failed: failed });
+            return;
+        }
+        const id = queue.shift();
+        runOne(id, function(success, message) {
+            if (success) {
+                okCount += 1;
+            } else {
+                failed.push({ id: id, message: message || 'Request failed.' });
+            }
+            next();
+        });
+    }
+
+    next();
+}
 
 function escapeHtml(value) {
     return String(value ?? '')
@@ -349,23 +512,139 @@ function notifyMsg(type, msg) {
 
 function renderApprovePreview(row) {
     const $body = $('#approvePreviewBody');
-    if (!row) {
-        $body.html('<tr><td colspan="4" class="text-muted small">No request selected.</td></tr>');
+    const rows = Array.isArray(row) ? row : (row ? [row] : []);
+    if (!rows.length) {
+        $body.html('<tr><td colspan="8" class="text-muted small">No request selected.</td></tr>');
         return;
     }
-    const code = escapeHtml(row.item_code || '-');
-    const desc = threeLineText(row.item_description || '-', '-');
-    const qty = parseInt(row.qty_requested, 10);
-    const qtyText = Number.isFinite(qty) ? String(qty) : '-';
-    const requester = twoLineText(row.requester_name || '-', '-');
-    $body.html(
-        '<tr>' +
-        '<td><span class="badge bg-light text-dark border">' + code + '</span></td>' +
-        '<td>' + desc + '</td>' +
-        '<td class="text-center">' + escapeHtml(qtyText) + '</td>' +
-        '<td>' + requester + '</td>' +
-        '</tr>'
-    );
+    const html = rows.map(function(entry) {
+        const reqId = safeNumber(entry.requisition_id, 0);
+        const code = escapeHtml(entry.item_code || '-');
+        const desc = threeLineText(entry.item_description || '-', '-');
+        const moduleType = String(entry.module_type || REQ_TYPE || '').toUpperCase();
+        const csmMaxQty = safeNumber(entry.csm_available_qty, 0);
+        let qty = safeNumber(entry.qty_requested, 1);
+        if (moduleType === 'AST') {
+            qty = 1;
+        } else if (csmMaxQty > 0 && qty > csmMaxQty) {
+            qty = csmMaxQty;
+        }
+        if (qty <= 0) qty = 1;
+        const requester = twoLineText(entry.requester_name || '-', '-');
+        const thumbUrl = entry.category_photo_thumb_url || '';
+        const fullUrl = entry.category_photo_url || thumbUrl;
+        const displayName = String(entry.item_category_name || entry.item_description || 'Item');
+        const initials = (displayName.trim().split(/\s+/).map(function(w){ return w.charAt(0); }).filter(Boolean).slice(0, 2).join('') || 'IT').toUpperCase();
+        const imageHtml = thumbUrl
+            ? '<div class="thumb-wrap"><img class="item-thumb js-thumb-preview" src="' + escapeHtml(thumbUrl) + '" data-full="' + escapeHtml(fullUrl) + '" loading="lazy" alt="Item image"></div>'
+            : '<div class="thumb-wrap"><div class="item-badge" title="' + escapeHtml(displayName) + '">' + escapeHtml(initials) + '</div></div>';
+        const qtyInputHtml = moduleType === 'AST'
+            ? '<input type="number" class="form-control form-control-sm text-center approve-qty-input js-approve-qty" min="1" max="1" step="1" value="1" readonly data-module="AST" data-max="1">'
+            : '<div>' +
+                '<input type="number" class="form-control form-control-sm text-center approve-qty-input js-approve-qty" min="1"' + (csmMaxQty > 0 ? (' max="' + escapeHtml(String(csmMaxQty)) + '"') : '') + ' step="1" value="' + escapeHtml(String(qty)) + '" data-module="CSM" data-max="' + escapeHtml(String(csmMaxQty)) + '">' +
+                '<div class="text-muted small text-center">max ' + escapeHtml(String(Math.max(csmMaxQty, 0))) + '</div>' +
+            '</div>';
+        return '<tr data-req-id="' + escapeHtml(reqId ? String(reqId) : '') + '" data-module="' + escapeHtml(moduleType) + '" data-max-qty="' + escapeHtml(String(csmMaxQty)) + '">' +
+            '<td class="text-center">' + escapeHtml(reqId ? String(reqId) : '-') + '</td>' +
+            '<td class="text-center">' + imageHtml + '</td>' +
+            '<td><span class="badge bg-light text-dark border">' + code + '</span></td>' +
+            '<td>' + desc + '</td>' +
+            '<td class="text-center">' + qtyInputHtml + '</td>' +
+            '<td>' + requester + '</td>' +
+            '<td><textarea class="form-control form-control-sm approve-reason-input js-approve-reason" rows="1" placeholder="Optional reason" disabled></textarea></td>' +
+            '<td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger js-approve-row-remove" title="Exclude from approve"><i class="bi bi-x-lg"></i></button></td>' +
+        '</tr>';
+    }).join('');
+    $body.html(html);
+}
+
+function setApproveRowExcluded($row, excluded) {
+    if (!$row || !$row.length) return;
+    const $reason = $row.find('.js-approve-reason');
+    const $qty = $row.find('.js-approve-qty');
+    const $btn = $row.find('.js-approve-row-remove');
+    $row.toggleClass('approve-row-excluded', !!excluded);
+    $reason.prop('disabled', !excluded);
+    $qty.prop('disabled', !!excluded);
+    if (!excluded) {
+        $reason.val('');
+    }
+    $btn.toggleClass('btn-outline-danger', !excluded);
+    $btn.toggleClass('btn-danger', !!excluded);
+    $btn.attr('title', excluded ? 'Re-include item for approve' : 'Exclude from approve');
+}
+
+function collectApproveDecisions() {
+    const decisions = {
+        approveItems: [],
+        rejectItems: []
+    };
+    $('#approvePreviewBody tr[data-req-id]').each(function() {
+        const $row = $(this);
+        const id = safeNumber($row.attr('data-req-id'), 0);
+        if (!id) return;
+        const excluded = $row.hasClass('approve-row-excluded');
+        const reason = ($row.find('.js-approve-reason').val() || '').trim();
+        const moduleType = String($row.attr('data-module') || '').toUpperCase();
+        const maxQty = safeNumber($row.attr('data-max-qty'), 0);
+        const qty = safeNumber($row.find('.js-approve-qty').val(), 0);
+        if (excluded) {
+            decisions.rejectItems.push({ id: id, reason: reason });
+        } else {
+            decisions.approveItems.push({ id: id, qty: qty, moduleType: moduleType, maxQty: maxQty });
+        }
+    });
+    return decisions;
+}
+
+function buildApproveItemsFromIds(ids) {
+    const items = [];
+    const rows = reqTable ? (reqTable.getData() || []) : [];
+    const rowMap = {};
+    rows.forEach(function(r) {
+        rowMap[String(r.requisition_id)] = r;
+    });
+    (ids || []).forEach(function(id) {
+        const reqId = safeNumber(id, 0);
+        if (!reqId) return;
+        const row = rowMap[String(reqId)] || {};
+        const moduleType = String(row.module_type || REQ_TYPE || '').toUpperCase();
+        const maxQty = safeNumber(row.csm_available_qty, 0);
+        let qty = safeNumber(row.qty_requested, 1);
+        if (moduleType === 'AST') qty = 1;
+        if (qty <= 0) qty = 1;
+        items.push({ id: reqId, qty: qty, moduleType: moduleType, maxQty: maxQty });
+    });
+    return items;
+}
+
+function validateApproveItems(approveItems) {
+    const list = Array.isArray(approveItems) ? approveItems : [];
+    for (let i = 0; i < list.length; i += 1) {
+        const item = list[i];
+        const id = safeNumber(item.id, 0);
+        const qty = safeNumber(item.qty, 0);
+        const moduleType = String(item.moduleType || '').toUpperCase();
+        const maxQty = safeNumber(item.maxQty, 0);
+        if (!id) {
+            return { ok: false, message: 'Invalid requisition entry.' };
+        }
+        if (qty <= 0) {
+            return { ok: false, message: 'Qty must be at least 1 for requisition #' + id + '.' };
+        }
+        if (moduleType === 'AST' && qty !== 1) {
+            return { ok: false, message: 'AST requisition #' + id + ' must have Qty 1.' };
+        }
+        if (moduleType === 'CSM') {
+            if (maxQty <= 0) {
+                return { ok: false, message: 'No available quantity for CSM requisition #' + id + '.' };
+            }
+            if (qty > maxQty) {
+                return { ok: false, message: 'Qty for requisition #' + id + ' exceeds available quantity (' + maxQty + ').' };
+            }
+        }
+    }
+    return { ok: true, message: '' };
 }
 
 if (typeof window.success_notif !== 'function') {
@@ -425,6 +704,49 @@ function initReqTable() {
         ajaxURL: PROCESS_URL,
         ajaxParams: { action: 'list_requisitions', type: REQ_TYPE },
         ajaxConfig: 'POST',
+        groupBy: 'batch_group_key',
+        groupStartOpen: true,
+        groupHeader: function(value, count, data) {
+            const rows = Array.isArray(data) ? data : [];
+            const first = rows[0] || {};
+            const requester = escapeHtml(first.batch_requester_name || first.requester_name || '-');
+            const employment = escapeHtml(first.employment_status || '-');
+            const created = escapeHtml(String(first.batch_created_at || first.created_at || '-'));
+            const totalQty = rows.reduce(function(sum, r){ return sum + safeNumber(r.qty_requested, 0); }, 0);
+            const statuses = rows.map(function(r){ return r.workflow_status; });
+            const groupStatus = normalizeGroupStatus(statuses);
+            const statusHtml = groupStatus === 'mixed'
+                ? '<span class="status-badge bg-dark text-white">mixed</span>'
+                : statusBadge(groupStatus);
+            const encodedKey = encodeURIComponent(String(value || ''));
+
+            let actionsHtml = '<span class="badge bg-light text-dark border">No Actions</span>';
+            if (groupStatus === 'pending' || groupStatus === 'reviewed') {
+                actionsHtml = '' +
+                    '<button class="btn btn-sm btn-success btn-batch-approve" data-batch="' + encodedKey + '">Approve Group</button>' +
+                    '<button class="btn btn-sm btn-danger btn-batch-disapprove" data-batch="' + encodedKey + '">Disapprove Group</button>';
+            } else if (groupStatus === 'for_claiming' || groupStatus === 'approved') {
+                actionsHtml = '' +
+                    '<button class="btn btn-sm btn-primary btn-batch-claim" data-batch="' + encodedKey + '">Mark Group Claimed</button>' +
+                    '<button class="btn btn-sm btn-outline-secondary btn-batch-back-storage" data-batch="' + encodedKey + '">Back Group to Storage</button>';
+            } else if (groupStatus === 'claimed') {
+                actionsHtml = '<span class="badge bg-success">Claimed</span>';
+            } else if (groupStatus === 'disapproved') {
+                actionsHtml = '<span class="badge bg-danger">Disapproved</span>';
+            } else if (groupStatus === 'not_claimed') {
+                actionsHtml = '<span class="badge bg-secondary">Not Claimed</span>';
+            }
+
+            return '' +
+                '<div class="req-group-header">' +
+                    '<div class="req-group-meta">' +
+                        '<div class="req-group-title">' + requester + ' <span class="text-muted">(' + count + ' item' + (count > 1 ? 's' : '') + ', Qty ' + totalQty + ')</span></div>' +
+                        '<div class="req-group-sub">Employment: ' + employment + '</div>' +
+                        '<div class="req-group-sub">Created: ' + created + ' &nbsp; ' + statusHtml + '</div>' +
+                    '</div>' +
+                    '<div class="req-group-actions">' + actionsHtml + '</div>' +
+                '</div>';
+        },
         layout: 'fitColumns',
         responsiveLayout: 'collapse',
         placeholder: 'No requisitions found',
@@ -437,7 +759,7 @@ function initReqTable() {
                 return [];
             }
             showReqMessage('');
-            return response.data || [];
+            return enrichRowsWithBatch(response.data || []);
         },
         columns: [
             { title: 'Image', field: 'category_photo_thumb_url', width: 62, hozAlign: 'center', headerSort: false, formatter: function(cell){
@@ -450,32 +772,16 @@ function initReqTable() {
                 const initials = (String(name).trim().split(/\s+/).map(function(w){ return w.charAt(0); }).filter(Boolean).slice(0,2).join('') || 'IT').toUpperCase();
                 return `<div class="thumb-wrap"><div class="item-badge" title="${escapeHtml(name)}">${escapeHtml(initials)}</div></div>`;
             }},
-            { title: 'ID', field: 'requisition_id', width: 60, hozAlign: 'center' },
-            { title: 'Requester', field: 'requester_name', widthGrow: 1, minWidth: 150, headerFilter: 'input', formatter: function(cell){
-                return twoLineText(cell.getValue());
-            }},
-            { title: 'Employment', field: 'employment_status', width: 155, headerFilter: 'select', headerFilterParams: { values: { '': 'All', 'teaching': 'Teaching', 'non_teaching': 'Non-Teaching' } }, headerFilterFunc: function(headerValue, rowValue, rowData) { if (!headerValue) return true; return String(rowData.position_category || '').toLowerCase() === headerValue; }, formatter: function(cell){
-                const row = cell.getRow().getData();
-                const status = escapeHtml(cell.getValue() || '-');
-                const cat = String(row.position_category || '').toLowerCase();
-                let label = '';
-                if (cat === 'teaching') {
-                    label = 'Teaching';
-                } else if (cat === 'non_teaching') {
-                    label = 'Non-Teaching';
-                }
-                const sub = label ? `<div class="text-muted small">${label}</div>` : '';
-                return `<div style="line-height:1.3;white-space:normal;">${status}${sub}</div>`;
-            }},
-            { title: 'Item Code', field: 'item_code', width: 125, headerFilter: 'input', formatter: function(cell){
+            { title: 'Req ID', field: 'requisition_id', width: 70, hozAlign: 'center' },
+            { title: 'Item Code', field: 'item_code', width: 125, formatter: function(cell){
                 const v = escapeHtml(cell.getValue() || '');
                 return v ? `<span class="badge bg-light text-dark border">${v}</span>` : '-';
             }},
-            { title: 'Description', field: 'item_description', widthGrow: 2, minWidth: 180, headerFilter: 'input', formatter: function(cell){
+            { title: 'Description', field: 'item_description', widthGrow: 2, minWidth: 180, formatter: function(cell){
                 return threeLineText(cell.getValue());
             }},
             { title: 'Qty', field: 'qty_requested', width: 55, hozAlign: 'center' },
-            { title: 'Workflow', field: 'workflow_status', width: 120, headerFilter: 'select', headerFilterParams: { values: { '': 'All', 'pending': 'Pending', 'reviewed': 'Reviewed', 'approved': 'Approved', 'for_claiming': 'For Claiming', 'claimed': 'Claimed', 'not_claimed': 'Not Claimed', 'disapproved': 'Disapproved' } }, formatter: function(cell){
+            { title: 'Workflow', field: 'workflow_status', width: 120, formatter: function(cell){
                 return statusBadge(cell.getValue());
             }},
             { title: 'Updated', field: 'updated_at', width: 130, formatter: function(cell){
@@ -489,105 +795,172 @@ function initReqTable() {
             }},
             { title: 'Remarks', field: 'remarks', widthGrow: 1, minWidth: 130, formatter: function(cell){
                 return twoLineText(cell.getValue() || '', '-');
-            }},
-            { title: 'Actions', field: 'requisition_id', width: 210, hozAlign: 'center', formatter: function(cell){
-                const id = cell.getValue();
-                const data = cell.getRow().getData();
-                const wf = String(data.workflow_status || '').toLowerCase();
-                if (wf === 'claimed') {
-                    return `<span class="badge bg-success">Claimed</span>`;
-                }
-                if (wf === 'disapproved') {
-                    return `<span class="badge bg-danger">Disapproved</span>`;
-                }
-                if (wf === 'not_claimed') {
-                    return `<span class="badge bg-secondary">Not Claimed</span>`;
-                }
-                if (wf === 'pending' || wf === 'reviewed') {
-                    return `
-                        <div class="req-actions-stack">
-                            <button class="btn btn-sm btn-success btn-approve" data-id="${id}">Approve</button>
-                            <button class="btn btn-sm btn-danger btn-disapprove" data-id="${id}">Disapprove</button>
-                        </div>
-                    `;
-                }
-                if (wf === 'for_claiming' || wf === 'approved') {
-                    return `
-                        <div class="req-actions-stack">
-                            <button class="btn btn-sm btn-primary btn-claim" data-id="${id}">Mark Claimed</button>
-                            <button class="btn btn-sm btn-outline-secondary btn-back-storage" data-id="${id}">Back to Storage</button>
-                        </div>
-                    `;
-                }
-                return `<span class="badge bg-light text-dark border">No Actions</span>`;
             }}
         ]
     });
 
-    $('#reqTable').on('click', '.btn-approve', function() {
-        const id = $(this).data('id');
-        const row = reqTable ? reqTable.getRows().find(r => String(r.getData().requisition_id) === String(id)) : null;
-        const data = row ? row.getData() : null;
-        $('#approveReqId').val(id || '');
-        renderApprovePreview(data);
+    $('#reqTable').on('click', '.btn-batch-approve', function() {
+        const encoded = String($(this).data('batch') || '');
+        const batchKey = decodeURIComponent(encoded);
+        const rows = getBatchRowsByKey(batchKey);
+        const ids = getBatchReqIds(rows);
+        setStoredIds('#approveReqIds', ids);
+        renderApprovePreview(rows);
         $('#approveMsg').addClass('d-none').text('');
         $('#approveModal').modal('show');
     });
 
+    $('#approvePreviewBody').on('click', '.js-approve-row-remove', function() {
+        const $row = $(this).closest('tr[data-req-id]');
+        const nextExcluded = !$row.hasClass('approve-row-excluded');
+        setApproveRowExcluded($row, nextExcluded);
+    });
+
+    $('#approvePreviewBody').on('input change', '.js-approve-qty', function() {
+        const $input = $(this);
+        const moduleType = String($input.data('module') || '').toUpperCase();
+        const maxQty = safeNumber($input.data('max'), 0);
+        let qty = safeNumber($input.val(), 0);
+        if (qty <= 0) qty = 1;
+        if (moduleType === 'AST') {
+            qty = 1;
+        } else if (maxQty > 0 && qty > maxQty) {
+            qty = maxQty;
+        }
+        $input.val(String(qty));
+    });
+
     $('#btnConfirmApprove').on('click', function() {
-        const id = $('#approveReqId').val();
-        $.post(PROCESS_URL, { action: 'approve_requisition', requisition_id: id }, function(res) {
-            if (res && res.success) {
-                $('#approveModal').modal('hide');
-                loadReqData();
-                success_notif(res.message || 'Requisition approved.');
-            } else {
-                $('#approveMsg').removeClass('d-none').text(res.message || 'Approval failed.');
-            }
-        }, 'json').fail(function(xhr) {
-            const msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Server error while approving.';
-            $('#approveMsg').removeClass('d-none').text(msg);
+        const decisions = collectApproveDecisions();
+        let approveItems = decisions.approveItems;
+        const rejectItems = decisions.rejectItems;
+        if (!approveItems.length && !rejectItems.length) {
+            approveItems = buildApproveItemsFromIds(getStoredIds('#approveReqIds'));
+        }
+        if (!approveItems.length && !rejectItems.length) {
+            $('#approveMsg').removeClass('d-none').text('No requisition selected.');
+            return;
+        }
+        const validation = validateApproveItems(approveItems);
+        if (!validation.ok) {
+            $('#approveMsg').removeClass('d-none').text(validation.message || 'Invalid quantity values.');
+            return;
+        }
+        const $btn = $(this);
+        $btn.prop('disabled', true).text('Processing...');
+
+        runBatchAction(approveItems, function(item, done) {
+            $.post(PROCESS_URL, { action: 'approve_requisition', requisition_id: item.id, qty_requested: item.qty }, function(res) {
+                done(!!(res && res.success), (res && res.message) ? res.message : 'Approval failed.');
+            }, 'json').fail(function(xhr) {
+                const msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Server error while approving.';
+                done(false, msg);
+            });
+        }, function(approveResult) {
+            const rejectIds = rejectItems.map(function(item){ return item.id; });
+            const rejectReasonById = {};
+            rejectItems.forEach(function(item) {
+                rejectReasonById[item.id] = item.reason || DEFAULT_DISAPPROVE_REASON_FROM_APPROVE;
+            });
+
+            runBatchAction(rejectIds, function(id, done) {
+                $.post(PROCESS_URL, {
+                    action: 'disapprove_requisition',
+                    requisition_id: id,
+                    reason: rejectReasonById[id] || DEFAULT_DISAPPROVE_REASON_FROM_APPROVE
+                }, function(res) {
+                    done(!!(res && res.success), (res && res.message) ? res.message : 'Disapproval failed.');
+                }, 'json').fail(function(xhr) {
+                    const msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Server error while disapproving.';
+                    done(false, msg);
+                });
+            }, function(rejectResult) {
+                $btn.prop('disabled', false).text('Confirm Approve');
+
+                const approvedCount = approveResult.successCount || 0;
+                const disapprovedCount = rejectResult.successCount || 0;
+                const failed = (approveResult.failed || []).concat(rejectResult.failed || []);
+
+                if (approvedCount > 0 || disapprovedCount > 0) {
+                    $('#approveModal').modal('hide');
+                    loadReqData();
+                    const parts = [];
+                    if (approvedCount > 0) parts.push(approvedCount + ' approved');
+                    if (disapprovedCount > 0) parts.push(disapprovedCount + ' disapproved');
+                    const summary = parts.join(', ');
+                    if (failed.length) {
+                        error_notif(summary + '. ' + failed.length + ' failed.');
+                    } else {
+                        success_notif(summary + '.');
+                    }
+                } else {
+                    const firstErr = failed[0] ? failed[0].message : 'Approval failed.';
+                    $('#approveMsg').removeClass('d-none').text(firstErr);
+                }
+            });
         });
     });
 
-    $('#reqTable').on('click', '.btn-disapprove', function() {
-        const id = $(this).data('id');
-        $('#disapproveReqId').val(id || '');
+    $('#reqTable').on('click', '.btn-batch-disapprove', function() {
+        const encoded = String($(this).data('batch') || '');
+        const batchKey = decodeURIComponent(encoded);
+        const rows = getBatchRowsByKey(batchKey);
+        const ids = getBatchReqIds(rows);
+        setStoredIds('#disapproveReqIds', ids);
         $('#disapproveReason').val('');
         $('#disapproveMsg').addClass('d-none').text('');
         $('#disapproveModal').modal('show');
     });
 
     $('#btnConfirmDisapprove').on('click', function() {
-        const id = $('#disapproveReqId').val();
+        const ids = getStoredIds('#disapproveReqIds');
         const reason = ($('#disapproveReason').val() || '').trim();
+        if (!ids.length) {
+            $('#disapproveMsg').removeClass('d-none').text('No requisition selected.');
+            return;
+        }
         if (!reason) {
             $('#disapproveMsg').removeClass('d-none').text('Reason is required.');
             return;
         }
-        $.post(PROCESS_URL, { action: 'disapprove_requisition', requisition_id: id, reason: reason }, function(res) {
-            if (res && res.success) {
+        const $btn = $(this);
+        $btn.prop('disabled', true).text('Processing...');
+        runBatchAction(ids, function(id, done) {
+            $.post(PROCESS_URL, { action: 'disapprove_requisition', requisition_id: id, reason: reason }, function(res) {
+                done(!!(res && res.success), (res && res.message) ? res.message : 'Disapproval failed.');
+            }, 'json').fail(function(xhr) {
+                const msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Server error while disapproving.';
+                done(false, msg);
+            });
+        }, function(result) {
+            $btn.prop('disabled', false).text('Confirm Disapprove');
+            if (result.successCount > 0) {
                 $('#disapproveModal').modal('hide');
                 loadReqData();
-                success_notif(res.message || 'Requisition disapproved.');
-            } else {
-                $('#disapproveMsg').removeClass('d-none').text(res.message || 'Disapproval failed.');
+                if (result.failed.length) {
+                    error_notif(result.successCount + ' request(s) disapproved. ' + result.failed.length + ' failed.');
+                } else {
+                    success_notif(result.successCount + ' request(s) disapproved.');
+                }
+                return;
             }
-        }, 'json').fail(function(xhr) {
-            const msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Server error while disapproving.';
-            $('#disapproveMsg').removeClass('d-none').text(msg);
+            const firstErr = result.failed[0] ? result.failed[0].message : 'Disapproval failed.';
+            $('#disapproveMsg').removeClass('d-none').text(firstErr);
         });
     });
 
-    $('#reqTable').on('click', '.btn-claim', function() {
-        const id = $(this).data('id');
-        const row = reqTable.getRows().find(r => String(r.getData().requisition_id) === String(id));
-        const data = row ? row.getData() : null;
-        if (!data) {
+    $('#reqTable').on('click', '.btn-batch-claim', function() {
+        const encoded = String($(this).data('batch') || '');
+        const batchKey = decodeURIComponent(encoded);
+        const rows = getBatchRowsByKey(batchKey);
+        const ids = getBatchReqIds(rows);
+        const data = rows[0] || null;
+        if (!data || !ids.length) {
             error_notif('Requisition row not found.');
             return;
         }
-        $('#claimReqId').val(data.requisition_id || '');
+        const requesterIds = Array.from(new Set(rows.map(function(r){ return String(r.requester_user_id || '').trim(); }).filter(Boolean)));
+        setStoredIds('#claimReqIds', ids);
         const reqFacilityId = data.claim_facility_id || '';
         const reqUnitId = data.claim_unit_id || '';
         const hasPresetUnit = String(reqFacilityId) !== '' && String(reqUnitId) !== '';
@@ -599,44 +972,55 @@ function initReqTable() {
             loadClaimUnits(reqFacilityId, reqUnitId);
         }
         $('#claimRemarks').val('');
-        $('#claimIssuedToUserId').val(String(data.requester_user_id || ''));
-        $('#claimIssuedToName').val(data.requester_name || '');
+        $('#claimIssuedToUserId').val(requesterIds.length === 1 ? String(data.requester_user_id || '') : '');
+        $('#claimIssuedToName').val(requesterIds.length === 1 ? (data.requester_name || '') : ('Multiple (' + requesterIds.length + ')'));
         $('#claimManagedByUserId').val('');
         $('#claimManagedByName').val('');
         $('#claimMsg').html('');
         $('#claimModal').modal('show');
     });
 
-    $('#reqTable').on('click', '.btn-back-storage', function() {
-        const id = $(this).data('id');
-        if (!id) return;
-        $('#backStorageReqId').val(String(id));
-        $('#backStorageInfo').text('This will update requisition #' + String(id) + ' and move it back to storage.');
+    $('#reqTable').on('click', '.btn-batch-back-storage', function() {
+        const encoded = String($(this).data('batch') || '');
+        const batchKey = decodeURIComponent(encoded);
+        const rows = getBatchRowsByKey(batchKey);
+        const ids = getBatchReqIds(rows);
+        if (!ids.length) return;
+        setStoredIds('#backStorageReqIds', ids);
+        $('#backStorageInfo').text('This will update ' + ids.length + ' requisition item(s) and move them back to storage.');
         $('#backStorageMsg').addClass('d-none').text('');
         $('#backStorageModal').modal('show');
     });
 
     $('#btnConfirmBackStorage').on('click', function(){
-        const id = $('#backStorageReqId').val();
-        if (!id) {
+        const ids = getStoredIds('#backStorageReqIds');
+        if (!ids.length) {
             $('#backStorageMsg').removeClass('d-none').text('Invalid requisition id.');
             return;
         }
         const $btn = $(this);
         $btn.prop('disabled', true).text('Processing...');
-        $.post(PROCESS_URL, { action: 'decline_requisition_claim', requisition_id: id }, function(res){
-            if (res && res.success) {
+        runBatchAction(ids, function(id, done) {
+            $.post(PROCESS_URL, { action: 'decline_requisition_claim', requisition_id: id }, function(res){
+                done(!!(res && res.success), (res && res.message) ? res.message : 'Unable to move requisition back to storage.');
+            }, 'json').fail(function(xhr){
+                const msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Server error while updating requisition.';
+                done(false, msg);
+            });
+        }, function(result) {
+            $btn.prop('disabled', false).text('Confirm Move');
+            if (result.successCount > 0) {
                 $('#backStorageModal').modal('hide');
                 loadReqData();
-                success_notif(res.message || 'Requisition moved back to storage.');
-            } else {
-                $('#backStorageMsg').removeClass('d-none').text((res && res.message) ? res.message : 'Unable to move requisition back to storage.');
+                if (result.failed.length) {
+                    error_notif(result.successCount + ' request(s) moved back to storage. ' + result.failed.length + ' failed.');
+                } else {
+                    success_notif(result.successCount + ' request(s) moved back to storage.');
+                }
+                return;
             }
-        }, 'json').fail(function(xhr){
-            const msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Server error while updating requisition.';
-            $('#backStorageMsg').removeClass('d-none').text(msg);
-        }).always(function(){
-            $btn.prop('disabled', false).text('Confirm Move');
+            const firstErr = result.failed[0] ? result.failed[0].message : 'Unable to move requisitions back to storage.';
+            $('#backStorageMsg').removeClass('d-none').text(firstErr);
         });
     });
 
@@ -658,31 +1042,62 @@ function initReqTable() {
     });
 
     $('#btnConfirmClaim').on('click', function(){
+        const ids = getStoredIds('#claimReqIds');
+        if (!ids.length) {
+            $('#claimMsg').html('<div class="alert alert-danger mb-0">No requisition selected.</div>');
+            return;
+        }
+        const $btn = $(this);
+        $btn.prop('disabled', true).text('Processing...');
         const payload = {
             action: 'claim_requisition',
-            requisition_id: $('#claimReqId').val(),
             facility_id: $('#claimFacilityId').val(),
             unit_id: $('#claimUnitId').val(),
             issued_to_user_id: $('#claimIssuedToUserId').val(),
             managed_by_user_id: $('#claimManagedByUserId').val(),
             remarks: ($('#claimRemarks').val() || '').trim()
         };
-        $.post(PROCESS_URL, payload, function(res){
-            if (!(res && res.success)) {
-                $('#claimMsg').html('<div class="alert alert-danger mb-0">' + ((res && res.message) || 'Claim failed.') + '</div>');
+        runBatchAction(ids, function(id, done) {
+            const requestPayload = Object.assign({}, payload, { requisition_id: id });
+            $.post(PROCESS_URL, requestPayload, function(res){
+                done(!!(res && res.success), (res && res.message) ? res.message : 'Claim failed.');
+            }, 'json').fail(function(xhr){
+                const msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Server error while claiming.';
+                done(false, msg);
+            });
+        }, function(result) {
+            $btn.prop('disabled', false).text('Confirm Claim');
+            if (result.successCount > 0) {
+                $('#claimModal').modal('hide');
+                loadReqData();
+                if (result.failed.length) {
+                    error_notif(result.successCount + ' request(s) claimed. ' + result.failed.length + ' failed.');
+                } else {
+                    success_notif(result.successCount + ' request(s) claimed.');
+                }
                 return;
             }
-            $('#claimModal').modal('hide');
-            loadReqData();
-            success_notif(res.message || 'Requisition claimed.');
-        }, 'json').fail(function(xhr){
-            const msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Server error while claiming.';
-            $('#claimMsg').html('<div class="alert alert-danger mb-0">' + msg + '</div>');
+            const firstErr = result.failed[0] ? result.failed[0].message : 'Claim failed.';
+            $('#claimMsg').html('<div class="alert alert-danger mb-0">' + firstErr + '</div>');
         });
     });
 }
 
 $(document).ready(function() {
+    // Keep image preview and other secondary modals above the currently open modal.
+    $(document).on('show.bs.modal', '.modal', function () {
+        const zIndex = 1050 + (10 * $('.modal.show').length);
+        $(this).css('z-index', zIndex);
+        setTimeout(function () {
+            $('.modal-backdrop').not('.modal-stack').first().css('z-index', zIndex - 1).addClass('modal-stack');
+        }, 0);
+    });
+    $(document).on('hidden.bs.modal', '.modal', function () {
+        if ($('.modal.show').length > 0) {
+            $('body').addClass('modal-open');
+        }
+    });
+
     loadClaimLookups();
     initReqTable();
     $('#reqRefresh').on('click', loadReqData);

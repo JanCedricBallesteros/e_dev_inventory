@@ -284,11 +284,13 @@ if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) {
                                         </a>
                                     </li>
                                 <?php } ?>
-                                <li class="<?php echo navigation_active("requisition", "active", array("type" => array("AST", "CSM"))); ?>">
-                                    <a href="<?php echo BASE_URL . "admin/modules/transactions/requisition.php?type=AST"; ?>">
-                                        <span class="sub-item">Requisition Item</span>
-                                    </a>
-                                </li>
+                                <?php if (role_has("ADMIN")) { ?>
+                                    <li class="<?php echo navigation_active("requisition", "active", array("type" => array("AST", "CSM"))); ?>">
+                                        <a href="<?php echo BASE_URL . "admin/modules/transactions/requisition.php?type=AST"; ?>">
+                                            <span class="sub-item">Requisition Item</span>
+                                        </a>
+                                    </li>
+                                <?php } ?>
                                 <li class="<?php echo navigation_active("facility_inventory_records"); ?>">
                                     <a href="<?php echo BASE_URL . "admin/modules/transactions/facility_inventory_records.php"; ?>">
                                         <span class="sub-item">Facility Inventory Records</span>

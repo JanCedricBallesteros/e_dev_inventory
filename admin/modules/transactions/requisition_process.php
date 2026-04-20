@@ -206,6 +206,13 @@ try {
             $type = strtoupper(_post('type'));
             $status = strtolower(_post('status'));
             $search = _post('search');
+            $csmQtyColumn = '';
+            if (table_column_exists('csm_inventory', 'current_unit_quantity')) {
+                $csmQtyColumn = 'current_unit_quantity';
+            } elseif (table_column_exists('csm_inventory', 'quantity')) {
+                $csmQtyColumn = 'quantity';
+            }
+            $csmAvailableExpr = $csmQtyColumn !== '' ? "csm_inv.{$csmQtyColumn}" : "r.qty_requested";
             if (!in_array($type, ['AST', 'CSM'], true)) {
                 $type = 'AST';
             }
@@ -294,6 +301,7 @@ try {
                         es.status_name AS employment_status,
                         ast_cat.category_photo AS ast_category_photo,
                         ast_cat.item_category_name AS ast_category_name,
+                        {$csmAvailableExpr} AS csm_available_qty,
                         csm_inv.item_category_img AS csm_category_img,
                         csm_cat.item_category_name AS csm_category_name
                     FROM requisition_items r
@@ -378,6 +386,7 @@ try {
 
         case 'approve_requisition':
             $id = _int(_post('requisition_id'));
+            $approvedQtyInput = _int(_post('qty_requested'), 0);
             if ($id <= 0) json_response(['success' => false, 'message' => 'Invalid requisition.'], 422);
 
             $sql = "SELECT r.*, u.employment_status_id, u.position
@@ -402,6 +411,10 @@ try {
             }
             $prevIsAvailable = null;
             $newIsAvailable = null;
+            $approvedQty = $approvedQtyInput > 0 ? $approvedQtyInput : (int)($req['qty_requested'] ?? 0);
+            if ($approvedQty <= 0) {
+                json_response(['success' => false, 'message' => 'Invalid requested quantity.'], 422);
+            }
 
             // Enforce AST availability rules
             if (strtoupper($req['module_type']) === 'AST') {
@@ -410,9 +423,7 @@ try {
                 $invRow = $inv ? call_mysql_fetch_array($inv) : null;
                 if (!$invRow) json_response(['success' => false, 'message' => 'AST item not found.'], 404);
                 $prevIsAvailable = (int)($invRow['is_available'] ?? 0);
-                $reqQty = (int)($req['qty_requested'] ?? 0);
-                if ($reqQty <= 0) json_response(['success' => false, 'message' => 'Invalid requested quantity.'], 422);
-                if ($reqQty !== 1) {
+                if ($approvedQty !== 1) {
                     json_response(['success' => false, 'message' => 'AST requests must have quantity 1.'], 422);
                 }
                 if ($prevIsAvailable !== 1) {
@@ -430,6 +441,36 @@ try {
                     }
                 }
                 $newIsAvailable = 0;
+            } else {
+                $itemCodeEsc = _esc((string)($req['item_code'] ?? ''));
+                $csmQtyColumn = '';
+                if (table_column_exists('csm_inventory', 'current_unit_quantity')) {
+                    $csmQtyColumn = 'current_unit_quantity';
+                } elseif (table_column_exists('csm_inventory', 'quantity')) {
+                    $csmQtyColumn = 'quantity';
+                }
+                $availableQty = (int)($req['qty_requested'] ?? 0);
+                if ($csmQtyColumn !== '') {
+                    $csmRes = call_mysql_query("SELECT {$csmQtyColumn} AS available_qty, status
+                                               FROM csm_inventory
+                                               WHERE inventory_system_item_code = '{$itemCodeEsc}'
+                                               LIMIT 1");
+                    $csmRow = $csmRes ? call_mysql_fetch_array($csmRes) : null;
+                    if (!$csmRow) {
+                        json_response(['success' => false, 'message' => 'CSM item not found.'], 404);
+                    }
+                    $csmStatus = strtolower((string)($csmRow['status'] ?? ''));
+                    if ($csmStatus !== '' && $csmStatus !== 'available') {
+                        json_response(['success' => false, 'message' => 'CSM item is not available.'], 422);
+                    }
+                    $availableQty = (int)($csmRow['available_qty'] ?? 0);
+                }
+                if ($availableQty <= 0) {
+                    json_response(['success' => false, 'message' => 'No available CSM quantity remaining.'], 422);
+                }
+                if ($approvedQty > $availableQty) {
+                    json_response(['success' => false, 'message' => 'Approved quantity exceeds available CSM quantity (' . $availableQty . ').'], 422);
+                }
             }
 
             call_mysql_query("START TRANSACTION");
@@ -444,7 +485,7 @@ try {
                     json_response(['success' => false, 'message' => 'AST item is no longer available.'], 422);
                 }
             }
-            $setCols = "status='approved', updated_at = NOW()";
+            $setCols = "status='approved', qty_requested = {$approvedQty}, updated_at = NOW()";
             if (table_column_exists('requisition_items', 'approved_by_user_id')) {
                 $setCols .= ", approved_by_user_id = " . (int)$s_user_id;
             }
@@ -466,7 +507,7 @@ try {
                 'module_type' => $req['module_type'] ?? '',
                 'item_code' => $req['item_code'] ?? '',
                 'item_description' => $req['item_description'] ?? '',
-                'qty_requested' => (int)($req['qty_requested'] ?? 0),
+                'qty_requested' => $approvedQty,
                 'requester_user_id' => (int)($req['requester_user_id'] ?? 0),
                 'old_status' => $prevStatus,
                 'new_status' => 'approved',
