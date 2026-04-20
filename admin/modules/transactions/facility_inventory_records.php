@@ -101,6 +101,14 @@ if (!(role_has("ADMIN") || $staffAccess)) {
             color: #212529;
             background: #fff;
         }
+        @media (min-width: 992px) {
+            #facilityUnitsCard,
+            #unitInventoryCard {
+                height: 620px !important;
+            }
+        }
+        #facilityUnitsCard { display: flex; flex-direction: column; }
+        #facilityUnitsCard .card-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
     </style>
 </head>
 
@@ -120,7 +128,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
         <div id="pageMsg" class="alert alert-danger d-none"></div>
         <div class="row g-3">
             <div class="col-12 col-lg-4">
-                <div class="card section-card h-100">
+                <div class="card section-card" id="facilityUnitsCard">
                     <div class="card-header bg-eclearance text-white fw-semibold d-flex justify-content-between align-items-center">
                         <span><i class="bi bi-building"></i>&ensp;Facilities & Units</span>
                         <div class="d-flex gap-2">
@@ -134,7 +142,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
             </div>
 
             <div class="col-12 col-lg-8">
-                <div class="card section-card">
+                <div class="card section-card" id="unitInventoryCard">
                     <div class="card-header bg-eclearance text-white fw-semibold d-flex justify-content-between align-items-center">
                         <span><i class="bi bi-box-seam"></i>&ensp;Unit Inventory Assignments</span>
                     </div>
@@ -871,12 +879,31 @@ function scheduleAssignmentRedraw(){
     // Delay slightly to let the layout settle after sidebar animation.
     setTimeout(function(){
         if (assignmentTable) assignmentTable.redraw(true);
+        syncMainCardHeights();
     }, 250);
+}
+
+function syncMainCardHeights(){
+    const $leftCard = $('#facilityUnitsCard');
+    const $rightCard = $('#unitInventoryCard');
+    if (!$leftCard.length || !$rightCard.length) return;
+
+    const isDesktop = window.matchMedia('(min-width: 992px)').matches;
+    if (!isDesktop) {
+        $leftCard.css('height', '');
+        return;
+    }
+
+    const rightHeight = $rightCard.outerHeight();
+    if (rightHeight && rightHeight > 0) {
+        $leftCard.css('height', rightHeight + 'px');
+    }
 }
 
 
 function initAssignmentTable(){
     assignmentTable = new Tabulator('#assignmentTable', {
+        height: 450,
         layout: "fitColumns",
         renderVertical: "basic",
         responsiveLayout: "collapse",
@@ -943,6 +970,7 @@ function initAssignmentTable(){
     assignmentTable.on('tableBuilt', function(){
         assignmentTableReady = true;
         renderAssignments();
+        syncMainCardHeights();
     });
 }
 
@@ -1239,6 +1267,8 @@ $(document).ready(function(){
     // Keep table fitted when sidebar toggles or window resizes.
     $(document).on('click', '.toggle-sidebar', scheduleAssignmentRedraw);
     $(window).on('resize', scheduleAssignmentRedraw);
+
+    syncMainCardHeights();
 
     $('#assignmentTable').on('click', '.js-thumb-preview', function(){
         const full = $(this).data('full') || $(this).attr('src') || '';
