@@ -115,6 +115,49 @@ function table_column_exists($table, $column) {
     return $res && mysqli_num_rows($res) > 0;
 }
 
+function enum_values_from_mysql_type($typeDef) {
+    $typeDef = trim((string)$typeDef);
+    if (!preg_match('/^enum\((.*)\)$/i', $typeDef, $m)) {
+        return array();
+    }
+    $inner = $m[1];
+    $vals = str_getcsv($inner, ',', "'");
+    return array_values(array_filter(array_map(function ($v) {
+        return trim((string)$v);
+    }, $vals), function ($v) {
+        return $v !== '';
+    }));
+}
+
+function ensure_requisition_status_enum_support() {
+    if (!table_exists('requisition_items') || !table_column_exists('requisition_items', 'status')) {
+        return;
+    }
+
+    $colRes = call_mysql_query("SHOW COLUMNS FROM requisition_items LIKE 'status'");
+    $colRow = $colRes ? call_mysql_fetch_array($colRes) : null;
+    if (!$colRow) return;
+
+    $typeDef = (string)($colRow['Type'] ?? '');
+    $currentVals = enum_values_from_mysql_type($typeDef);
+    if (empty($currentVals)) return;
+
+    $required = array('pending', 'reviewed', 'approved', 'disapproved', 'claimed', 'not_claimed');
+    $missing = array_diff($required, $currentVals);
+
+    if (!empty($missing)) {
+        call_mysql_query("ALTER TABLE requisition_items
+                         MODIFY COLUMN status ENUM('pending','reviewed','approved','disapproved','claimed','not_claimed')
+                         NOT NULL DEFAULT 'pending'");
+    }
+
+    $hasUpdatedAt = table_column_exists('requisition_items', 'updated_at');
+    $setClause = "status = 'not_claimed'" . ($hasUpdatedAt ? ", updated_at = NOW()" : "");
+    call_mysql_query("UPDATE requisition_items
+                     SET {$setClause}
+                     WHERE status IS NULL OR TRIM(status) = ''");
+}
+
 function ensure_personal_use_location() {
     global $db_connect, $s_user_id;
     if (!table_exists('facility_records_facilities')) {
@@ -199,6 +242,7 @@ if ($action === '') {
 }
 
 ensure_personal_use_location();
+ensure_requisition_status_enum_support();
 
 try {
     switch ($action) {
