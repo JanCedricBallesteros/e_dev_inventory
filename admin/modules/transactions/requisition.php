@@ -174,7 +174,7 @@ if (($type === 'AST' && !$canAST) || ($type === 'CSM' && !$canCSM)) {
                             <option value="approved">Approved</option>
                             <option value="for_claiming">For Claiming</option>
                             <option value="claimed">Claimed</option>
-                            <option value="not_claimed">Not Claimed</option>
+                            <option value="not_claimed">Back to Storage</option>
                             <option value="disapproved">Disapproved</option>
                         </select>
                         <button class="btn btn-outline-secondary" id="reqRefresh">Refresh</button>
@@ -338,10 +338,40 @@ let claimFacilities = [];
 let claimUnits = [];
 let reqSearchTimer = null;
 
+function canonicalStatus(value) {
+    let raw = String(value || '').trim().toLowerCase();
+    if (!raw) return '';
+    raw = raw
+        .replace(/[^a-z0-9\s_-]/g, '')
+        .replace(/[\s-]+/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_+|_+$/g, '');
+
+    // Flexible phrase matching for historical/manual status values.
+    if ((raw.indexOf('back') !== -1 && raw.indexOf('storage') !== -1) ||
+        (raw.indexOf('not') !== -1 && raw.indexOf('claim') !== -1)) {
+        return 'not_claimed';
+    }
+    if (raw.indexOf('for') !== -1 && raw.indexOf('claim') !== -1) {
+        return 'for_claiming';
+    }
+    if (raw.indexOf('disapprov') !== -1) {
+        return 'disapproved';
+    }
+
+    if (raw === 'back_to_storage' || raw === 'back_storage' || raw === 'storage_back') return 'not_claimed';
+    if (raw === 'notclaimed' || raw === 'not_claim') return 'not_claimed';
+    if (raw === 'forclaiming' || raw === 'for_claim') return 'for_claiming';
+
+    return raw;
+}
+
 function normalizeGroupStatus(statuses) {
-    const list = Array.from(new Set((statuses || []).map(function(s){ return String(s || '').toLowerCase(); })));
+    const list = Array.from(new Set((statuses || []).map(function(s){ return canonicalStatus(s); }).filter(Boolean)));
     if (!list.length) return '';
     if (list.length === 1) return list[0];
+    if (list.indexOf('not_claimed') !== -1) return 'not_claimed';
+    if (list.indexOf('claimed') !== -1) return 'claimed';
     const pendingLike = list.every(function(s){ return s === 'pending' || s === 'reviewed'; });
     if (pendingLike) return 'pending';
     const claimLike = list.every(function(s){ return s === 'for_claiming' || s === 'approved'; });
@@ -369,9 +399,28 @@ function buildBatchGroupKey(row) {
     return [type, requesterId, createdPart, facilityId, unitId].join('|');
 }
 
+function normalizeRowWorkflowStatus(row) {
+    const src = row || {};
+    let raw = canonicalStatus(src.workflow_status || src.status || '');
+
+    const hasClaimAssignment = safeNumber(src.claim_assignment_id, 0) > 0;
+    const hasClaimedAt = String(src.claimed_at || '').trim() !== '';
+    if (hasClaimAssignment || hasClaimedAt) return 'claimed';
+
+    if (raw === 'approved') return 'for_claiming';
+    if (raw === 'for_claiming') return 'for_claiming';
+    if (raw === 'not_claimed') return 'not_claimed';
+    if (raw === 'claimed') return 'claimed';
+    if (raw === 'pending' || raw === 'reviewed' || raw === 'disapproved') return raw;
+
+    // Unknown values should not masquerade as pending.
+    return raw || 'unknown';
+}
+
 function enrichRowsWithBatch(rows) {
     const mapped = (rows || []).map(function(row) {
         const next = Object.assign({}, row);
+        next.workflow_status = normalizeRowWorkflowStatus(next);
         next.batch_group_key = buildBatchGroupKey(next);
         return next;
     });
@@ -479,18 +528,28 @@ function threeLineText(value, fallback) {
 }
 
 function statusBadge(raw) {
-    const s = String(raw || '').toLowerCase();
+    let s = canonicalStatus(raw);
+    if (!s) s = 'unknown';
     const map = {
         'pending': 'bg-warning text-dark',
         'reviewed': 'bg-info text-dark',
         'approved': 'bg-primary text-white',
         'for_claiming': 'bg-primary text-white',
         'claimed': 'bg-success text-white',
+        'mixed': 'bg-dark text-white',
+        'back_to_storage': 'bg-secondary text-white',
         'not_claimed': 'bg-secondary text-white',
-        'disapproved': 'bg-danger text-white'
+        'disapproved': 'bg-danger text-white',
+        'unknown': 'bg-light text-dark border'
+    };
+    const labelMap = {
+        'back_to_storage': 'Back to Storage',
+        'not_claimed': 'Back to Storage',
+        'unknown': 'Unknown'
     };
     const cls = map[s] || 'bg-light text-dark border';
-    return `<span class="status-badge ${cls}">${escapeHtml(s.replace('_', ' '))}</span>`;
+    const label = labelMap[s] || s.replace('_', ' ');
+    return `<span class="status-badge ${cls}">${escapeHtml(label)}</span>`;
 }
 
 function showReqMessage(msg) {
@@ -715,26 +774,17 @@ function initReqTable() {
             const totalQty = rows.reduce(function(sum, r){ return sum + safeNumber(r.qty_requested, 0); }, 0);
             const statuses = rows.map(function(r){ return r.workflow_status; });
             const groupStatus = normalizeGroupStatus(statuses);
-            const statusHtml = groupStatus === 'mixed'
-                ? '<span class="status-badge bg-dark text-white">mixed</span>'
-                : statusBadge(groupStatus);
+            const statusHtml = statusBadge(groupStatus);
             const encodedKey = encodeURIComponent(String(value || ''));
 
-            let actionsHtml = '<span class="badge bg-light text-dark border">No Actions</span>';
+            let actionsHtml = '';
             if (groupStatus === 'pending' || groupStatus === 'reviewed') {
                 actionsHtml = '' +
                     '<button class="btn btn-sm btn-success btn-batch-approve" data-batch="' + encodedKey + '">Approve Group</button>' +
                     '<button class="btn btn-sm btn-danger btn-batch-disapprove" data-batch="' + encodedKey + '">Disapprove Group</button>';
             } else if (groupStatus === 'for_claiming' || groupStatus === 'approved') {
                 actionsHtml = '' +
-                    '<button class="btn btn-sm btn-primary btn-batch-claim" data-batch="' + encodedKey + '">Mark Group Claimed</button>' +
                     '<button class="btn btn-sm btn-outline-secondary btn-batch-back-storage" data-batch="' + encodedKey + '">Back Group to Storage</button>';
-            } else if (groupStatus === 'claimed') {
-                actionsHtml = '<span class="badge bg-success">Claimed</span>';
-            } else if (groupStatus === 'disapproved') {
-                actionsHtml = '<span class="badge bg-danger">Disapproved</span>';
-            } else if (groupStatus === 'not_claimed') {
-                actionsHtml = '<span class="badge bg-secondary">Not Claimed</span>';
             }
 
             return '' +

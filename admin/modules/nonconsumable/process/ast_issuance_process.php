@@ -211,6 +211,35 @@ function ensure_extra_managers_table()
     return call_mysql_query($sql) ? true : false;
 }
 
+function requisition_row_is_claimed($row, $hasClaimAssignment, $hasClaimedAt, $hasReqIdInAssignments)
+{
+    $claimAssignmentId = (int)($row['claim_assignment_id'] ?? 0);
+    if ($hasClaimAssignment && $claimAssignmentId > 0) return true;
+    if ($hasClaimedAt && !empty($row['claimed_at'])) return true;
+    if ($hasReqIdInAssignments) {
+        $reqId = (int)($row['requisition_id'] ?? 0);
+        if ($reqId > 0) {
+            $res = call_mysql_query("SELECT assignment_id
+                                     FROM facility_records_assignments
+                                     WHERE requisition_id = {$reqId}
+                                       AND status <> 'RETURNED'
+                                     LIMIT 1");
+            if ($res && call_mysql_fetch_array($res)) return true;
+        }
+    }
+    return false;
+}
+
+function build_requisition_group_key($row)
+{
+    $requesterId = (int)($row['requester_user_id'] ?? 0);
+    $facilityId = (int)($row['claim_facility_id'] ?? 0);
+    $unitId = (int)($row['claim_unit_id'] ?? 0);
+    $createdAt = (string)($row['created_at'] ?? '');
+    $createdSecond = $createdAt !== '' ? substr($createdAt, 0, 19) : '';
+    return 'AST|' . $requesterId . '|' . $createdSecond . '|' . $facilityId . '|' . $unitId;
+}
+
 $action = _post('action');
 if ($action === '') {
     json_response(array('success' => false, 'message' => 'Missing action.'), 400);
@@ -481,6 +510,129 @@ try {
             json_response(array('success' => true, 'data' => $rows));
             break;
 
+        case 'list_approved_ast_requisition_groups':
+            if (!table_exists('requisition_items')) {
+                json_response(array('success' => false, 'message' => 'Requisition table not found.'), 500);
+            }
+
+            $codeCol = first_existing_col('ast_inventory', array('property_code', 'item_code'), 'property_code');
+            $propCol = first_existing_col('ast_inventory', array('property_number'), 'property_number');
+            $serialCol = first_existing_col('ast_inventory', array('serial_number'), 'serial_number');
+            $catIdCol = first_existing_col('ast_inventory', array('category_id'), 'category_id');
+            $hasReqRemarks = column_exists('requisition_items', 'remarks');
+            $hasClaimAssignment = column_exists('requisition_items', 'claim_assignment_id');
+            $hasClaimedAt = column_exists('requisition_items', 'claimed_at');
+            $hasReqIdInAssignments = column_exists('facility_records_assignments', 'requisition_id');
+
+            $sql = "SELECT
+                        r.requisition_id,
+                        r.module_type,
+                        r.item_code,
+                        r.item_description,
+                        r.qty_requested,
+                        r.status,
+                        " . ($hasReqRemarks ? "r.remarks," : "NULL AS remarks,") . "
+                        " . ($hasClaimAssignment ? "r.claim_assignment_id," : "NULL AS claim_assignment_id,") . "
+                        " . ($hasClaimedAt ? "r.claimed_at," : "NULL AS claimed_at,") . "
+                        " . (column_exists('requisition_items', 'claim_facility_id') ? "r.claim_facility_id," : "NULL AS claim_facility_id,") . "
+                        " . (column_exists('requisition_items', 'claim_unit_id') ? "r.claim_unit_id," : "NULL AS claim_unit_id,") . "
+                        r.created_at,
+                        " . (column_exists('requisition_items', 'updated_at') ? "r.updated_at," : "r.created_at AS updated_at,") . "
+                        r.requester_user_id,
+                        u.f_name,
+                        u.m_name,
+                        u.l_name,
+                        u.suffix,
+                        a.item_id AS source_item_id,
+                        a.{$propCol} AS property_number,
+                        a.{$serialCol} AS serial_number,
+                        a.unit,
+                        cat.item_category_name,
+                        cat.category_photo,
+                        f.facility_name,
+                        un.unit_name
+                    FROM requisition_items r
+                    LEFT JOIN users u ON u.user_id = r.requester_user_id
+                    LEFT JOIN ast_inventory a ON a.{$codeCol} = r.item_code
+                    LEFT JOIN ast_inventory_category cat ON cat.category_id = a.{$catIdCol}
+                    LEFT JOIN facility_records_facilities f ON f.facility_id = r.claim_facility_id
+                    LEFT JOIN facility_records_units un ON un.unit_id = r.claim_unit_id
+                    WHERE r.module_type = 'AST'
+                      AND r.status = 'approved'
+                    ORDER BY r.created_at DESC, r.requisition_id DESC";
+
+            $res = call_mysql_query($sql);
+            $groups = array();
+            if ($res) {
+                while ($row = call_mysql_fetch_array($res)) {
+                    if (requisition_row_is_claimed($row, $hasClaimAssignment, $hasClaimedAt, $hasReqIdInAssignments)) {
+                        continue;
+                    }
+
+                    $sourceItemId = (int)($row['source_item_id'] ?? 0);
+                    if ($sourceItemId <= 0) {
+                        continue;
+                    }
+
+                    $requesterName = get_full_name($row['f_name'] ?? '', $row['m_name'] ?? '', $row['l_name'] ?? '', $row['suffix'] ?? '');
+                    $groupKey = build_requisition_group_key($row);
+                    if (!isset($groups[$groupKey])) {
+                        $groups[$groupKey] = array(
+                            'group_key' => $groupKey,
+                            'module_type' => 'AST',
+                            'requester_user_id' => (int)($row['requester_user_id'] ?? 0),
+                            'requester_name' => $requesterName,
+                            'claim_facility_id' => (int)($row['claim_facility_id'] ?? 0),
+                            'claim_unit_id' => (int)($row['claim_unit_id'] ?? 0),
+                            'facility_name' => (string)($row['facility_name'] ?? ''),
+                            'unit_name' => (string)($row['unit_name'] ?? ''),
+                            'created_at' => (string)($row['created_at'] ?? ''),
+                            'updated_at' => (string)($row['updated_at'] ?? ''),
+                            'item_count' => 0,
+                            'total_qty' => 0,
+                            'requisition_ids' => array(),
+                            'items' => array()
+                        );
+                    }
+
+                    $photo = trim((string)($row['category_photo'] ?? ''));
+                    $item = array(
+                        'requisition_id' => (int)($row['requisition_id'] ?? 0),
+                        'module_type' => 'AST',
+                        'source_item_id' => $sourceItemId,
+                        'item_code' => (string)($row['item_code'] ?? ''),
+                        'property_number' => (string)($row['property_number'] ?? ''),
+                        'item_description' => (string)($row['item_description'] ?? ''),
+                        'serial_number' => (string)($row['serial_number'] ?? ''),
+                        'unit' => (string)($row['unit'] ?? ''),
+                        'item_category_name' => (string)($row['item_category_name'] ?? ''),
+                        'requester_user_id' => (int)($row['requester_user_id'] ?? 0),
+                        'requester_name' => $requesterName,
+                        'claim_facility_id' => (int)($row['claim_facility_id'] ?? 0),
+                        'claim_unit_id' => (int)($row['claim_unit_id'] ?? 0),
+                        'qty_requested' => (int)($row['qty_requested'] ?? 1),
+                        'current_location' => stockroom_name(),
+                        'category_photo_url' => $photo !== '' ? BASE_URL . 'upload/category/' . $photo : null,
+                        'category_photo_thumb_url' => $photo !== '' ? BASE_URL . 'admin/modules/tools/category_image_thumb.php?f=' . urlencode($photo) . '&s=100' : null
+                    );
+
+                    $groups[$groupKey]['items'][] = $item;
+                    $groups[$groupKey]['item_count'] += 1;
+                    $groups[$groupKey]['total_qty'] += (int)($row['qty_requested'] ?? 1);
+                    $groups[$groupKey]['requisition_ids'][] = (int)($row['requisition_id'] ?? 0);
+
+                    $currentUpdated = strtotime((string)$groups[$groupKey]['updated_at']);
+                    $rowUpdated = strtotime((string)($row['updated_at'] ?? ''));
+                    if ($rowUpdated && (!$currentUpdated || $rowUpdated > $currentUpdated)) {
+                        $groups[$groupKey]['updated_at'] = (string)($row['updated_at'] ?? '');
+                    }
+                }
+            }
+
+            $result = array_values($groups);
+            json_response(array('success' => true, 'data' => $result));
+            break;
+
         case 'issue_ast_items_batch':
             global $s_user_id, $db_connect;
             $facility_id = _int(_post('facility_id'), 0);
@@ -535,13 +687,15 @@ try {
                 if (!is_array($it)) continue;
                 $sourceId = _int($it['source_item_id'] ?? 0, 0);
                 $itemCode = strtoupper(trim((string)($it['item_code'] ?? '')));
+                $requisitionId = _int($it['requisition_id'] ?? 0, 0);
                 if ($sourceId <= 0 || $itemCode === '') continue;
-                $key = $sourceId . '|' . $itemCode;
+                $key = $sourceId . '|' . $itemCode . '|' . $requisitionId;
                 if (isset($seen[$key])) continue;
                 $seen[$key] = true;
                 $normalizedItems[] = array(
                     'source_item_id' => $sourceId,
-                    'item_code' => $itemCode
+                    'item_code' => $itemCode,
+                    'requisition_id' => $requisitionId
                 );
             }
 
@@ -574,6 +728,14 @@ try {
             }
 
             $hasManagedByCol = column_exists('facility_records_assignments', 'managed_by_user_id');
+            $hasReqTable = table_exists('requisition_items');
+            $hasReqClaimAssignment = $hasReqTable && column_exists('requisition_items', 'claim_assignment_id');
+            $hasReqClaimedAt = $hasReqTable && column_exists('requisition_items', 'claimed_at');
+            $hasReqClaimedBy = $hasReqTable && column_exists('requisition_items', 'claimed_by_user_id');
+            $hasReqClaimFacility = $hasReqTable && column_exists('requisition_items', 'claim_facility_id');
+            $hasReqClaimUnit = $hasReqTable && column_exists('requisition_items', 'claim_unit_id');
+            $hasReqUpdatedAt = $hasReqTable && column_exists('requisition_items', 'updated_at');
+            $hasReqIdInAssignments = column_exists('facility_records_assignments', 'requisition_id');
             $actor = isset($s_user_id) ? (int)$s_user_id : 0;
 
             call_mysql_query("START TRANSACTION");
@@ -581,6 +743,41 @@ try {
             foreach ($normalizedItems as $entry) {
                 $source_item_id = (int)$entry['source_item_id'];
                 $item_code = $entry['item_code'];
+                $requisition_id = (int)($entry['requisition_id'] ?? 0);
+
+                if ($requisition_id > 0) {
+                    if (!$hasReqTable) {
+                        call_mysql_query("ROLLBACK");
+                        json_response(array('success' => false, 'message' => "Requisition table not found for {$item_code}."), 500);
+                    }
+                    $reqRes = call_mysql_query("SELECT *
+                                               FROM requisition_items
+                                               WHERE requisition_id = {$requisition_id}
+                                               LIMIT 1
+                                               FOR UPDATE");
+                    $reqRow = $reqRes ? call_mysql_fetch_array($reqRes) : null;
+                    if (!$reqRow) {
+                        call_mysql_query("ROLLBACK");
+                        json_response(array('success' => false, 'message' => "Requisition not found for {$item_code}."), 404);
+                    }
+                    if (strtoupper((string)($reqRow['module_type'] ?? '')) !== 'AST') {
+                        call_mysql_query("ROLLBACK");
+                        json_response(array('success' => false, 'message' => "Invalid requisition module for {$item_code}."), 422);
+                    }
+                    if (strtoupper((string)($reqRow['item_code'] ?? '')) !== strtoupper((string)$item_code)) {
+                        call_mysql_query("ROLLBACK");
+                        json_response(array('success' => false, 'message' => "Requisition item mismatch for {$item_code}."), 422);
+                    }
+                    $reqStatus = strtolower((string)($reqRow['status'] ?? ''));
+                    if (!in_array($reqStatus, array('approved', 'reviewed'), true)) {
+                        call_mysql_query("ROLLBACK");
+                        json_response(array('success' => false, 'message' => "Requisition is not claimable for {$item_code}."), 422);
+                    }
+                    if (requisition_row_is_claimed($reqRow, $hasReqClaimAssignment, $hasReqClaimedAt, $hasReqIdInAssignments)) {
+                        call_mysql_query("ROLLBACK");
+                        json_response(array('success' => false, 'message' => "Requisition already claimed for {$item_code}."), 409);
+                    }
+                }
 
                 $itemSql = "SELECT item_id, property_code, item_description, unit, is_available
                             FROM ast_inventory
@@ -595,7 +792,8 @@ try {
                     json_response(array('success' => false, 'message' => "AST item not found: {$item_code}."), 404);
                 }
 
-                if ((int)($itemRow['is_available'] ?? 0) !== 1) {
+                $itemIsAvailable = (int)($itemRow['is_available'] ?? 0);
+                if ($requisition_id <= 0 && $itemIsAvailable !== 1) {
                     call_mysql_query("ROLLBACK");
                     json_response(array('success' => false, 'message' => "AST item is no longer available: {$item_code}."), 422);
                 }
@@ -612,14 +810,16 @@ try {
                     json_response(array('success' => false, 'message' => "AST item already has an active assignment: {$item_code}."), 422);
                 }
 
-                $lockOk = call_mysql_query("UPDATE ast_inventory
-                                            SET is_available = 0
-                                            WHERE item_id = {$source_item_id}
-                                              AND is_available = 1
-                                            LIMIT 1");
-                if (!$lockOk || mysqli_affected_rows($db_connect) < 1) {
-                    call_mysql_query("ROLLBACK");
-                    json_response(array('success' => false, 'message' => "AST item became unavailable during submit: {$item_code}."), 422);
+                                if ($itemIsAvailable === 1) {
+                                        $lockOk = call_mysql_query("UPDATE ast_inventory
+                                                                                                SET is_available = 0
+                                                                                                WHERE item_id = {$source_item_id}
+                                                                                                    AND is_available = 1
+                                                                                                LIMIT 1");
+                                        if (!$lockOk || mysqli_affected_rows($db_connect) < 1) {
+                                                call_mysql_query("ROLLBACK");
+                                                json_response(array('success' => false, 'message' => "AST item became unavailable during submit: {$item_code}."), 422);
+                                        }
                 }
 
                 $item_description = (string)($itemRow['item_description'] ?? '');
@@ -639,6 +839,27 @@ try {
                     json_response(array('success' => false, 'message' => "Failed to create assignment for {$item_code}."), 500);
                 }
                 $assignment_id = (int)mysqli_insert_id($db_connect);
+
+                if ($requisition_id > 0) {
+                    $reqSet = "status = 'claimed'";
+                    if ($hasReqUpdatedAt) $reqSet .= ", updated_at = NOW()";
+                    if ($hasReqClaimAssignment) $reqSet .= ", claim_assignment_id = {$assignment_id}";
+                    if ($hasReqClaimedBy) $reqSet .= ", claimed_by_user_id = " . ($actor > 0 ? $actor : "NULL");
+                    if ($hasReqClaimedAt) $reqSet .= ", claimed_at = NOW()";
+                    if ($hasReqClaimFacility) $reqSet .= ", claim_facility_id = {$facility_id}";
+                    if ($hasReqClaimUnit) $reqSet .= ", claim_unit_id = {$unit_id}";
+
+                    $reqOk = call_mysql_query("UPDATE requisition_items
+                                               SET {$reqSet}
+                                               WHERE requisition_id = {$requisition_id}
+                                                 AND status IN ('approved','reviewed')
+                                               LIMIT 1");
+                    if (!$reqOk || mysqli_affected_rows($db_connect) < 1) {
+                        call_mysql_query("ROLLBACK");
+                        json_response(array('success' => false, 'message' => "Failed to update requisition state for {$item_code}."), 500);
+                    }
+                }
+
                 $createdAssignmentIds[] = $assignment_id;
 
                 $histOk = call_mysql_query("INSERT INTO facility_records_history

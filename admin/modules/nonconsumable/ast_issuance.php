@@ -72,6 +72,10 @@ if (!(
         }
         .manager-box { min-height: 38px; background: #f8f9fa; }
         .tabulator { font-size: 0.875rem; }
+        .request-modal-table td,
+        .request-modal-table th {
+            vertical-align: middle;
+        }
         .two-line-cell {
             display: -webkit-box;
             -webkit-line-clamp: 2;
@@ -105,7 +109,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                 <div class="card section-card">
                     <div class="card-header bg-eclearance text-white fw-semibold d-flex justify-content-between align-items-center">
                         <span><i class="bi bi-box-seam"></i>&ensp;Select AST Items</span>
-                        <button type="button" class="btn btn-light btn-sm" id="refreshItemsBtn"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+                        <button type="button" class="btn btn-light btn-sm" id="openRequestPickerBtn"><i class="bi bi-list-check"></i> Requests</button>
                     </div>
                     <div class="card-body mt-3 bg-white">
                         <div class="row g-2 mb-3">
@@ -209,6 +213,43 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
     </div>
 </div>
 
+<!-- APPROVED REQUEST PICKER MODAL -->
+<div class="modal fade" id="approvedRequestModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-semibold"><i class="bi bi-clipboard-check"></i>&ensp;Approved AST Requests</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="approvedRequestMsg" class="alert alert-danger d-none mb-2"></div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered request-modal-table mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:180px;">Requester</th>
+                                <th style="width:190px;">Facility / Unit</th>
+                                <th style="width:90px;" class="text-center">Items</th>
+                                <th style="width:90px;" class="text-center">Qty</th>
+                                <th style="width:140px;">Updated</th>
+                                <th style="width:90px;" class="text-center">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="approvedRequestBody">
+                            <tr>
+                                <td colspan="6" class="text-muted small">Loading approved requests...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <?php include_once FOOTER_PATH; ?>
 <?php include_once DOMAIN_PATH . '/global/include_bottom.php'; ?>
 <script src="https://unpkg.com/html5-qrcode"></script>
@@ -225,6 +266,8 @@ let pendingScanCode = '';
 let availableRowsById = {};
 let selectedUnitMeta = null;
 let facilityLookup = {};
+let approvedRequestGroups = [];
+let batchAssignmentLockedByRequest = false;
 
 function flushTableReadyQueue() {
     if (!astIssueTableReady) return;
@@ -263,6 +306,14 @@ function showPageError(msg) {
 
 function showIssueMsg(type, message) {
     $('#issueMsg').html('<div class="alert alert-' + type + ' mb-0">' + escapeHtml(message) + '</div>');
+}
+
+function setBatchAssignmentLock(locked) {
+    batchAssignmentLockedByRequest = !!locked;
+    const isLocked = batchAssignmentLockedByRequest;
+    $('#issueFacilityUnit').prop('disabled', isLocked).trigger('change.select2');
+    $('#issuedToUserId').prop('disabled', isLocked).trigger('change.select2');
+    $('#extraManagerUserIds').prop('disabled', isLocked).trigger('change.select2');
 }
 
 function notifySuccess(message) {
@@ -450,6 +501,9 @@ function applyTableSearch(term) {
 function renderSelectedItems(items) {
     const rows = Array.isArray(items) ? items : [];
     if (rows.length === 0) {
+        if (batchAssignmentLockedByRequest) {
+            setBatchAssignmentLock(false);
+        }
         $('#selectedCountNote').text('No item selected.');
         if (selectedItemsTable) selectedItemsTable.setData([]);
         return;
@@ -557,6 +611,178 @@ function syncSelectedItemsFromTable() {
         return;
     }
     renderSelectedItems(getSelectedRowsDataSafe());
+}
+
+function showApprovedRequestMsg(msg) {
+    const $el = $('#approvedRequestMsg');
+    if (!msg) {
+        $el.addClass('d-none').text('');
+        return;
+    }
+    $el.removeClass('d-none').text(msg);
+}
+
+function formatDatetimeLabel(value) {
+    const v = String(value || '').trim();
+    if (!v) return '-';
+    const d = new Date(v.replace(' ', 'T'));
+    if (isNaN(d.getTime())) return v;
+    return d.toLocaleString();
+}
+
+function renderApprovedRequestGroups(groups) {
+    const list = Array.isArray(groups) ? groups : [];
+    const $body = $('#approvedRequestBody');
+    if (!list.length) {
+        $body.html('<tr><td colspan="6" class="text-muted small">No approved AST requests available.</td></tr>');
+        return;
+    }
+    const html = list.map(function(g) {
+        const requester = escapeHtml(g.requester_name || '-');
+        const facility = escapeHtml(g.facility_name || '-');
+        const unit = Number(g.claim_unit_id || 0) > 0 ? escapeHtml(g.unit_name || '-') : (Number(g.claim_facility_id || 0) > 0 ? 'For Personal use' : '-');
+        const location = facility + ' / ' + unit;
+        const itemCount = Number(g.item_count || 0);
+        const totalQty = Number(g.total_qty || 0);
+        const updated = escapeHtml(formatDatetimeLabel(g.updated_at || g.created_at || ''));
+        return '<tr>' +
+            '<td>' + requester + '</td>' +
+            '<td>' + location + '</td>' +
+            '<td class="text-center">' + escapeHtml(String(itemCount)) + '</td>' +
+            '<td class="text-center">' + escapeHtml(String(totalQty)) + '</td>' +
+            '<td>' + updated + '</td>' +
+            '<td class="text-center"><button type="button" class="btn btn-primary btn-sm js-use-request" data-key="' + escapeHtml(String(g.group_key || '')) + '">Use</button></td>' +
+        '</tr>';
+    }).join('');
+    $body.html(html);
+}
+
+function getApprovedRequestGroupByKey(groupKey) {
+    const key = String(groupKey || '');
+    return (approvedRequestGroups || []).find(function(g){ return String(g.group_key || '') === key; }) || null;
+}
+
+function ensureIssuedToOption(userId, fullName) {
+    const id = String(userId || '').trim();
+    if (!id) return;
+    const name = String(fullName || ('User #' + id));
+    if ($('#issuedToUserId option[value="' + id + '"]').length === 0) {
+        const opt = new Option(name, id, true, true);
+        $('#issuedToUserId').append(opt);
+    }
+    $('#issuedToUserId').val(id).trigger('change');
+}
+
+function prefillAssignmentFromRequestGroup(group) {
+    if (!group) return;
+    const facilityId = Number(group.claim_facility_id || 0);
+    const unitId = Number(group.claim_unit_id || 0);
+    if (facilityId > 0) {
+        const selectedVal = facilityId + '::' + unitId;
+        if ($('#issueFacilityUnit option[value="' + selectedVal + '"]').length > 0) {
+            $('#issueFacilityUnit').val(selectedVal).trigger('change');
+        }
+    }
+    const requesterId = Number(group.requester_user_id || 0);
+    if (requesterId > 0) {
+        ensureIssuedToOption(requesterId, group.requester_name || ('User #' + requesterId));
+    }
+}
+
+function applyApprovedRequestGroup(groupKey) {
+    const group = getApprovedRequestGroupByKey(groupKey);
+    if (!group) {
+        showApprovedRequestMsg('Selected request group no longer exists.');
+        return;
+    }
+    if (!astIssueTable || !astIssueTableReady) {
+        showApprovedRequestMsg('Items table is still loading. Please try again.');
+        return;
+    }
+
+    const items = Array.isArray(group.items) ? group.items : [];
+    if (!items.length) {
+        showApprovedRequestMsg('No issuable item found in this approved request.');
+        return;
+    }
+
+    const requisitionBySourceId = {};
+    items.forEach(function(item){
+        const sourceId = Number(item.source_item_id || 0);
+        if (sourceId > 0) {
+            requisitionBySourceId[sourceId] = Number(item.requisition_id || 0);
+        }
+    });
+
+    const existingIds = {};
+    Object.keys(availableRowsById || {}).forEach(function(k){ existingIds[String(k)] = true; });
+    const missingRows = items.filter(function(item){
+        return !existingIds[String(Number(item.source_item_id || 0))];
+    });
+    const targetIds = items.map(function(item){ return Number(item.source_item_id || 0); }).filter(function(id){ return id > 0; });
+
+    function tagRowsWithRequisitionIds() {
+        targetIds.forEach(function(sourceId){
+            const row = astIssueTable.getRow(sourceId);
+            if (!row) return;
+            const reqId = Number(requisitionBySourceId[sourceId] || 0);
+            if (reqId <= 0) return;
+            const current = row.getData() || {};
+            if (Number(current.requisition_id || 0) === reqId) return;
+            row.update({ requisition_id: reqId });
+        });
+    }
+
+    function selectRowsAndPrefill() {
+        tagRowsWithRequisitionIds();
+        astIssueTable.deselectRow();
+        if (targetIds.length > 0) {
+            astIssueTable.selectRow(targetIds);
+            if (targetIds[0]) {
+                astIssueTable.scrollToRow(targetIds[0], 'center', true).catch(function(){});
+            }
+        }
+        syncSelectedItemsFromTable();
+        prefillAssignmentFromRequestGroup(group);
+        setBatchAssignmentLock(true);
+        $('#approvedRequestModal').modal('hide');
+        showIssueMsg('success', 'Approved request loaded. Continue with Batch Assignment and submit issuance.');
+    }
+
+    if (missingRows.length > 0) {
+        missingRows.forEach(function(row){
+            const rowId = Number(row.source_item_id || 0);
+            if (rowId > 0) availableRowsById[rowId] = row;
+        });
+        astIssueTable.addData(missingRows, true).then(function(){
+            selectRowsAndPrefill();
+        }).catch(function(){
+            selectRowsAndPrefill();
+        });
+        return;
+    }
+
+    selectRowsAndPrefill();
+}
+
+function openApprovedRequestModal() {
+    showApprovedRequestMsg('');
+    $('#approvedRequestBody').html('<tr><td colspan="6" class="text-muted small">Loading approved requests...</td></tr>');
+    $.post(PROCESS_URL, { action: 'list_approved_ast_requisition_groups' }, function(res){
+        if (!(res && res.success)) {
+            approvedRequestGroups = [];
+            renderApprovedRequestGroups([]);
+            showApprovedRequestMsg((res && res.message) ? res.message : 'Failed to load approved requests.');
+            return;
+        }
+        approvedRequestGroups = Array.isArray(res.data) ? res.data : [];
+        renderApprovedRequestGroups(approvedRequestGroups);
+    }, 'json').fail(function(){
+        approvedRequestGroups = [];
+        renderApprovedRequestGroups([]);
+        showApprovedRequestMsg('Server error while loading approved requests.');
+    });
+    $('#approvedRequestModal').modal('show');
 }
 
 function initUserSelects() {
@@ -722,9 +948,11 @@ function collectSelectedItemsPayload() {
     if (!astIssueTable || !astIssueTableReady) return [];
     const rows = getSelectedRowsDataSafe();
     return (rows || []).map(function(r){
+        const requisitionId = Number(r.requisition_id || 0);
         return {
             source_item_id: Number(r.source_item_id || 0),
-            item_code: String(r.item_code || '').trim().toUpperCase()
+            item_code: String(r.item_code || '').trim().toUpperCase(),
+            requisition_id: requisitionId > 0 ? requisitionId : 0
         };
     }).filter(function(r){ return r.source_item_id > 0 && r.item_code !== ''; });
 }
@@ -737,14 +965,21 @@ $(document).ready(function(){
     loadFacilityUnitOptions();
     loadAvailableItems();
     syncSelectedItemsFromTable();
+    setBatchAssignmentLock(false);
 
-    $('#refreshItemsBtn').on('click', function(){
-        loadAvailableItems();
+    $('#openRequestPickerBtn').on('click', function(){
+        openApprovedRequestModal();
+    });
+
+    $('#approvedRequestBody').on('click', '.js-use-request', function(){
+        const key = String($(this).data('key') || '');
+        applyApprovedRequestGroup(key);
     });
 
     $('#clearSelectionBtn').on('click', function(){
         if (!astIssueTable) return;
         astIssueTable.deselectRow();
+        setBatchAssignmentLock(false);
         syncSelectedItemsFromTable();
     });
 
@@ -825,6 +1060,7 @@ $(document).ready(function(){
                 showIssueMsg('success', res.message || 'Items issued successfully.');
                 if (astIssueTable) astIssueTable.deselectRow();
                 $('#issueBatchForm')[0].reset();
+                setBatchAssignmentLock(false);
                 $('#issueFacilityUnit').val(null).trigger('change');
                 $('#unitManagersDisplay').val('-');
                 $('#issuedToUserId').val(null).trigger('change');
