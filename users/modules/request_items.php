@@ -60,6 +60,17 @@ if (!(role_has("USER") || role_has("USERS"))) {
             text-align: center;
         }
         .batch-qty-unit { min-width: 52px; justify-content: center; }
+        .req-group-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+            flex-wrap: wrap;
+        }
+        .req-group-meta { min-width: 220px; }
+        .req-group-title { font-weight: 600; line-height: 1.25; }
+        .req-group-sub { font-size: 0.82rem; color: #6b7280; line-height: 1.25; margin-top: 2px; }
     </style>
 </head>
 
@@ -559,6 +570,92 @@ function statusBadge(raw) {
     return `<span class="status-badge ${cls}">${escapeHtml(s.replace('_', ' '))}</span>`;
 }
 
+function canonicalReqStatus(raw) {
+    const v = String(raw || '').trim().toLowerCase();
+    if (!v) return '';
+    if (v === 'approved') return 'for_claiming';
+    if (v === 'forclaiming' || v === 'for_claim') return 'for_claiming';
+    if (v === 'notclaimed' || v === 'not_claim') return 'not_claimed';
+    return v;
+}
+
+function normalizeGroupReqStatus(statuses) {
+    const list = Array.from(new Set((statuses || []).map(function(s){ return canonicalReqStatus(s); }).filter(Boolean)));
+    if (!list.length) return '';
+    if (list.length === 1) return list[0];
+    if (list.indexOf('not_claimed') !== -1) return 'not_claimed';
+    if (list.indexOf('claimed') !== -1) return 'claimed';
+    const pendingLike = list.every(function(s){ return s === 'pending' || s === 'reviewed'; });
+    if (pendingLike) return 'pending';
+    const claimLike = list.every(function(s){ return s === 'for_claiming'; });
+    if (claimLike) return 'for_claiming';
+    return 'mixed';
+}
+
+function safeReqNumber(value, fallback) {
+    const n = parseInt(value, 10);
+    return Number.isFinite(n) ? n : (fallback || 0);
+}
+
+function reqIsoSecond(value) {
+    const v = String(value || '').trim();
+    if (!v) return '';
+    return v.slice(0, 19);
+}
+
+function buildMyReqBatchGroupKey(row) {
+    const requesterId = safeReqNumber(row && row.requester_user_id, 0);
+    const createdPart = reqIsoSecond((row && (row.created_at || row.updated_at)) || '');
+    const facilityId = String((row && row.claim_facility_id) || '0');
+    const unitId = String((row && row.claim_unit_id) || '0');
+    const type = String((row && row.module_type) || currentType || '');
+    return [type, requesterId, createdPart, facilityId, unitId].join('|');
+}
+
+function normalizeMyReqWorkflowStatus(row) {
+    const src = row || {};
+    let raw = canonicalReqStatus(src.workflow_status || src.status || '');
+    const hasClaimAssignment = safeReqNumber(src.claim_assignment_id, 0) > 0;
+    const hasClaimedAt = String(src.claimed_at || '').trim() !== '';
+    if (hasClaimAssignment || hasClaimedAt) return 'claimed';
+    if (raw === 'for_claiming' || raw === 'not_claimed' || raw === 'claimed' || raw === 'pending' || raw === 'reviewed' || raw === 'disapproved') {
+        return raw;
+    }
+    return raw || 'unknown';
+}
+
+function enrichMyReqRowsWithBatch(rows) {
+    const mapped = (rows || []).map(function(row) {
+        const next = Object.assign({}, row);
+        next.workflow_status = normalizeMyReqWorkflowStatus(next);
+        next.batch_group_key = buildMyReqBatchGroupKey(next);
+        return next;
+    });
+
+    const grouped = {};
+    mapped.forEach(function(row) {
+        const k = String(row.batch_group_key || '');
+        if (!grouped[k]) grouped[k] = [];
+        grouped[k].push(row);
+    });
+
+    Object.keys(grouped).forEach(function(k) {
+        const bucket = grouped[k] || [];
+        const statuses = bucket.map(function(r){ return r.workflow_status; });
+        const normalized = normalizeGroupReqStatus(statuses);
+        const itemCount = bucket.length;
+        const qtyTotal = bucket.reduce(function(sum, r){ return sum + safeReqNumber(r.qty_requested, 0); }, 0);
+        bucket.forEach(function(r) {
+            r.batch_item_count = itemCount;
+            r.batch_qty_total = qtyTotal;
+            r.batch_workflow_status = normalized;
+            r.batch_created_at = bucket[0] && bucket[0].created_at ? bucket[0].created_at : (r.created_at || '');
+        });
+    });
+
+    return mapped;
+}
+
 function loadItems() {
     const search = ($('#itemSearch').val() || '').trim();
     if (!table) return;
@@ -765,6 +862,27 @@ function initMyReqTable() {
         height: 420,
         ajaxConfig: 'POST',
         layout: 'fitColumns',
+        groupBy: 'batch_group_key',
+        groupStartOpen: true,
+        groupHeader: function(value, count, data) {
+            const first = (data && data[0]) ? data[0] : {};
+            const totalQty = (data || []).reduce(function(sum, row){ return sum + safeReqNumber(row.qty_requested, 0); }, 0);
+            const groupStatus = normalizeGroupReqStatus((data || []).map(function(r){ return r.batch_workflow_status || r.workflow_status; }));
+            const statusHtml = statusBadge(groupStatus);
+            const created = escapeHtml((first.batch_created_at || first.created_at || '-'));
+            const fac = String(first.facility_name || '').trim();
+            const unit = String(first.unit_name || '').trim();
+            const place = fac || unit ? escapeHtml((fac ? fac : '-') + (unit ? (' / ' + unit) : '')) : '-';
+
+            return '<div class="req-group-header">'
+                + '<div class="req-group-meta">'
+                + '<div class="req-group-title">Request Group <span class="text-muted">(' + count + ' item' + (count > 1 ? 's' : '') + ', Qty ' + totalQty + ')</span></div>'
+                + '<div class="req-group-sub">Created: ' + created + '</div>'
+                + '<div class="req-group-sub">Facility / Unit: ' + place + '</div>'
+                + '</div>'
+                + '<div>' + statusHtml + '</div>'
+                + '</div>';
+        },
         responsiveLayout: 'collapse',
         placeholder: 'No requests found',
         pagination: 'local',
@@ -790,7 +908,7 @@ function initMyReqTable() {
                 return [];
             }
             showMyReqMessage('');
-            return response.data || [];
+            return enrichMyReqRowsWithBatch(response.data || []);
         },
         columns: [
             { title: 'Image', field: 'category_photo_thumb_url', width: 62, hozAlign: 'center', headerSort: false, formatter: function(cell){
@@ -1014,5 +1132,4 @@ $(document).ready(function() {
 });
 </script>
 </html>
-
 
