@@ -5,7 +5,7 @@ require CL_SESSION_PATH;
 require CONNECT_PATH;
 require VALIDATOR_PATH;
 require ISLOGIN;
-
+//test
 if (!role_has("ADMIN")) {
     header("Location: " . BASE_URL);
     exit();
