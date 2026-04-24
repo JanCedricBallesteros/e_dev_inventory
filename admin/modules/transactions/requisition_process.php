@@ -268,6 +268,8 @@ try {
             $hasClaimAssignment = table_column_exists('requisition_items', 'claim_assignment_id');
             $hasClaimedAt = table_column_exists('requisition_items', 'claimed_at');
             $hasRemarks = table_column_exists('requisition_items', 'remarks');
+            $hasClaimFacility = table_column_exists('requisition_items', 'claim_facility_id');
+            $hasClaimUnit = table_column_exists('requisition_items', 'claim_unit_id');
             $hasReqIdInAssignments = table_column_exists('facility_records_assignments', 'requisition_id');
             $assignJoin = '';
             if ($hasClaimAssignment) {
@@ -275,6 +277,8 @@ try {
             } elseif ($hasReqIdInAssignments) {
                 $assignJoin = "LEFT JOIN facility_records_assignments a ON a.requisition_id = r.requisition_id";
             }
+            $reqFacilityJoin = $hasClaimFacility ? "LEFT JOIN facility_records_facilities rf ON rf.facility_id = r.claim_facility_id" : "LEFT JOIN facility_records_facilities rf ON 1=0";
+            $reqUnitJoin = $hasClaimUnit ? "LEFT JOIN facility_records_units ru ON ru.unit_id = r.claim_unit_id" : "LEFT JOIN facility_records_units ru ON 1=0";
             if ($status !== '') {
                 if ($status === 'for_claiming') {
                     $where .= " AND r.status = 'approved'";
@@ -347,9 +351,31 @@ try {
                         ast_cat.item_category_name AS ast_category_name,
                         {$csmAvailableExpr} AS csm_available_qty,
                         csm_inv.item_category_img AS csm_category_img,
-                        csm_cat.item_category_name AS csm_category_name
+                        csm_cat.item_category_name AS csm_category_name,
+                        COALESCE(af.facility_code, rf.facility_code) AS facility_code,
+                        COALESCE(af.facility_name, rf.facility_name) AS facility_name,
+                        COALESCE(
+                            au.unit_code,
+                            ru.unit_code,
+                            CASE
+                                WHEN " . ($hasClaimUnit ? "r.claim_unit_id = 0" : "0=1") . " AND UPPER(TRIM(COALESCE(rf.facility_code, ''))) = 'PERSONAL' THEN 'PERSONAL_USE'
+                                ELSE NULL
+                            END
+                        ) AS unit_code,
+                        COALESCE(
+                            au.unit_name,
+                            ru.unit_name,
+                            CASE
+                                WHEN " . ($hasClaimUnit ? "r.claim_unit_id = 0" : "0=1") . " AND UPPER(TRIM(COALESCE(rf.facility_code, ''))) = 'PERSONAL' THEN 'For Personal use'
+                                ELSE NULL
+                            END
+                        ) AS unit_name
                     FROM requisition_items r
                     {$assignJoin}
+                    LEFT JOIN facility_records_facilities af ON af.facility_id = a.facility_id
+                    LEFT JOIN facility_records_units au ON au.unit_id = a.unit_id
+                    {$reqFacilityJoin}
+                    {$reqUnitJoin}
                     LEFT JOIN ast_inventory ast_inv ON r.module_type = 'AST' AND r.item_code = ast_inv.property_code
                     LEFT JOIN ast_inventory_category ast_cat ON ast_inv.category_id = ast_cat.category_id
                     LEFT JOIN csm_inventory csm_inv ON r.module_type = 'CSM' AND r.item_code = csm_inv.inventory_system_item_code

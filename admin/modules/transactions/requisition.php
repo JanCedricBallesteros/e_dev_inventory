@@ -843,6 +843,27 @@ function initReqTable() {
                 }
                 return escapeHtml(v);
             }},
+            { title: 'Claimed', field: 'claimed_at', width: 130, formatter: function(cell){
+                const v = String(cell.getValue() || '');
+                if (!v) return '-';
+                const parts = v.split(/\s+/);
+                if (parts.length >= 2) {
+                    return `<div style="line-height:1.2;white-space:normal;">${escapeHtml(parts[0])}<br><span class="text-muted">${escapeHtml(parts.slice(1).join(' '))}</span></div>`;
+                }
+                return escapeHtml(v);
+            }},
+            { title: 'Facility / Unit', field: 'facility_name', widthGrow: 1, minWidth: 150, formatter: function(cell){
+                const row = cell.getRow().getData();
+                const fac = escapeHtml(row.facility_name || '');
+                const unit = escapeHtml(row.unit_name || '');
+                if (!fac && !unit) return '-';
+                const facLine = fac ? `<div class="two-line-cell" title="${fac}">${fac}</div>` : '';
+                const unitLine = unit ? `<div class="text-muted small two-line-cell" title="${unit}">${unit}</div>` : '';
+                return `<div style="line-height:1.3;white-space:normal;">${facLine}${unitLine}</div>`;
+            }},
+            { title: 'Reason', field: 'reason', widthGrow: 1, minWidth: 130, formatter: function(cell){
+                return twoLineText(cell.getValue() || '', '-');
+            }},
             { title: 'Remarks', field: 'remarks', widthGrow: 1, minWidth: 130, formatter: function(cell){
                 return twoLineText(cell.getValue() || '', '-');
             }}

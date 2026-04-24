@@ -873,14 +873,15 @@ function initMyReqTable() {
             const fac = String(first.facility_name || '').trim();
             const unit = String(first.unit_name || '').trim();
             const place = fac || unit ? escapeHtml((fac ? fac : '-') + (unit ? (' / ' + unit) : '')) : '-';
+            const updated = escapeHtml(String(first.updated_at || first.created_at || '-'));
 
             return '<div class="req-group-header">'
                 + '<div class="req-group-meta">'
-                + '<div class="req-group-title">Request Group <span class="text-muted">(' + count + ' item' + (count > 1 ? 's' : '') + ', Qty ' + totalQty + ')</span></div>'
-                + '<div class="req-group-sub">Created: ' + created + '</div>'
+                + '<div class="req-group-title">You <span class="text-muted">(' + count + ' item' + (count > 1 ? 's' : '') + ', Qty ' + totalQty + ')</span></div>'
+                + '<div class="req-group-sub">Created: ' + created + ' &nbsp; ' + statusHtml + '</div>'
+                + '<div class="req-group-sub">Updated: ' + updated + '</div>'
                 + '<div class="req-group-sub">Facility / Unit: ' + place + '</div>'
                 + '</div>'
-                + '<div>' + statusHtml + '</div>'
                 + '</div>';
         },
         responsiveLayout: 'collapse',
@@ -921,7 +922,7 @@ function initMyReqTable() {
                 const initials = (String(name).trim().split(/\s+/).map(function(w){ return w.charAt(0); }).filter(Boolean).slice(0,2).join('') || 'IT').toUpperCase();
                 return `<div class="thumb-wrap"><div class="item-badge" title="${escapeHtml(name)}">${escapeHtml(initials)}</div></div>`;
             }},
-            { title: 'ID', field: 'requisition_id', width: 60, hozAlign: 'center' },
+            { title: 'Req ID', field: 'requisition_id', width: 70, hozAlign: 'center' },
             { title: 'Item Code', field: 'item_code', width: 125, headerFilter: 'input', formatter: function(cell){
                 const v = escapeHtml(cell.getValue() || '');
                 return v ? '<span class="badge bg-light text-dark border">' + v + '</span>' : '-';
@@ -933,7 +934,7 @@ function initMyReqTable() {
             { title: 'Workflow', field: 'workflow_status', width: 120, formatter: function(cell){
                 return statusBadge(cell.getValue());
             }},
-            { title: 'Claimed', field: 'claimed_at', width: 130, formatter: function(cell){
+            { title: 'Updated', field: 'updated_at', width: 130, formatter: function(cell){
                 const v = String(cell.getValue() || '');
                 if (!v) return '-';
                 const parts = v.split(/\s+/);
@@ -942,14 +943,14 @@ function initMyReqTable() {
                 }
                 return escapeHtml(v);
             }},
-            { title: 'Facility / Unit', field: 'facility_name', widthGrow: 1, minWidth: 150, headerFilter: 'input', formatter: function(cell){
-                const row = cell.getRow().getData();
-                const fac = escapeHtml(row.facility_name || '');
-                const unit = escapeHtml(row.unit_name || '');
-                if (!fac && !unit) return '-';
-                const facLine = fac ? `<div class="two-line-cell" title="${fac}">${fac}</div>` : '';
-                const unitLine = unit ? `<div class="text-muted small two-line-cell" title="${unit}">${unit}</div>` : '';
-                return `<div style="line-height:1.3;white-space:normal;">${facLine}${unitLine}</div>`;
+            { title: 'Claimed', field: 'claimed_at', width: 130, formatter: function(cell){
+                const v = String(cell.getValue() || '');
+                if (!v) return '-';
+                const parts = v.split(/\s+/);
+                if (parts.length >= 2) {
+                    return `<div style="line-height:1.2;white-space:normal;">${escapeHtml(parts[0])}<br><span class="text-muted">${escapeHtml(parts.slice(1).join(' '))}</span></div>`;
+                }
+                return escapeHtml(v);
             }},
             { title: 'Reason', field: 'reason', widthGrow: 1, minWidth: 130, formatter: function(cell){
                 return twoLineText(cell.getValue() || '', '-');
@@ -1132,4 +1133,3 @@ $(document).ready(function() {
 });
 </script>
 </html>
-

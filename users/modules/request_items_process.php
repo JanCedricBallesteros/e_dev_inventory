@@ -765,6 +765,8 @@ try {
             $hasUpdatedAt = table_column_exists('requisition_items', 'updated_at');
             $hasReason = table_column_exists('requisition_items', 'reason');
             $hasRemarks = table_column_exists('requisition_items', 'remarks');
+            $hasClaimFacility = table_column_exists('requisition_items', 'claim_facility_id');
+            $hasClaimUnit = table_column_exists('requisition_items', 'claim_unit_id');
             $hasReqIdInAssignments = table_column_exists('facility_records_assignments', 'requisition_id');
             $assignJoin = '';
             if ($hasClaimAssignment) {
@@ -772,6 +774,8 @@ try {
             } elseif ($hasReqIdInAssignments) {
                 $assignJoin = "LEFT JOIN facility_records_assignments a ON a.requisition_id = r.requisition_id";
             }
+            $reqFacilityJoin = $hasClaimFacility ? "LEFT JOIN facility_records_facilities rf ON rf.facility_id = r.claim_facility_id" : "LEFT JOIN facility_records_facilities rf ON 1=0";
+            $reqUnitJoin = $hasClaimUnit ? "LEFT JOIN facility_records_units ru ON ru.unit_id = r.claim_unit_id" : "LEFT JOIN facility_records_units ru ON 1=0";
             $where = "WHERE r.requester_user_id = {$userId}";
             if ($status !== '') {
                 if ($status === 'for_claiming') {
@@ -826,18 +830,20 @@ try {
                         " . ($hasApprovedAt ? "r.approved_at," : "NULL AS approved_at,") . "
                         r.created_at,
                         " . ($hasUpdatedAt ? "r.updated_at," : "r.created_at AS updated_at,") . "
-                        f.facility_code,
-                        f.facility_name,
-                        u.unit_code,
-                        u.unit_name,
+                        COALESCE(af.facility_code, rf.facility_code) AS facility_code,
+                        COALESCE(af.facility_name, rf.facility_name) AS facility_name,
+                        COALESCE(au.unit_code, ru.unit_code) AS unit_code,
+                        COALESCE(au.unit_name, ru.unit_name) AS unit_name,
                         ast_cat.category_photo AS ast_category_photo,
                         ast_cat.item_category_name AS ast_category_name,
                         csm_inv.item_category_img AS csm_category_img,
                         csm_cat.item_category_name AS csm_category_name
                     FROM requisition_items r
                     {$assignJoin}
-                    LEFT JOIN facility_records_facilities f ON f.facility_id = a.facility_id
-                    LEFT JOIN facility_records_units u ON u.unit_id = a.unit_id
+                    LEFT JOIN facility_records_facilities af ON af.facility_id = a.facility_id
+                    LEFT JOIN facility_records_units au ON au.unit_id = a.unit_id
+                    {$reqFacilityJoin}
+                    {$reqUnitJoin}
                     LEFT JOIN ast_inventory ast_inv ON r.module_type = 'AST' AND r.item_code = ast_inv.property_code
                     LEFT JOIN ast_inventory_category ast_cat ON ast_inv.category_id = ast_cat.category_id
                     LEFT JOIN csm_inventory csm_inv ON r.module_type = 'CSM' AND r.item_code = csm_inv.inventory_system_item_code
@@ -915,5 +921,4 @@ try {
     call_mysql_query("ROLLBACK");
     json_response(['success' => false, 'message' => 'Server error occurred.'], 500);
 }
-
 
