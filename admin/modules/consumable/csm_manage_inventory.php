@@ -631,25 +631,31 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                 </div>
 
                 <div class="row g-2 mb-3">
-                    <div class="col-sm-3">
+                    <div class="col-sm-6 col-lg">
                         <div class="summary-card">
                             <div class="summary-label">Total Items</div>
                             <div class="summary-value" id="sumItems">0</div>
                         </div>
                     </div>
-                    <div class="col-sm-3">
+                    <div class="col-sm-6 col-lg">
                         <div class="summary-card">
                             <div class="summary-label">Total Quantity</div>
                             <div class="summary-value" id="sumQty">0</div>
                         </div>
                     </div>
-                    <div class="col-sm-3">
+                    <div class="col-sm-6 col-lg">
                         <div class="summary-card">
                             <div class="summary-label">Available Quantity</div>
                             <div class="summary-value" id="sumAvailQty">0</div>
                         </div>
                     </div>
-                    <div class="col-sm-3">
+                    <div class="col-sm-6 col-lg">
+                        <div class="summary-card">
+                            <div class="summary-label">Total Issued</div>
+                            <div class="summary-value" id="sumIssued">--</div>
+                        </div>
+                    </div>
+                    <div class="col-sm-6 col-lg">
                         <div class="summary-card is-clickable" id="criticalOutCard" title="Show only stock critical and out of stock items">
                             <div class="summary-label">Critical / Out</div>
                             <div class="summary-value" id="sumCritical">0 / 0</div>

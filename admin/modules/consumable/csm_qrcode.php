@@ -705,7 +705,8 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 <?php include_once DOMAIN_PATH . '/global/include_bottom.php'; ?>
 
 <script src="<?= BASE_URL ?>assets/js/jquery.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://unpkg.com/html5-qrcode"></script>
 
 <script>
@@ -1146,6 +1147,7 @@ const TAG_PRINT_CSS = `
     --simple-h: 38mm;
     --simple-qr-column: 26mm;
     --simple-qr-size: 22mm;
+    --gap: 6mm;
 
   }
 
@@ -1159,8 +1161,8 @@ const TAG_PRINT_CSS = `
 
   .print-page.simple{
     display:grid;
-    gap: var(--gap);
-    justify-content:start;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0;
     align-content:start;
     page-break-after: always;
     break-after: page;
@@ -1171,10 +1173,14 @@ const TAG_PRINT_CSS = `
   }
 
   .print-page.detailed{
-    display:flex;
-    flex-wrap:wrap;
-    gap: var(--gap);
+    display:grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0;
     align-content:flex-start;
+    page-break-after: always;
+    break-after: page;
+  }
+  .print-page.detailed.is-last{
     page-break-after:auto;
     break-after:auto;
   }
@@ -1188,7 +1194,8 @@ const TAG_PRINT_CSS = `
   }
 
   .tag-sticker{
-    width: var(--detailed-w);
+    width: 100%;
+    max-width: 100%;
     height: auto;
     min-height: var(--detailed-h);
     border: 2px solid var(--detailed-border);
@@ -1343,7 +1350,7 @@ const TAG_PRINT_CSS = `
   }
 
   .simple-sticker{
-    width: var(--simple-w);
+    width: 100%;
     height: var(--simple-h);
     border:2px solid var(--tag-border);
     border-radius: 1mm;
@@ -1393,22 +1400,30 @@ const TAG_PRINT_CSS = `
 
 function buildPagesHtml(layout, cards) {
   if (layout === 'detailed') {
-    return `<div class="print-page detailed is-last">${cards.join('')}</div>`;
+    const perPage = 8; // per page for detailed property tag
+    const pages = [];
+
+    for (let i = 0; i < cards.length; i += perPage) {
+      const pageCards = cards.slice(i, i + perPage).join('');
+      const isLast = (i + perPage) >= cards.length;
+      pages.push(`<div class="print-page detailed${isLast ? ' is-last' : ''}">${pageCards}</div>`);
+    }
+
+    return pages.join('');
   }
 
-  const perPage = 12;
-  const gridCols = 'repeat(3, var(--simple-w))';
+  const perPage = 18; // per page for simple
 
   const pages = [];
   for (let i = 0; i < cards.length; i += perPage) {
     const pageCards = cards.slice(i, i + perPage).join('');
     const isLast = (i + perPage) >= cards.length;
-    pages.push(`<div class="print-page simple${isLast ? ' is-last' : ''}" style="grid-template-columns:${gridCols}">${pageCards}</div>`);
+    pages.push(`<div class="print-page simple${isLast ? ' is-last' : ''}">${pageCards}</div>`);
   }
   return pages.join('');
 }
 
-function printSelected() {
+function buildSelectedQrPages() {
   const layout = ($('#printLayout').val() || 'simple');
 
   const byCode = {};
@@ -1419,7 +1434,7 @@ function printSelected() {
   });
 
   const codes = getSelectedCodes();
-  if (!codes.length) return;
+  if (!codes.length) return null;
 
   const cards = codes.map(code => {
     const item = byCode[code] || {};
@@ -1437,14 +1452,24 @@ function printSelected() {
       : buildDetailedTag({ code, desc, catLine, acq, cost, notes, qrUrl });
   });
 
-  const pagesHtml = buildPagesHtml(layout, cards);
+  return {
+    layout: layout,
+    pagesHtml: buildPagesHtml(layout, cards)
+  };
+}
 
+function openQrPrintWindow(pagesHtml, title) {
   const printWin = window.open('', '_blank');
+  if (!printWin) {
+    showFloatingNotice('warning', 'Popup blocked. Please allow popups for this page and try again.');
+    return null;
+  }
+
   printWin.document.write(`
     <!DOCTYPE html>
     <html>
     <head>
-      <title>CSM QR Codes</title>
+      <title>${escapeHtml(title || 'CSM QR Codes')}</title>
       <style>${TAG_PRINT_CSS}</style>
     </head>
     <body>${pagesHtml}</body>
@@ -1452,8 +1477,13 @@ function printSelected() {
   `);
   printWin.document.close();
   printWin.focus();
+  return printWin;
+}
 
-  try {
+function waitForPrintWindowAssets(printWin) {
+  if (!printWin) return Promise.resolve();
+
+  try{
     const imgs = printWin.document.images;
     const promises = [];
     for (let i = 0; i < imgs.length; i++) {
@@ -1470,63 +1500,135 @@ function printSelected() {
       }));
     }
 
-    Promise.race([
+    return Promise.race([
       Promise.all(promises),
       new Promise(r => setTimeout(r, 8000))
-    ]).then(() => {
-      try { printWin.focus(); } catch(e){}
-      printWin.print();
-    });
+    ]);
   } catch (e) {
-    try { printWin.focus(); } catch(er){}
-    printWin.print();
+    return Promise.resolve();
   }
 }
 
-function saveToPdf() {
-  const layout = ($('#printLayout').val() || 'simple');
+function waitForElementAssets(element) {
+  if (!element) return Promise.resolve();
 
-  const byCode = {};
-  qrItems.forEach(item => {
-    if (item.inventory_system_item_code) {
-      byCode[item.inventory_system_item_code] = item;
+  try {
+    const imgs = element.querySelectorAll('img');
+    const promises = [];
+
+    imgs.forEach(img => {
+      if (img.complete && img.naturalWidth > 0) return;
+      promises.push(new Promise(resolve => {
+        const done = () => {
+          img.removeEventListener('load', done);
+          img.removeEventListener('error', done);
+          resolve();
+        };
+        img.addEventListener('load', done);
+        img.addEventListener('error', done);
+      }));
+    });
+
+    return Promise.race([
+      Promise.all(promises),
+      new Promise(r => setTimeout(r, 8000))
+    ]).then(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+  } catch (e) {
+    return Promise.resolve();
+  }
+}
+
+function printSelected() {
+  const payload = buildSelectedQrPages();
+  if (!payload) return;
+
+  const printWin = openQrPrintWindow(payload.pagesHtml, 'CSM QR Codes');
+  if (!printWin) return;
+
+  waitForPrintWindowAssets(printWin).then(() => {
+    try { printWin.focus(); } catch(e){}
+    printWin.print();
+  });
+}
+
+async function saveToPdf() {
+  const payload = buildSelectedQrPages();
+  if (!payload) return;
+
+  const exportWrap = document.createElement('div');
+  exportWrap.style.position = 'fixed';
+  exportWrap.style.left = '-10000px';
+  exportWrap.style.top = '0';
+  exportWrap.style.width = '216mm';
+  exportWrap.style.minHeight = '279mm';
+  exportWrap.style.background = '#ffffff';
+  exportWrap.style.pointerEvents = 'none';
+  exportWrap.style.zIndex = '-1';
+  exportWrap.style.overflow = 'hidden';
+  exportWrap.innerHTML = `<style>${TAG_PRINT_CSS}</style>${payload.pagesHtml}`;
+  document.body.appendChild(exportWrap);
+
+  try {
+    await waitForElementAssets(exportWrap);
+
+    if (typeof html2canvas !== 'function' || !window.jspdf || !window.jspdf.jsPDF) {
+      throw new Error('PDF libraries are unavailable.');
     }
-  });
 
-  const codes = getSelectedCodes();
-  if (!codes.length) return;
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({
+      unit: 'in',
+      format: 'letter',
+      orientation: 'portrait'
+    });
 
-  const cards = codes.map(code => {
-    const item = byCode[code] || {};
-    const desc = item.item_description || '';
-    const acq  = item.acquisition_date || '';
-    const cost = (item.cost_value != null && item.cost_value !== '') ? item.cost_value : '';
-    const catCode = item.item_category_code || '';
-    const catName = item.item_category_name || '';
-    const catLine = (catName && catCode) ? `${catName} (${catCode})` : (catName || catCode);
-    const notes = item.notes || item.note || item.remarks || '';
-    const qrUrl = QR_GENERATOR_URL + '?v=' + encodeURIComponent(code);
+    const pageWidth = 8.5;
+    const pageHeight = 11;
+    const margin = 0.315;
+    const contentWidth = pageWidth - (margin * 2);
+    const contentHeight = pageHeight - (margin * 2);
+    const pageNodes = exportWrap.querySelectorAll('.print-page');
+    const targets = pageNodes.length ? Array.from(pageNodes) : [exportWrap];
 
-    return layout === 'simple'
-      ? buildSimpleSticker({ code, desc, catLine, qrUrl })
-      : buildDetailedTag({ code, desc, catLine, acq, cost, notes, qrUrl });
-  });
+    for (let i = 0; i < targets.length; i++) {
+      const pageEl = targets[i];
+      const canvas = await html2canvas(pageEl, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        scrollX: 0,
+        scrollY: 0,
+        windowWidth: Math.ceil(pageEl.scrollWidth || pageEl.offsetWidth || 816),
+        windowHeight: Math.ceil(pageEl.scrollHeight || pageEl.offsetHeight || 1056)
+      });
 
-  const pagesHtml = buildPagesHtml(layout, cards);
+      const imgData = canvas.toDataURL('image/jpeg', 0.98);
+      let imgWidth = contentWidth;
+      let imgHeight = imgWidth * (canvas.height / canvas.width);
 
-  const element = document.createElement('div');
-  element.innerHTML = `<style>${TAG_PRINT_CSS}</style>${pagesHtml}`;
+      if (imgHeight > contentHeight) {
+        imgHeight = contentHeight;
+        imgWidth = imgHeight * (canvas.width / canvas.height);
+      }
 
-  const opt = {
-    margin: [0.2, 0.2, 0.2, 0.2],
-    filename: `csm-qr-codes-${new Date().toISOString().split('T')[0]}.pdf`,
-    image: { type: 'jpeg', quality: 0.98 },
-    html2canvas: { scale: 2, useCORS: true, allowTaint: true },
-    jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' },
-    pagebreak: { mode: ['css', 'legacy'] }
-  };
+      const x = margin + ((contentWidth - imgWidth) / 2);
+      const y = margin;
 
-  html2pdf().set(opt).from(element).save();
+      if (i > 0) {
+        pdf.addPage('letter', 'portrait');
+      }
+
+      pdf.addImage(imgData, 'JPEG', x, y, imgWidth, imgHeight, undefined, 'FAST');
+    }
+
+    pdf.save(`csm-qr-codes-${new Date().toISOString().split('T')[0]}.pdf`);
+  } catch (e) {
+    console.error(e);
+    showFloatingNotice('danger', 'Failed to save PDF.');
+  } finally {
+    exportWrap.remove();
+  }
 }
 
 function playBeep() {
