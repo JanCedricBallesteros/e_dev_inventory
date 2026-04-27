@@ -92,19 +92,11 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                 <div class="filter-label">Audit Name (optional)</div>
                                 <input type="text" class="form-control" name="audit_name" placeholder="e.g., March 2026">
                             </div>
-                            <div class="col-md-4">
+                            <div class="col-md-7">
                                 <div class="filter-label">Date Range</div>
                                 <input type="text" class="form-control" id="sessionDateRange" placeholder="YYYY-MM-DD - YYYY-MM-DD" autocomplete="off">
                                 <input type="hidden" name="start_date" id="sessionStartDate">
                                 <input type="hidden" name="end_date" id="sessionEndDate">
-                            </div>
-                            <div class="col-md-3">
-                                <div class="filter-label">Status</div>
-                                <select class="form-select" name="status">
-                                    <option value="Pending">Pending</option>
-                                    <option value="Active">Active</option>
-                                    <option value="Closed">Closed</option>
-                                </select>
                             </div>
                             <div class="col-md-2 d-grid">
                                 <button type="submit" class="btn btn-primary">Create</button>
@@ -199,24 +191,32 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                 </select>
                             </div>
                             <div class="col-md-3">
-                                <div class="filter-label">Status</div>
-                                <input type="text" class="form-control" id="statusAtCheck" placeholder="e.g., Available">
+                                <div class="filter-label">Assignment Status</div>
+                                <input type="text" class="form-control" id="statusAtCheck" readonly>
                             </div>
                             <div class="col-md-3">
-                                <div class="filter-label">Facility</div>
-                                <input type="text" class="form-control" id="facility">
+                                <div class="filter-label">Current Location</div>
+                                <input type="text" class="form-control" id="facility" readonly>
                             </div>
                             <div class="col-md-3">
-                                <div class="filter-label">Accountable</div>
-                                <input type="text" class="form-control" id="accountable">
+                                <div class="filter-label">Accountable User</div>
+                                <input type="text" class="form-control" id="accountable" readonly>
                             </div>
                             <div class="col-md-3">
                                 <div class="filter-label">Issued To</div>
-                                <input type="text" class="form-control" id="issuedTo">
+                                <input type="text" class="form-control" id="issuedTo" readonly>
                             </div>
                             <div class="col-md-3">
-                                <div class="filter-label">Managed By</div>
-                                <input type="text" class="form-control" id="managedBy">
+                                <div class="filter-label">Unit Manager</div>
+                                <input type="text" class="form-control" id="managedBy" readonly>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="filter-label">Extra Managers</div>
+                                <input type="text" class="form-control" id="extraManagers" readonly>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="filter-label">Assignment Source</div>
+                                <input type="text" class="form-control" id="assignmentSource" readonly>
                             </div>
                             <div class="col-md-6">
                                 <div class="filter-label">Remarks</div>
@@ -284,7 +284,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                 </div>
                 <div class="mt-2 small">
                     <span class="text-muted">Last scanned:</span>
-                    <span id="searchLastScanned" class="fw-semibold">â€”</span>
+                    <span id="searchLastScanned" class="fw-semibold">-</span>
                 </div>
                 <div id="searchScanError" class="text-danger small mt-1" style="display:none;"></div>
             </div>
@@ -318,7 +318,7 @@ function showMessage(target, type, text) {
 function parseDateRangeStrings(raw) {
     const text = (raw || '').trim();
     if (!text) return { start: '', end: '' };
-    const parts = text.split(/\s+-\s+|\s+â€“\s+/).filter(Boolean);
+    const parts = text.split(/\s+-\s+/).filter(Boolean);
     if (parts.length === 1) return { start: parts[0], end: parts[0] };
     return { start: parts[0], end: parts[1] };
 }
@@ -398,14 +398,14 @@ function initSessionsTable() {
             { title: 'Start', field: 'start_date', width: 120 },
             { title: 'End', field: 'end_date', width: 120 },
             { title: 'Status', field: 'status', width: 100 },
-            { title: 'Created By', field: 'created_by_name', width: 160 },
-            { title: 'Actions', field: 'id', width: 160, formatter: function(cell){
+            { title: 'Created By', field: 'created_by_name', width: 180 },
+            { title: 'Actions', field: 'id', width: 130, hozAlign: 'center', formatter: function(cell){
+                const row = cell.getRow().getData() || {};
+                if ((row.status || '').toLowerCase() !== 'active' && (row.status || '').toLowerCase() !== 'pending') {
+                    return '<span class="text-muted small">-</span>';
+                }
                 const id = cell.getValue();
-                return `
-                    <div class="btn-group btn-group-sm">
-                        <button class="btn btn-outline-success btn-set-status" data-id="${id}" data-status="Active">Active</button>
-                        <button class="btn btn-outline-secondary btn-set-status" data-id="${id}" data-status="Closed">Close</button>
-                    </div>`;
+                return `<button class="btn btn-outline-danger btn-sm btn-cancel-session" data-id="${id}">Cancel</button>`;
             }}
         ]
     });
@@ -435,7 +435,21 @@ function initChecksTable() {
             { title: 'Serial No.', field: 'serial_number', width: 130 },
             { title: 'Facility', field: 'facility', width: 140 },
             { title: 'Accountable', field: 'accountable', width: 140 },
+            { title: 'Issued To', field: 'issued_to', width: 140, formatter: function(cell){
+                return threeLineText(cell.getValue());
+            }},
+            { title: 'Managed By', field: 'managed_by', width: 140, formatter: function(cell){
+                return threeLineText(cell.getValue());
+            }},
+            { title: 'Extra Managers', field: 'extra_managers', width: 150, formatter: function(cell){
+                return threeLineText(cell.getValue());
+            }},
+            { title: 'Assignment Source', field: 'assignment_source', width: 150, formatter: function(cell){
+                return threeLineText(cell.getValue());
+            }},
             { title: 'Status', field: 'status_at_check', width: 120 },
+            { title: 'Condition', field: 'condition', width: 130 },
+            { title: 'Date Issued', field: 'date_issued', width: 130 },
             { title: 'Remarks', field: 'remarks', width: 160 },
             { title: 'Date Checked', field: 'checked_at', width: 150 },
             { title: 'Checked By', field: 'checked_by_name', width: 150 }
@@ -463,9 +477,21 @@ function loadItem(code) {
         $('#infoPropertyNumber').text(currentItem.property_number || '-');
         $('#infoDescription').text(currentItem.item_description || '-');
         $('#infoDateStock').text(currentItem.created_at || '-');
-        $('#infoDateIssued').text('-');
+        const issuedAt = (currentItem.assignment_issued_at || '').toString();
+        const issuedDate = issuedAt ? issuedAt.substring(0, 10) : '';
+        $('#infoDateIssued').text(issuedDate || '-');
         $('#unitChecked').val(currentItem.unit || '');
         $('#serialNumber').val(currentItem.serial_number || '');
+        $('#statusAtCheck').val(currentItem.status_at_check || '');
+        $('#facility').val(currentItem.facility || '');
+        $('#accountable').val(currentItem.accountable || '');
+        $('#issuedTo').val(currentItem.issued_to || '');
+        $('#managedBy').val(currentItem.managed_by || '');
+        $('#extraManagers').val(currentItem.extra_managers || '');
+        $('#assignmentSource').val(currentItem.assignment_source || (((currentItem.is_available || 0) == 1) ? 'Stockroom / Unassigned' : 'Unassigned'));
+        if (!$('#dateIssued').val() && issuedDate) {
+            $('#dateIssued').val(issuedDate);
+        }
 
         if (currentItem.category_photo_thumb_url || currentItem.category_photo_url) {
             const src = currentItem.category_photo_thumb_url || currentItem.category_photo_url;
@@ -493,6 +519,8 @@ function resetItemUI() {
     $('#accountable').val('');
     $('#issuedTo').val('');
     $('#managedBy').val('');
+    $('#extraManagers').val('');
+    $('#assignmentSource').val('');
     $('#remarks').val('');
     $('#dateIssued').val('');
     $('#condition').val('');
@@ -601,17 +629,27 @@ $(document).ready(function() {
             } else {
                 showMessage('#sessionMsg', 'danger', res.message || 'Failed to create session.');
             }
-        }, 'json');
+        }, 'json').fail(function(xhr) {
+            const msg = (xhr && xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Failed to create session.';
+            showMessage('#sessionMsg', 'danger', msg);
+        });
     });
 
-    $('#sessionsTable').on('click', '.btn-set-status', function() {
-        const id = $(this).data('id');
-        const status = $(this).data('status');
-        $.post(PROCESS_URL, { action: 'update_session_status', session_id: id, status }, function(res) {
+    $('#sessionsTable').on('click', '.btn-cancel-session', function() {
+        const sessionId = $(this).data('id');
+        if (!sessionId) return;
+        if (!window.confirm('Cancel this session? This will close it immediately.')) return;
+        $.post(PROCESS_URL, { action: 'cancel_session', session_id: sessionId }, function(res) {
             if (res.success) {
+                showMessage('#sessionMsg', 'success', res.message || 'Session cancelled.');
                 loadSessions();
+            } else {
+                showMessage('#sessionMsg', 'danger', res.message || 'Failed to cancel session.');
             }
-        }, 'json');
+        }, 'json').fail(function(xhr) {
+            const msg = (xhr && xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Failed to cancel session.';
+            showMessage('#sessionMsg', 'danger', msg);
+        });
     });
 
     $('#saveCheck').on('click', function() {
