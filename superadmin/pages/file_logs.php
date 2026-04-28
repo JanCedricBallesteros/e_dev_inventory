@@ -298,23 +298,11 @@ $json_table = json_encode($table_array, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_
 
     <?php include_once FOOTER_PATH; ?>
 
-</body>
 <?php include_once DOMAIN_PATH . '/global/include_bottom.php'; ?>
-<script src="<?= BASE_URL ?>assets/js/jquery.min.js"></script>
-<script src="<?= BASE_URL ?>assets/js/tabulator.min.js"></script>
-</html>
+    <script>
 (function() {
     var tableData = <?php echo $json_table ? $json_table : '[]'; ?>;
     var totalFiles = Array.isArray(tableData) ? tableData.length : 0;
-
-    function escHtml(value) {
-        return String(value == null ? '' : value)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#039;');
-    }
 
     function formatBytes(bytes) {
         bytes = Number(bytes) || 0;
@@ -334,7 +322,6 @@ $json_table = json_encode($table_array, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_
     }
 
     function showPreview(row) {
-        var modal = document.getElementById('filePreviewModal');
         var title = document.getElementById('filePreviewTitle');
         var image = document.getElementById('filePreviewImage');
         var noImage = document.getElementById('filePreviewNoImage');
@@ -408,14 +395,14 @@ $json_table = json_encode($table_array, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_
                     }
 
                     var text = document.createElement('div');
-                    var name = document.createElement('div');
-                    name.className = 'file-name';
-                    name.textContent = row.file_name || '-';
-                    var path = document.createElement('div');
-                    path.className = 'file-path';
-                    path.textContent = row.relative_path || row.file_path || '-';
-                    text.appendChild(name);
-                    text.appendChild(path);
+                    var fileName = document.createElement('div');
+                    fileName.className = 'file-name';
+                    fileName.textContent = row.file_name || '-';
+                    var filePath = document.createElement('div');
+                    filePath.className = 'file-path';
+                    filePath.textContent = row.relative_path || row.file_path || '-';
+                    text.appendChild(fileName);
+                    text.appendChild(filePath);
                     wrap.appendChild(text);
 
                     return wrap;
@@ -506,4 +493,7 @@ $json_table = json_encode($table_array, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_
         window.location.reload();
     });
 })();
-</script>
+    </script>
+
+</body>
+</html>

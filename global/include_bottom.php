@@ -49,6 +49,9 @@
 <script type="text/javascript" src="<?php echo BASE_URL; ?>assets/js/dropify.js?v=<?php echo FILE_VERSION; ?>"></script>
 <script type="text/javascript" src="<?php echo BASE_URL; ?>assets/js/daterangepicker.js?v=<?php echo FILE_VERSION; ?>"></script>
 
+<!-- [DASHBOARD] PLUGIN JS Files -->
+<script type="text/javascript" src="<?php echo BASE_URL; ?>assets/dashboard/js/plugin/jquery-scrollbar/jquery.scrollbar.min.js?v=<?php echo FILE_VERSION; ?>"></script>
+
 
 <!-- DASHBOARD JS Files -->
 <script type="text/javascript" src="<?php echo BASE_URL; ?>assets/dashboard/js/custom.min.js?v=<?php echo FILE_VERSION; ?>"></script>
@@ -56,8 +59,6 @@
 <!-- [DASHBOARD] CORE JS Files -->
 <script type="text/javascript" src="<?php echo BASE_URL; ?>assets/dashboard/js/core/popper.min.js?v=<?php echo FILE_VERSION; ?>"></script>
 
-<!-- [DASHBOARD] PLUGIN JS Files -->
-<script type="text/javascript" src="<?php echo BASE_URL; ?>assets/dashboard/js/plugin/jquery-scrollbar/jquery.scrollbar.min.js?v=<?php echo FILE_VERSION; ?>"></script>
 <script type="text/javascript" src="<?php echo BASE_URL; ?>assets/dashboard/js/plugin/chart.js/chart.min.js?v=<?php echo FILE_VERSION; ?>"></script>
 <script type="text/javascript" src="<?php echo BASE_URL; ?>assets/dashboard/js/plugin/jquery.sparkline/jquery.sparkline.min.js?v=<?php echo FILE_VERSION; ?>"></script>
 <script type="text/javascript" src="<?php echo BASE_URL; ?>assets/dashboard/js/plugin/chart-circle/circles.min.js?v=<?php echo FILE_VERSION; ?>"></script>
