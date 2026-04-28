@@ -154,6 +154,7 @@
                 var mapAst = {
                     'ast_category': 'Item Category',
                     'ast_inventory': 'Inventory',
+                    'ast_summary_report': 'Summary Report',
                     'ast_manage_inventory': 'Add New Item',
                     'ast_qrcode': 'QR Code',
                     'ast_physical_checking': 'Physical Checking'

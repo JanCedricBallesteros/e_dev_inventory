@@ -1045,9 +1045,11 @@ function downloadCurrentQrStickerPdf() {
 
 // Update the summary cards based on the current filtered rows
 function updateSummary(rows) {
-    const totalItems = rows.length;
-    const totalQty = rows.reduce((sum, r) => sum + (parseInt(r.quantity, 10) || 0), 0);
-    const totalIssued = rows.reduce((sum, r) => sum + ((parseInt(r.issued_count, 10) || 0) > 0 ? 1 : 0), 0);
+    const list = Array.isArray(rows) ? rows : [];
+    const totalItems = list.length;
+    const totalQty = list.reduce((sum, r) => sum + (parseInt(r.quantity, 10) || 0), 0);
+    const totalIssued = list.reduce((sum, r) => sum + ((parseInt(r.issued_count, 10) || 0) > 0 ? 1 : 0), 0);
+
     $('#sumItems').text(totalItems);
     $('#sumQty').text(totalQty);
     $('#sumIssued').text(totalIssued);

@@ -225,13 +225,13 @@ if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) {
                 <?php } ?>
 
                 <?php if (role_has("ADMIN") || ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && ($staffHasAST || $staffHasPO))) { ?>
-                    <li class="nav-item <?php echo navigation_active("ast_category,ast_inventory,ast_manage_inventory,ast_qrcode,ast_physical_checking,ast_issuance", "active submenu"); ?>">
+                    <li class="nav-item <?php echo navigation_active("ast_category,ast_inventory,ast_summary_report,ast_manage_inventory,ast_qrcode,ast_physical_checking,ast_issuance", "active submenu"); ?>">
                         <a class="collapsed" aria-expanded="false" data-bs-toggle="collapse" href="#ast_nav">
                             <i class="fas fa-boxes"></i>
                             <p>Non-Consumable (AST)</p>
                             <span class="caret"></span>
                         </a>
-                        <div class="collapse <?php echo navigation_active("ast_category,ast_inventory,ast_manage_inventory,ast_qrcode,ast_physical_checking,ast_issuance", "show"); ?>" id="ast_nav">
+                        <div class="collapse <?php echo navigation_active("ast_category,ast_inventory,ast_summary_report,ast_manage_inventory,ast_qrcode,ast_physical_checking,ast_issuance", "show"); ?>" id="ast_nav">
                             <ul class="nav nav-collapse">
                                 <li class="<?php echo navigation_active("ast_category"); ?>">
                                     <a href="<?php echo BASE_URL . "admin/modules/nonconsumable/ast_category.php"; ?>">
@@ -241,6 +241,11 @@ if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) {
                                 <li class="<?php echo navigation_active("ast_inventory"); ?>">
                                     <a href="<?php echo BASE_URL . "admin/modules/nonconsumable/ast_inventory.php"; ?>">
                                         <span class="sub-item">Inventory</span>
+                                    </a>
+                                </li>
+                                <li class="<?php echo navigation_active("ast_summary_report"); ?>">
+                                    <a href="<?php echo BASE_URL . "admin/modules/nonconsumable/ast_summary_report.php"; ?>">
+                                        <span class="sub-item">Summary Report</span>
                                     </a>
                                 </li>
                                 <li class="<?php echo navigation_active("ast_manage_inventory"); ?>">
