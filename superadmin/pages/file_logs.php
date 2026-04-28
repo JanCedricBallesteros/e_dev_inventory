@@ -193,14 +193,14 @@ $json_table = json_encode($table_array, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_
                 <div class="card-body mt-3 bg-white">
                     <div class="toolbar-grid mb-3">
                         <div>
-                            <div class="filter-label">Search</div>
+
                             <div class="input-group">
                                 <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
                                 <input type="text" id="globalSearch" class="form-control" placeholder="File name, path, or source">
                             </div>
                         </div>
                         <div>
-                            <div class="filter-label">Source</div>
+
                             <select id="sourceFilter" class="form-select">
                                 <option value="">All sources</option>
                                 <option value="Uploads">Uploads</option>
@@ -214,7 +214,7 @@ $json_table = json_encode($table_array, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_
                         </div>
                     </div>
 
-                    <div id="fileLogsTable"></div>
+                    <div id="fileLogsTable" class="tabulator"></div>
                 </div>
             </div>
         </section>
