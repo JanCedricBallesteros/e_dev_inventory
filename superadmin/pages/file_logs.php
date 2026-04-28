@@ -185,82 +185,36 @@ $json_table = json_encode($table_array, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_
         </div>
 
         <section class="section">
-            <div class="row g-3">
-                <div class="col-12">
-                    <div class="dash-header">
-                        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
-                            <div>
-                                <div class="small text-uppercase text-muted fw-semibold">Superadmin</div>
-                                <h1 class="h4 mb-1">File Logs</h1>
-                                <p class="mb-0">Browse uploaded files and generated exports in one place.</p>
-                            </div>
-                            <div class="d-flex gap-2 flex-wrap">
-                                <span class="badge text-bg-primary">Uploads: <?= (int)$uploadFiles ?></span>
-                                <span class="badge text-bg-secondary">Exports: <?= (int)$exportFiles ?></span>
-                                <span class="badge text-bg-dark">Total: <?= (int)$totalFiles ?></span>
-                            </div>
-                        </div>
-                    </div>
+            <div class="card section-card">
+                <div class="card-header bg-eclearance text-white fw-semibold d-flex align-items-center justify-content-between">
+                    <span><i class="bi bi-folder2-open"></i>&ensp;File Activity</span>
+                    <button type="button" class="btn btn-light btn-sm" id="refreshFilesBtn"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
                 </div>
-
-                <div class="col-12">
-                    <div class="summary-grid">
-                        <div class="summary-card">
-                            <div class="summary-label">Total Files</div>
-                            <div class="summary-value" id="sumFiles"><?= (int)$totalFiles ?></div>
-                            <div class="summary-sub">Scanned from safe storage folders</div>
-                        </div>
-                        <div class="summary-card">
-                            <div class="summary-label">Uploads</div>
-                            <div class="summary-value" id="sumUploads"><?= (int)$uploadFiles ?></div>
-                            <div class="summary-sub">Files under the upload directory</div>
-                        </div>
-                        <div class="summary-card">
-                            <div class="summary-label">Exports</div>
-                            <div class="summary-value" id="sumExports"><?= (int)$exportFiles ?></div>
-                            <div class="summary-sub">Backups and exported SQL files</div>
-                        </div>
-                        <div class="summary-card">
-                            <div class="summary-label">Total Size</div>
-                            <div class="summary-value" id="sumSize"><?= htmlspecialchars(human_file_size($totalBytes)) ?></div>
-                            <div class="summary-sub">Combined size of visible files</div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="col-12">
-                    <div class="card section-card">
-                        <div class="card-header bg-eclearance text-white fw-semibold d-flex align-items-center justify-content-between">
-                            <span><i class="bi bi-folder2-open"></i>&ensp;File Activity</span>
-                            <button type="button" class="btn btn-light btn-sm" id="refreshFilesBtn"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
-                        </div>
-                        <div class="card-body mt-3 bg-white">
-                            <div class="toolbar-grid mb-3">
-                                <div>
-                                    <div class="filter-label">Search</div>
-                                    <div class="input-group">
-                                        <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
-                                        <input type="text" id="globalSearch" class="form-control" placeholder="File name, path, or source">
-                                    </div>
-                                </div>
-                                <div>
-                                    <div class="filter-label">Source</div>
-                                    <select id="sourceFilter" class="form-select">
-                                        <option value="">All sources</option>
-                                        <option value="Uploads">Uploads</option>
-                                        <option value="Exports">Exports</option>
-                                    </select>
-                                </div>
-                                <div class="toolbar-actions">
-                                    <button class="btn btn-outline-secondary" id="downloadCsvBtn" type="button">CSV</button>
-                                    <button class="btn btn-outline-secondary" id="downloadJsonBtn" type="button">JSON</button>
-                                    <button class="btn btn-outline-primary" id="printTableBtn" type="button">Print</button>
-                                </div>
+                <div class="card-body mt-3 bg-white">
+                    <div class="toolbar-grid mb-3">
+                        <div>
+                            <div class="filter-label">Search</div>
+                            <div class="input-group">
+                                <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                                <input type="text" id="globalSearch" class="form-control" placeholder="File name, path, or source">
                             </div>
-
-                            <div id="fileLogsTable"></div>
+                        </div>
+                        <div>
+                            <div class="filter-label">Source</div>
+                            <select id="sourceFilter" class="form-select">
+                                <option value="">All sources</option>
+                                <option value="Uploads">Uploads</option>
+                                <option value="Exports">Exports</option>
+                            </select>
+                        </div>
+                        <div class="toolbar-actions">
+                            <button class="btn btn-outline-secondary" id="downloadCsvBtn" type="button">CSV</button>
+                            <button class="btn btn-outline-secondary" id="downloadJsonBtn" type="button">JSON</button>
+                            <button class="btn btn-outline-primary" id="printTableBtn" type="button">Print</button>
                         </div>
                     </div>
+
+                    <div id="fileLogsTable"></div>
                 </div>
             </div>
         </section>
@@ -358,7 +312,8 @@ $json_table = json_encode($table_array, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_
         layout: 'fitColumns',
         pagination: 'local',
         paginationSize: 10,
-        paginationSizeSelector: [10, 20, 50, 100],
+        paginationSizeSelector: [5, 10, 20, 50, true],
+        paginationCounter: 'rows',
         placeholder: 'No files found',
         movableColumns: true,
         responsiveLayout: 'collapse',

@@ -133,6 +133,20 @@ if ($query = call_mysql_query($select)) {
 }
 
 $json_table = output($table_array);
+$total_records = count($table_array);
+$unique_users = 0;
+$detail_rows = 0;
+$user_seen = array();
+foreach ($table_array as $row) {
+    $uid = trim((string)($row['user_id'] ?? ''));
+    if ($uid !== '') {
+        $user_seen[$uid] = true;
+    }
+    if (!empty($row['details_pretty'])) {
+        $detail_rows++;
+    }
+}
+$unique_users = count($user_seen);
 ?>
 <!DOCTYPE html>
 <html lang="en" class="h-100">
@@ -142,28 +156,32 @@ $json_table = output($table_array);
     include_once DOMAIN_PATH . '/global/meta_data.php';
     include_once DOMAIN_PATH . '/global/include_top.php';
     ?>
+    <link href="<?= BASE_URL ?>assets/css/tabulator_bootstrap.min.css" rel="stylesheet">
     <style>
-        .superadmin-toolbar {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            align-items: center;
-            justify-content: space-between;
+        :root {
+            --dash-ink: #1f2937;
+            --dash-muted: #6c757d;
+            --dash-border: #e5e7eb;
+            --dash-card: #ffffff;
+            --dash-accent: #0d6efd;
+            --dash-accent-soft: #eef5ff;
         }
-        .superadmin-toolbar .toolbar-left { flex: 1 1 260px; min-width: 220px; }
-        .superadmin-toolbar .toolbar-right { display: flex; flex-wrap: wrap; gap: 8px; }
-        @media (max-width: 768px) {
-            .superadmin-toolbar { flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 8px; }
-            .superadmin-toolbar .toolbar-left { flex: 0 0 auto; }
-            .superadmin-toolbar .toolbar-right { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-            .superadmin-toolbar .toolbar-right .btn { width: 100%; }
-        }
+        .section-card { border: 1px solid var(--dash-border); border-radius: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.06); }
+        .section-card .card-header{ background: var(--bg-eclearance-rgb); color: #fff; border-radius: 12px 12px 0 0; font-weight: 600; }
+        .toolbar-grid { display: grid; grid-template-columns: minmax(240px, 1fr) auto; gap: 10px; align-items: end; }
+        .filter-label { font-size: 12px; color: #6c757d; margin-bottom: 4px; }
+        .toolbar-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+        .tabulator { font-size: 0.875rem; }
+        .tabulator .tabulator-cell { vertical-align: middle; }
+        .tabulator .tabulator-row:hover { background: #f8fbff; }
         .detail-line { display: flex; gap: 6px; font-size: 0.9rem; line-height: 1.35; }
         .detail-label { font-weight: 600; color: #0d6efd; min-width: 90px; }
         .detail-value { flex: 1; color: #495057; }
         .detail-preview-more { font-size: 0.8rem; color: #6c757d; margin-top: 2px; }
-        .detail-cell .detail-view-btn { font-size: 0.8rem; }
-        .tabulator { font-size: 0.875rem; }
+        @media (max-width: 992px) {
+            .toolbar-grid { grid-template-columns: 1fr; }
+            .toolbar-actions { justify-content: flex-start; }
+        }
     </style>
 </head>
 
@@ -175,44 +193,49 @@ $json_table = output($table_array);
     ?>
 
     <main id="main" class="main">
+        <div class="pagetitle">
+            <h1 class="h4 fw-semibold mb-1">Activity Logs</h1>
+            <p class="text-muted small mb-0">Review action history with the same current admin layout language.</p>
+        </div>
+
         <section class="section">
-            <div class="card">
+            <div class="card section-card">
                 <div class="card-header bg-eclearance text-white fw-semibold d-flex align-items-center justify-content-between">
-                    <div>
-                        <i class="fas fa-history"></i>&ensp;Activity Logs
-                    </div>
+                    <span><i class="bi bi-clock-history"></i>&ensp;Activity Log Feed</span>
+                    <button type="button" class="btn btn-light btn-sm" id="print-table"><i class="bi bi-printer"></i> Print</button>
                 </div>
                 <div class="card-body mt-3 bg-white">
-                    <div class="superadmin-toolbar mb-3">
-                        <div class="toolbar-left d-flex gap-2">
+                    <div class="toolbar-grid mb-3">
+                        <div>
+
                             <div class="input-group">
                                 <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
-                                <input type="text" class="form-control" id="globalSearch" placeholder="Search logs...">
+                                <input type="text" id="globalSearch" class="form-control" placeholder="Search activity logs...">
                             </div>
                         </div>
-                        <div class="toolbar-right">
-                            <button class="btn btn-sm btn-outline-secondary" id="download-csv">Download CSV</button>
-                            <button class="btn btn-sm btn-outline-secondary" id="download-json">Download JSON</button>
-                            <button class="btn btn-sm btn-outline-primary" id="download-xlsx">Download XLSX</button>
-                            <button class="btn btn-sm btn-outline-secondary" id="print-table">Print</button>
+                        <div class="toolbar-actions">
+                            <button class="btn btn-outline-secondary" id="download-csv" type="button">CSV</button>
+                            <button class="btn btn-outline-secondary" id="download-json" type="button">JSON</button>
+                            <button class="btn btn-outline-secondary" id="download-xlsx" type="button">XLSX</button>
+                            <button class="btn btn-outline-primary" id="print-table-btn" type="button">Print</button>
                         </div>
                     </div>
-                    <div id="activity-log-table" class="table table-bordered tabulator"></div>
+
+                    <div id="activity-log-table" class="tabulator"></div>
                 </div>
             </div>
         </section>
     </main>
 
-    <!-- Cell Detail Modal -->
-    <div class="modal fade" id="cellDetailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal fade" id="detailModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title" id="cellDetailModalTitle"></h5>
+                    <h5 class="modal-title fw-semibold" id="detailModalTitle">Activity Details</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <div id="cellDetailContent" class="detail-modal-content" style="word-break: break-word;"></div>
+                    <div id="detailModalContent" style="word-break: break-word;"></div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
@@ -223,20 +246,11 @@ $json_table = output($table_array);
 
     <?php include_once FOOTER_PATH; ?>
 
-</body>
 <?php include_once DOMAIN_PATH . '/global/include_bottom.php'; ?>
-</html>
-<script>
+    <script>
 (function() {
-    var table_data = <?php echo $json_table ? $json_table : '[]'; ?>;
-    var total_record = Array.isArray(table_data) ? table_data.length : 0;
-
-    function record_details(values) {
-        if (values && values.length) {
-            return values.length + ' of ' + total_record;
-        }
-        return '0 of ' + total_record;
-    }
+    var tableData = <?php echo $json_table ? $json_table : '[]'; ?>;
+    var totalRecords = Array.isArray(tableData) ? tableData.length : 0;
 
     function splitDetailLines(raw) {
         if (!raw) return [];
@@ -269,56 +283,46 @@ $json_table = output($table_array);
     }
 
     function showDetailModal(lines) {
-        const modalTitle = document.getElementById('cellDetailModalTitle');
-        modalTitle.innerHTML = '<i class="bi bi-card-text"></i>&ensp;Details';
-        const content = document.getElementById('cellDetailContent');
+        const content = document.getElementById('detailModalContent');
         content.innerHTML = '';
         if (!lines.length) {
             content.textContent = 'No additional details provided.';
         } else {
             content.appendChild(buildDetailList(lines));
         }
-        $('#cellDetailModal').modal('show');
+        $('#detailModal').modal('show');
     }
 
     const table = new Tabulator("#activity-log-table", {
-        data: table_data,
+        data: tableData,
         layout: "fitColumns",
         pagination: "local",
         paginationSize: 10,
         paginationSizeSelector: [5, 10, 20, 50, true],
-        height: "700px",
-        responsiveLayout: "collapse",
-        printAsHtml: true,
-        headerFilterPlaceholder: "Search",
-        placeholder: "No Data Found",
+        paginationCounter: "rows",
+        placeholder: "No activity logs found",
         movableColumns: true,
-        selectable: true,
-        selectableRollingSelection: false,
-        headerHozAlign: "center",
+        responsiveLayout: "collapse",
         cellVertAlign: "middle",
-        printConfig: { columnGroups: false, rowGroups: false },
-
+        printAsHtml: true,
         columns: [
-            { title: "Date & Time", field: "date_log", bottomCalc: record_details, hozAlign: "center", headerFilter: "input", minWidth: 150 },
+            { title: "Date & Time", field: "date_log", hozAlign: "center", headerFilter: "input", minWidth: 150 },
             { title: "User", field: "name", headerFilter: "input", minWidth: 150 },
             { title: "Role", field: "role_label", hozAlign: "center", headerFilter: "input", minWidth: 130 },
-            { title: "Action", field: "action_type", hozAlign: "left", headerFilter: "input", width: 700, minWidth: 200 },
-            { title: "Status", field: "action_status", hozAlign: "center", headerFilter: "input", width: 80, minWidth: 80 },
+            { title: "Action", field: "action_type", hozAlign: "left", headerFilter: "input", minWidth: 200 },
+            { title: "Status", field: "action_status", hozAlign: "center", headerFilter: "input", minWidth: 100 },
             {
                 title: "Details",
                 field: "details_pretty",
                 headerFilter: "input",
-                width: 275,
-                minWidth: 150,
+                minWidth: 200,
                 formatter: function(cell) {
                     const raw = cell.getValue() || '';
                     const lines = splitDetailLines(raw);
                     if (!lines.length) return '-';
-                    const previewCount = 3;
+                    const previewCount = 2;
                     const previewLines = lines.slice(0, previewCount);
                     const container = document.createElement('div');
-                    container.className = 'detail-cell';
                     container.appendChild(buildDetailList(previewLines));
 
                     if (lines.length > previewLines.length) {
@@ -331,7 +335,8 @@ $json_table = output($table_array);
 
                     const btn = document.createElement('button');
                     btn.type = 'button';
-                    btn.className = 'btn btn-link btn-sm px-0 detail-view-btn';
+                    btn.className = 'btn btn-link btn-sm px-0';
+                    btn.style.fontSize = '0.8rem';
                     btn.textContent = 'View details';
                     btn.addEventListener('click', function(e) {
                         e.stopPropagation();
@@ -353,7 +358,7 @@ $json_table = output($table_array);
     document.getElementById('download-xlsx').addEventListener('click', function() {
         table.download("xlsx", "activity_logs.xlsx", { sheetName: "Activity Logs" });
     });
-    document.getElementById('print-table').addEventListener('click', function() {
+    document.getElementById('print-table-btn').addEventListener('click', function() {
         table.print(false, true);
     });
 
@@ -372,4 +377,7 @@ $json_table = output($table_array);
         });
     });
 })();
-</script>
+    </script>
+
+</body>
+</html>

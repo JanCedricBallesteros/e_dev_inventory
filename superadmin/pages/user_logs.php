@@ -196,6 +196,23 @@ if ($query = call_mysql_query($select)) {
 }
 
 $json_table = output($table_array);
+$total_records = count($table_array);
+$unique_users = 0;
+$unique_actions = 0;
+$user_seen = array();
+$action_seen = array();
+foreach ($table_array as $row) {
+    $uid = trim((string)($row['user_id'] ?? ''));
+    if ($uid !== '') {
+        $user_seen[$uid] = true;
+    }
+    $act = trim((string)($row['action_display'] ?? ''));
+    if ($act !== '') {
+        $action_seen[strtoupper($act)] = true;
+    }
+}
+$unique_users = count($user_seen);
+$unique_actions = count($action_seen);
 ?>
 <!DOCTYPE html>
 <html lang="en" class="h-100">
@@ -206,6 +223,22 @@ $json_table = output($table_array);
     include_once DOMAIN_PATH . '/global/include_top.php';
     ?>
     <style>
+        :root {
+            --dash-ink: #1f2937;
+            --dash-muted: #6c757d;
+            --dash-border: #e5e7eb;
+            --dash-accent-soft: #eef5ff;
+        }
+        .section-card { border: 1px solid var(--dash-border); border-radius: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.06); }
+        .section-card .card-header { background: var(--bg-eclearance-rgb); color: #fff; border-radius: 12px 12px 0 0; font-weight: 600; }
+        .dash-header { border: 1px solid var(--dash-border); border-radius: 12px; padding: 16px 18px; background: #fff; }
+        .dash-header h1 { color: var(--dash-ink); font-weight: 700; }
+        .dash-header p { color: var(--dash-muted); }
+        .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+        .summary-card { border: 1px solid var(--dash-border); border-radius: 12px; padding: 12px 14px; background: #fff; }
+        .summary-label { font-size: 12px; color: var(--dash-muted); text-transform: uppercase; letter-spacing: .5px; }
+        .summary-value { font-size: 20px; font-weight: 700; color: var(--dash-ink); line-height: 1.2; }
+        .summary-sub { font-size: 12px; color: var(--dash-muted); margin-top: 4px; }
         .superadmin-toolbar {
             display: flex;
             flex-wrap: wrap;
@@ -235,16 +268,20 @@ $json_table = output($table_array);
     ?>
 
     <main id="main" class="main">
+        <div class="pagetitle">
+            <h1 class="h4 fw-semibold mb-1">User Logs</h1>
+            <p class="text-muted small mb-0">Track sign-in and sign-out activity with the current admin dashboard styling.</p>
+        </div>
+
         <section class="section">
-            <div class="card">
+            <div class="card section-card">
                 <div class="card-header bg-eclearance text-white fw-semibold d-flex align-items-center justify-content-between">
-                    <div>
-                        <i class="fas fa-sign-in-alt"></i>&ensp;User Logs
-                    </div>
+                    <span><i class="bi bi-clock-history"></i>&ensp;User Log Activity</span>
+                    <button type="button" class="btn btn-light btn-sm" id="print-table"><i class="bi bi-printer"></i> Print</button>
                 </div>
                 <div class="card-body mt-3 bg-white">
                     <div class="superadmin-toolbar mb-3">
-                        <div class="toolbar-left d-flex gap-2">
+                        <div class="toolbar-left d-flex gap-2 flex-wrap">
                             <div class="input-group">
                                 <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
                                 <input type="text" class="form-control" id="globalSearch" placeholder="Search logs...">
@@ -264,7 +301,6 @@ $json_table = output($table_array);
                             <button class="btn btn-sm btn-outline-secondary" id="download-csv">Download CSV</button>
                             <button class="btn btn-sm btn-outline-secondary" id="download-json">Download JSON</button>
                             <button class="btn btn-sm btn-outline-primary" id="download-xlsx">Download XLSX</button>
-                            <button class="btn btn-sm btn-outline-secondary" id="print-table">Print</button>
                         </div>
                     </div>
                     <div id="user-log-table" class="table table-bordered tabulator"></div>
@@ -292,11 +328,8 @@ $json_table = output($table_array);
     </div>
 
     <?php include_once FOOTER_PATH; ?>
-
-</body>
-<?php include_once DOMAIN_PATH . '/global/include_bottom.php'; ?>
-</html>
-<script>
+    <?php include_once DOMAIN_PATH . '/global/include_bottom.php'; ?>
+    <script>
 (function() {
     var table_data = <?php echo $json_table ? $json_table : '[]'; ?>;
     var total_record = Array.isArray(table_data) ? table_data.length : 0;
@@ -316,6 +349,7 @@ $json_table = output($table_array);
         pagination: "local",
         paginationSize: 10,
         paginationSizeSelector: [5, 10, 20, 50, true],
+        paginationCounter: "rows",
         height: "700px",
         responsiveLayout: "collapse",
         printAsHtml: true,
@@ -418,4 +452,7 @@ $json_table = output($table_array);
         });
     });
 })();
-</script>
+    </script>
+
+</body>
+</html>
