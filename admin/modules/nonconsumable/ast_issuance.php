@@ -8,7 +8,7 @@ require ISLOGIN;
 
 if (!(
     (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) &&
-    user_has_access(array("AST", "PO"))
+    user_has_access("AST")
 )) {
     header("Location: " . BASE_URL);
     exit();
@@ -265,6 +265,7 @@ let selectedUnitMeta = null;
 let facilityLookup = {};
 let approvedRequestGroups = [];
 let batchAssignmentLockedByRequest = false;
+let requestGroupFromUrl = '';
 
 function flushTableReadyQueue() {
     if (!astIssueTableReady) return;
@@ -782,6 +783,53 @@ function openApprovedRequestModal() {
     $('#approvedRequestModal').modal('show');
 }
 
+function getRequestGroupFromUrl() {
+    try {
+        const params = new URLSearchParams(window.location.search || '');
+        return String(params.get('request_group') || '').trim();
+    } catch (e) {
+        return '';
+    }
+}
+
+function autoApplyRequestGroupFromUrl() {
+    const key = String(requestGroupFromUrl || '').trim();
+    if (!key) return;
+
+    let attempts = 0;
+    const maxAttempts = 20;
+
+    function tryApply() {
+        attempts += 1;
+        if (!astIssueTable || !astIssueTableReady) {
+            if (attempts < maxAttempts) {
+                setTimeout(tryApply, 200);
+            } else {
+                showIssueMsg('warning', 'Issuance page is still loading. Please click Requests and select the request manually.');
+            }
+            return;
+        }
+
+        $.post(PROCESS_URL, { action: 'list_approved_ast_requisition_groups' }, function(res){
+            if (!(res && res.success)) {
+                showIssueMsg('warning', (res && res.message) ? res.message : 'Failed to load approved requests for prefill.');
+                return;
+            }
+            approvedRequestGroups = Array.isArray(res.data) ? res.data : [];
+            const exists = approvedRequestGroups.some(function(g){ return String(g.group_key || '') === key; });
+            if (!exists) {
+                showIssueMsg('warning', 'Selected request is no longer available for issuance.');
+                return;
+            }
+            applyApprovedRequestGroup(key);
+        }, 'json').fail(function(){
+            showIssueMsg('warning', 'Server error while preloading request for issuance.');
+        });
+    }
+
+    tryApply();
+}
+
 function initUserSelects() {
     function parseManagerUserIds(rawCsv, managedById) {
         const ids = String(rawCsv || '')
@@ -955,6 +1003,7 @@ function collectSelectedItemsPayload() {
 }
 
 $(document).ready(function(){
+    requestGroupFromUrl = getRequestGroupFromUrl();
     initSelectedItemsTable();
     initItemsTable();
     initUserSelects();
@@ -963,6 +1012,7 @@ $(document).ready(function(){
     loadAvailableItems();
     syncSelectedItemsFromTable();
     setBatchAssignmentLock(false);
+    autoApplyRequestGroupFromUrl();
 
     $('#openRequestPickerBtn').on('click', function(){
         openApprovedRequestModal();

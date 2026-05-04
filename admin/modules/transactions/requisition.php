@@ -6,7 +6,13 @@ require CONNECT_PATH;
 require VALIDATOR_PATH;
 require ISLOGIN;
 //test
-if (!role_has("ADMIN")) {
+if (!(
+    role_has("ADMIN") ||
+    (
+        (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) &&
+        user_has_access(array("AST", "CSM"))
+    )
+)) {
     header("Location: " . BASE_URL);
     exit();
 }
@@ -14,6 +20,7 @@ if (!role_has("ADMIN")) {
 $type = isset($_GET['type']) ? strtoupper(trim($_GET['type'])) : '';
 $canAST = role_has("ADMIN") || user_has_access('AST');
 $canCSM = role_has("ADMIN") || user_has_access('CSM');
+$canManageRequisitionActions = role_has("ADMIN");
 
 if (!in_array($type, ['AST', 'CSM'], true)) {
     if ($canAST && !$canCSM) {
@@ -145,7 +152,7 @@ if (($type === 'AST' && !$canAST) || ($type === 'CSM' && !$canCSM)) {
     <main id="main" class="main">
         <div class="pagetitle">
             <h1 class="h4 fw-semibold mb-1">Requisition Approval</h1>
-            <p class="text-muted small mb-0">Review, approve, or disapprove requests. Mode: <?php echo htmlspecialchars($type); ?></p>
+            <p class="text-muted small mb-0"><?php echo $canManageRequisitionActions ? 'Review, approve, or disapprove requests.' : 'View-only requisition list.'; ?> Mode: <?php echo htmlspecialchars($type); ?></p>
         </div>
 
         <section class="section">
@@ -331,6 +338,7 @@ if (($type === 'AST' && !$canAST) || ($type === 'CSM' && !$canCSM)) {
 <script>
 const BASE_URL = <?php echo json_encode(BASE_URL); ?>;
 const REQ_TYPE = <?php echo json_encode($type); ?>;
+const CAN_MANAGE_REQUISITION = <?php echo $canManageRequisitionActions ? 'true' : 'false'; ?>;
 const PROCESS_URL = BASE_URL + 'admin/modules/transactions/requisition_process.php';
 const DEFAULT_DISAPPROVE_REASON_FROM_APPROVE = 'Not approved during grouped approval.';
 let reqTable = null;
@@ -786,6 +794,14 @@ function initReqTable() {
                 actionsHtml = '' +
                     '<button class="btn btn-sm btn-outline-secondary btn-batch-back-storage" data-batch="' + encodedKey + '">Back Group to Storage</button>';
             }
+            if (!CAN_MANAGE_REQUISITION) {
+                if (REQ_TYPE === 'AST' && (groupStatus === 'for_claiming' || groupStatus === 'approved')) {
+                    actionsHtml = '' +
+                        '<button class="btn btn-sm btn-primary btn-batch-issue-request" data-batch="' + encodedKey + '">Issue This Request</button>';
+                } else {
+                    actionsHtml = '';
+                }
+            }
 
             return '' +
                 '<div class="req-group-header">' +
@@ -1061,6 +1077,17 @@ function initReqTable() {
         $('#backStorageInfo').text('This will update ' + ids.length + ' requisition item(s) and move them back to storage.');
         $('#backStorageMsg').addClass('d-none').text('');
         $('#backStorageModal').modal('show');
+    });
+
+    $('#reqTable').on('click', '.btn-batch-issue-request', function() {
+        const encoded = String($(this).data('batch') || '');
+        const batchKey = decodeURIComponent(encoded);
+        if (!batchKey) {
+            if (typeof error_notif === 'function') error_notif('Request group key is missing.');
+            return;
+        }
+        const redirectUrl = BASE_URL + 'admin/modules/nonconsumable/ast_issuance.php?request_group=' + encodeURIComponent(batchKey);
+        window.location.href = redirectUrl;
     });
 
     $('#btnConfirmBackStorage').on('click', function(){

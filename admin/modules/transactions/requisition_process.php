@@ -241,6 +241,18 @@ if ($action === '') {
     json_response(['success' => false, 'message' => 'Missing action.'], 400);
 }
 
+$isAdminActor = role_has("ADMIN");
+if (!$isAdminActor) {
+    $staffAllowedReadActions = array(
+        'list_requisitions',
+        'list_facilities',
+        'list_units'
+    );
+    if (!in_array($action, $staffAllowedReadActions, true)) {
+        json_response(['success' => false, 'message' => 'Read-only access. Only admins can process requisition actions.'], 403);
+    }
+}
+
 ensure_personal_use_location();
 ensure_requisition_status_enum_support();
 

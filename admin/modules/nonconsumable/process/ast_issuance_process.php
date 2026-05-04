@@ -8,7 +8,7 @@ require ISLOGIN;
 
 header('Content-Type: application/json; charset=utf-8');
 
-$isStaffAst = ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && user_has_access(array("AST", "PO")));
+$isStaffAst = ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && user_has_access("AST"));
 if (!isset($g_user_role) || !$isStaffAst) {
     http_response_code(403);
     echo json_encode(array('success' => false, 'message' => 'Access denied.'));

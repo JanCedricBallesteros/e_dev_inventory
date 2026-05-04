@@ -235,11 +235,13 @@ if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) {
                         </a>
                         <div class="collapse <?php echo navigation_active("ast_category,ast_inventory,ast_summary_report,ast_manage_inventory,ast_qrcode,ast_physical_checking,ast_issuance", "show"); ?>" id="ast_nav">
                             <ul class="nav nav-collapse">
-                                <li class="<?php echo navigation_active("ast_category"); ?>">
-                                    <a href="<?php echo BASE_URL . "admin/modules/nonconsumable/ast_category.php"; ?>">
-                                        <span class="sub-item">Item Category</span>
-                                    </a>
-                                </li>
+                                <?php if (role_has("ADMIN") || $staffHasPO) { ?>
+                                    <li class="<?php echo navigation_active("ast_category"); ?>">
+                                        <a href="<?php echo BASE_URL . "admin/modules/nonconsumable/ast_category.php"; ?>">
+                                            <span class="sub-item">Item Category</span>
+                                        </a>
+                                    </li>
+                                <?php } ?>
                                 <li class="<?php echo navigation_active("ast_inventory"); ?>">
                                     <a href="<?php echo BASE_URL . "admin/modules/nonconsumable/ast_inventory.php"; ?>">
                                         <span class="sub-item">Inventory</span>
@@ -247,19 +249,21 @@ if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) {
                                 </li>
                                 <li class="<?php echo navigation_active("ast_summary_report"); ?>">
                                     <a href="<?php echo BASE_URL . "admin/modules/nonconsumable/ast_summary_report.php"; ?>">
-                                        <span class="sub-item">Summary Report</span>
+                                        <span class="sub-item">Property Report</span>
                                     </a>
                                 </li>
-                                <li class="<?php echo navigation_active("ast_manage_inventory"); ?>">
-                                    <a href="<?php echo BASE_URL . "admin/modules/nonconsumable/ast_manage_inventory.php"; ?>">
-                                        <span class="sub-item">Add New Item</span>
-                                    </a>
-                                </li>
-                                <li class="<?php echo navigation_active("ast_qrcode"); ?>">
-                                    <a href="<?php echo BASE_URL . "admin/modules/nonconsumable/ast_qrcode.php"; ?>">
-                                        <span class="sub-item">QR Code</span>
-                                    </a>
-                                </li>
+                                <?php if (role_has("ADMIN") || $staffHasPO) { ?>
+                                    <li class="<?php echo navigation_active("ast_manage_inventory"); ?>">
+                                        <a href="<?php echo BASE_URL . "admin/modules/nonconsumable/ast_manage_inventory.php"; ?>">
+                                            <span class="sub-item">Add New Item</span>
+                                        </a>
+                                    </li>
+                                    <li class="<?php echo navigation_active("ast_qrcode"); ?>">
+                                        <a href="<?php echo BASE_URL . "admin/modules/nonconsumable/ast_qrcode.php"; ?>">
+                                            <span class="sub-item">QR Code</span>
+                                        </a>
+                                    </li>
+                                <?php } ?>
                                 <?php if (role_has("ADMIN") || ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && $staffHasAST)) { ?>
                                     <li class="<?php echo navigation_active("ast_physical_checking"); ?>">
                                         <a href="<?php echo BASE_URL . "admin/modules/nonconsumable/ast_physical_checking.php"; ?>">
@@ -267,7 +271,7 @@ if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) {
                                         </a>
                                     </li>
                                 <?php } ?>
-                                <?php if ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && ($staffHasAST || $staffHasPO)) { ?>
+                                <?php if ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && ($staffHasAST)) { ?>
                                     <li class="<?php echo navigation_active("ast_issuance"); ?>">
                                         <a href="<?php echo BASE_URL . "admin/modules/nonconsumable/ast_issuance.php"; ?>">
                                             <span class="sub-item">Issuance</span>
@@ -295,9 +299,9 @@ if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) {
                                         </a>
                                     </li>
                                 <?php } ?>
-                                <?php if (role_has("ADMIN")) { ?>
+                                <?php if (role_has("ADMIN") || $staffHasAST || $staffHasCSM) { ?>
                                     <li class="<?php echo navigation_active("requisition", "active", array("type" => array("AST", "CSM"))); ?>">
-                                        <a href="<?php echo BASE_URL . "admin/modules/transactions/requisition.php?type=AST"; ?>">
+                                        <a href="<?php echo BASE_URL . "admin/modules/transactions/requisition.php?type=" . ($staffHasCSM && !$staffHasAST ? "CSM" : "AST"); ?>">
                                             <span class="sub-item">Requisition Item</span>
                                         </a>
                                     </li>
