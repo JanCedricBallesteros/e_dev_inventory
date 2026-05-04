@@ -42,6 +42,12 @@ function json_response($data, $code = 200) {
     exit();
 }
 
+function get_last_insert_id_safe() {
+    $res = call_mysql_query("SELECT LAST_INSERT_ID() AS id");
+    $row = $res ? call_mysql_fetch_array($res) : null;
+    return (int)($row['id'] ?? 0);
+}
+
 function build_upload_url($pathOrFile) {
     $pathOrFile = trim((string)$pathOrFile);
     if ($pathOrFile === '') return null;
@@ -84,6 +90,36 @@ function derive_csm_stock_label($row) {
         return 'Critical Stock';
     }
     return 'Available';
+}
+
+function derive_session_status($startDate, $endDate) {
+    $today = date('Y-m-d');
+    $start = trim((string)$startDate);
+    $end = trim((string)$endDate);
+
+    if ($start === '' || $end === '') return 'Pending';
+    if ($today < $start) return 'Pending';
+    if ($today > $end) return 'Closed';
+    return 'Active';
+}
+
+function ensure_single_active_session($ignoreSessionId = 0) {
+    $ignore = (int)$ignoreSessionId;
+    $whereIgnore = $ignore > 0 ? "AND id <> {$ignore}" : "";
+    $today = date('Y-m-d');
+    $res = call_mysql_query("SELECT id, series_code
+                             FROM csm_audit_sessions
+                             WHERE start_date <= '" . _esc($today) . "'
+                               AND end_date >= '" . _esc($today) . "'
+                             {$whereIgnore}
+                             ORDER BY created_at DESC
+                             LIMIT 1");
+    $row = $res ? call_mysql_fetch_array($res) : null;
+    return $row ?: null;
+}
+
+function sync_session_status($sessionId, $startDate, $endDate, $storedStatus = null) {
+    return derive_session_status($startDate, $endDate);
 }
 
 function resolve_csm_item_image($item) {
@@ -162,18 +198,24 @@ try {
             $audit_name = _post('audit_name');
             $start_date = _post('start_date');
             $end_date = _post('end_date');
-            $status = _post('status', 'Pending');
 
             if ($start_date === '' || $end_date === '') {
                 json_response(['success' => false, 'message' => 'Start and end dates are required.'], 422);
             }
 
             if ($end_date < $start_date) {
-                json_response(['success' => false, 'message' => 'End date cannot be earlier than start date.'], 422);
+                json_response(['success' => false, 'message' => 'End date must be after start date.'], 422);
             }
 
-            if (!in_array($status, ['Pending', 'Active', 'Closed'], true)) {
-                $status = 'Pending';
+            $status = derive_session_status($start_date, $end_date);
+            if ($status === 'Active') {
+                $active = ensure_single_active_session(0);
+                if ($active) {
+                    json_response([
+                        'success' => false,
+                        'message' => 'Only one active session is allowed. Active: ' . ($active['series_code'] ?? ('#' . $active['id']))
+                    ], 422);
+                }
             }
 
             $year = date('Y');
@@ -209,7 +251,10 @@ try {
                 json_response(['success' => false, 'message' => 'Failed to create session.'], 500);
             }
 
+            $newId = get_last_insert_id_safe();
+
             activity_log_new("CSM PHYSICAL CHECK SESSION CREATE", "SUCCESS", array(
+                'session_id' => $newId,
                 'series_code' => $series_code,
                 'audit_name' => $audit_name,
                 'start_date' => $start_date,
@@ -233,6 +278,12 @@ try {
 
             if ($res) {
                 while ($row = call_mysql_fetch_array($res)) {
+                    $row['status'] = sync_session_status(
+                        (int)($row['id'] ?? 0),
+                        (string)($row['start_date'] ?? ''),
+                        (string)($row['end_date'] ?? ''),
+                        (string)($row['status'] ?? 'Pending')
+                    ) ?: (string)($row['status'] ?? 'Pending');
                     $row['created_by_name'] = trim(($row['f_name'] ?? '') . ' ' . ($row['l_name'] ?? ''));
                     $rows[] = $row;
                 }
@@ -243,10 +294,12 @@ try {
         }
 
         case 'list_active_sessions': {
+            $today = date('Y-m-d');
             $sql = "
                 SELECT id, series_code, audit_name, start_date, end_date
                 FROM csm_audit_sessions
-                WHERE status = 'Active'
+                WHERE start_date <= '" . _esc($today) . "'
+                  AND end_date >= '" . _esc($today) . "'
                 ORDER BY created_at DESC
             ";
             $res = call_mysql_query($sql);
@@ -263,44 +316,69 @@ try {
         }
 
         case 'update_session_status': {
+            json_response([
+                'success' => false,
+                'message' => 'Manual session status updates are disabled. Status is automatically derived from date range.'
+            ], 422);
+            break;
+        }
+
+        case 'cancel_session': {
             if (!$isAdmin) {
                 json_response(['success' => false, 'message' => 'Access denied.'], 403);
             }
 
             $session_id = _int(_post('session_id'));
-            $status = _post('status');
-
-            if ($session_id <= 0 || !in_array($status, ['Pending', 'Active', 'Closed'], true)) {
-                json_response(['success' => false, 'message' => 'Invalid request.'], 422);
+            if ($session_id <= 0) {
+                json_response(['success' => false, 'message' => 'Invalid session.'], 422);
             }
 
             $prevRes = call_mysql_query("
-                SELECT series_code, status
+                SELECT id, series_code, start_date, end_date, status
                 FROM csm_audit_sessions
                 WHERE id = {$session_id}
                 LIMIT 1
             ");
             $prevRow = $prevRes ? call_mysql_fetch_array($prevRes) : null;
+            if (!$prevRow) {
+                json_response(['success' => false, 'message' => 'Session not found.'], 404);
+            }
+
+            $today = date('Y-m-d');
+            $yesterday = date('Y-m-d', strtotime('-1 day'));
+            $oldStart = (string)($prevRow['start_date'] ?? '');
+            $oldEnd = (string)($prevRow['end_date'] ?? '');
+
+            // Force date window to end before today so status resolves as Closed.
+            $newEnd = ($oldEnd === '' || $oldEnd >= $today) ? $yesterday : $oldEnd;
+            $newStart = $oldStart;
+            if ($newStart === '' || $newStart > $newEnd) {
+                $newStart = $newEnd;
+            }
 
             $sql = "
                 UPDATE csm_audit_sessions
-                SET status = '" . _esc($status) . "'
+                SET start_date = '" . _esc($newStart) . "',
+                    end_date = '" . _esc($newEnd) . "',
+                    status = 'Closed'
                 WHERE id = {$session_id}
                 LIMIT 1
             ";
 
             if (!call_mysql_query($sql)) {
-                json_response(['success' => false, 'message' => 'Failed to update status.'], 500);
+                json_response(['success' => false, 'message' => 'Failed to cancel session.'], 500);
             }
 
-            activity_log_new("CSM PHYSICAL CHECK SESSION STATUS", "SUCCESS", array(
+            activity_log_new("CSM PHYSICAL CHECK SESSION CANCEL", "SUCCESS", array(
                 'session_id' => $session_id,
                 'series_code' => $prevRow['series_code'] ?? null,
-                'old_status' => $prevRow['status'] ?? null,
-                'new_status' => $status
+                'old_start_date' => $oldStart,
+                'old_end_date' => $oldEnd,
+                'new_start_date' => $newStart,
+                'new_end_date' => $newEnd
             ));
 
-            json_response(['success' => true, 'message' => 'Status updated.']);
+            json_response(['success' => true, 'message' => 'Session cancelled.']);
             break;
         }
 
@@ -366,15 +444,32 @@ try {
             }
 
             $resSession = call_mysql_query("
-                SELECT status
+                SELECT status, start_date, end_date
                 FROM csm_audit_sessions
                 WHERE id = {$session_id}
                 LIMIT 1
             ");
             $session = $resSession ? call_mysql_fetch_array($resSession) : null;
 
-            if (!$session || ($session['status'] ?? '') !== 'Active') {
+            if (!$session) {
+                json_response(['success' => false, 'message' => 'Session not found.'], 404);
+            }
+
+            $effectiveStatus = sync_session_status(
+                $session_id,
+                (string)($session['start_date'] ?? ''),
+                (string)($session['end_date'] ?? ''),
+                (string)($session['status'] ?? '')
+            );
+            if ($effectiveStatus !== 'Active') {
                 json_response(['success' => false, 'message' => 'Only active sessions allow checking.'], 422);
+            }
+
+            $today = date('Y-m-d');
+            $start = (string)($session['start_date'] ?? '');
+            $end = (string)($session['end_date'] ?? '');
+            if ($start !== '' && $end !== '' && ($today < $start || $today > $end)) {
+                json_response(['success' => false, 'message' => 'Session is outside its audit date range.'], 422);
             }
 
             $resItem = call_mysql_query("
