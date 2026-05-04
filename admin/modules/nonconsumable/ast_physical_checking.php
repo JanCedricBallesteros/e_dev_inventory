@@ -11,7 +11,7 @@ if (!(
     role_has("ADMIN") ||
     (
         (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) &&
-        user_has_access(array("AST", "PO"))
+        user_has_access("AST")
     )
 )) {
     header("Location: " . BASE_URL);

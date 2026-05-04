@@ -185,11 +185,13 @@ if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) {
                                         <span class="sub-item">QR Code</span>
                                     </a>
                                 </li>
-                                <li class="<?php echo navigation_active("csm_physical_checking"); ?>">
-                                    <a href="<?php echo BASE_URL . "admin/modules/consumable/csm_physical_checking.php"; ?>">
-                                        <span class="sub-item">Physical Checking</span>
-                                    </a>
-                                </li>
+                                <?php if (role_has("ADMIN")) { ?>
+                                    <li class="<?php echo navigation_active("csm_physical_checking"); ?>">
+                                        <a href="<?php echo BASE_URL . "admin/modules/consumable/csm_physical_checking.php"; ?>">
+                                            <span class="sub-item">Physical Checking</span>
+                                        </a>
+                                    </li>
+                                <?php } ?>
                             </ul>
                         </div>
                     </li>
@@ -258,11 +260,13 @@ if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) {
                                         <span class="sub-item">QR Code</span>
                                     </a>
                                 </li>
-                                <li class="<?php echo navigation_active("ast_physical_checking"); ?>">
-                                    <a href="<?php echo BASE_URL . "admin/modules/nonconsumable/ast_physical_checking.php"; ?>">
-                                        <span class="sub-item">Physical Checking</span>
-                                    </a>
-                                </li>
+                                <?php if (role_has("ADMIN") || ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && $staffHasAST)) { ?>
+                                    <li class="<?php echo navigation_active("ast_physical_checking"); ?>">
+                                        <a href="<?php echo BASE_URL . "admin/modules/nonconsumable/ast_physical_checking.php"; ?>">
+                                            <span class="sub-item">Physical Checking</span>
+                                        </a>
+                                    </li>
+                                <?php } ?>
                                 <?php if ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && ($staffHasAST || $staffHasPO)) { ?>
                                     <li class="<?php echo navigation_active("ast_issuance"); ?>">
                                         <a href="<?php echo BASE_URL . "admin/modules/nonconsumable/ast_issuance.php"; ?>">
