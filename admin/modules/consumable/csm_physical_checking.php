@@ -28,6 +28,7 @@ $isAdmin = role_has("ADMIN");
     include_once DOMAIN_PATH . '/global/include_top.php';
     ?>
     <link href="<?= BASE_URL ?>assets/css/tabulator_bootstrap.min.css" rel="stylesheet">
+    <link href="<?= BASE_URL ?>assets/css/select2.min.css" rel="stylesheet">
     <style>
         .section-card {
             border: 1px solid #e5e7eb;
@@ -83,6 +84,28 @@ $isAdmin = role_has("ADMIN");
         .pill-critical { background: #fef3c7; color: #92400e; }
         .pill-out { background: #fee2e2; color: #991b1b; }
         .pill-unavailable { background: #e5e7eb; color: #374151; }
+        .select2-container--default .select2-selection--single {
+            height: 38px;
+            border: 1px solid #ced4da;
+            border-radius: 0.375rem;
+        }
+        .select2-container--default .select2-selection--single .select2-selection__rendered {
+            line-height: 36px;
+            padding-left: 12px;
+        }
+        .select2-container--default .select2-selection--single .select2-selection__arrow {
+            height: 36px;
+        }
+        .table-toolbar {
+            display: flex;
+            gap: .5rem;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .table-toolbar .form-control,
+        .table-toolbar .form-select {
+            height: 38px;
+        }
 
         /* Camera preview copied from csm_manage_inventory.php */
         #preview-wrapper {
@@ -213,23 +236,13 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                                 <div class="filter-label">Audit Name (optional)</div>
                                 <input type="text" class="form-control" name="audit_name" placeholder="e.g., March 2026 stock check">
                             </div>
-                            <div class="col-md-3">
-                                <div class="filter-label">Start Date</div>
-                                <input type="date" class="form-control" name="start_date" required>
+                            <div class="col-md-7">
+                                <div class="filter-label">Date Range</div>
+                                <input type="text" class="form-control" id="sessionDateRange" placeholder="YYYY-MM-DD - YYYY-MM-DD" autocomplete="off">
+                                <input type="hidden" name="start_date" id="sessionStartDate">
+                                <input type="hidden" name="end_date" id="sessionEndDate">
                             </div>
-                            <div class="col-md-3">
-                                <div class="filter-label">End Date</div>
-                                <input type="date" class="form-control" name="end_date" required>
-                            </div>
-                            <div class="col-md-2">
-                                <div class="filter-label">Status</div>
-                                <select class="form-select" name="status">
-                                    <option value="Pending">Pending</option>
-                                    <option value="Active">Active</option>
-                                    <option value="Closed">Closed</option>
-                                </select>
-                            </div>
-                            <div class="col-md-1 d-grid">
+                            <div class="col-md-2 d-grid">
                                 <button type="submit" class="btn btn-primary">Create</button>
                             </div>
                         </form>
@@ -404,9 +417,13 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                 <div class="card section-card">
                     <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
                         <span><i class="bi bi-table"></i>&ensp;Checked Items</span>
-                        <div class="d-flex gap-2 flex-wrap">
+                        <div class="table-toolbar">
                             <select class="form-select form-select-sm" id="filterSession" style="min-width: 180px;"></select>
                             <input type="text" class="form-control form-control-sm" id="checkSearch" placeholder="Search code, description, category, location" style="max-width:280px;">
+                            <button class="btn btn-outline-light btn-sm" id="exportChecksCsv">CSV</button>
+                            <button class="btn btn-outline-light btn-sm" id="exportChecksXlsx">XLSX</button>
+                            <button class="btn btn-outline-light btn-sm" id="exportChecksJson">JSON</button>
+                            <button class="btn btn-outline-light btn-sm" id="printChecks">Print</button>
                         </div>
                     </div>
                     <div class="card-body">
@@ -455,6 +472,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 
 <script src="<?= BASE_URL ?>assets/js/jquery.min.js"></script>
 <script src="<?= BASE_URL ?>assets/js/tabulator.min.js"></script>
+<script src="<?= BASE_URL ?>assets/js/select2.min.js"></script>
 <?php include_once DOMAIN_PATH . '/global/include_bottom.php'; ?>
 
 <script src="https://unpkg.com/html5-qrcode"></script>
@@ -466,6 +484,7 @@ const isAdmin = <?= $isAdmin ? 'true' : 'false'; ?>;
 let sessionsTable = null;
 let checksTable = null;
 let currentItem = null;
+let checksTableReady = false;
 
 function showFloatingNotice(type, content, opts = {}) {
     const settings = Object.assign({ html: false, delay: 4000 }, opts || {});
@@ -551,6 +570,21 @@ function showErrorToast(msg) {
     }
 }
 
+function parseDateRangeStrings(raw) {
+    const text = (raw || '').trim();
+    if (!text) return { start: '', end: '' };
+    const parts = text.split(/\s+-\s+/).filter(Boolean);
+    if (parts.length === 1) return { start: parts[0], end: parts[0] };
+    return { start: parts[0], end: parts[1] };
+}
+
+function syncSessionDates() {
+    const range = parseDateRangeStrings($('#sessionDateRange').val());
+    $('#sessionStartDate').val(range.start || '');
+    $('#sessionEndDate').val(range.end || '');
+    return range;
+}
+
 function peso(value) {
     const num = Number(value || 0);
     return new Intl.NumberFormat('en-PH', {
@@ -593,12 +627,18 @@ function loadSessions() {
         });
 
         $('#activeSession').html(options.join(''));
+        if ($.fn.select2) {
+            $('#activeSession').val('').trigger('change');
+        }
 
         const filterOpts = ['<option value="">All Sessions</option>'];
         (res.data || []).forEach(s => {
             filterOpts.push(`<option value="${s.id}">${s.series_code}</option>`);
         });
         $('#filterSession').html(filterOpts.join(''));
+        if ($.fn.select2) {
+            $('#filterSession').val('').trigger('change');
+        }
     }, 'json');
 }
 
@@ -610,8 +650,8 @@ function initSessionsTable() {
         responsiveLayout: 'collapse',
         placeholder: 'No sessions found',
         pagination: 'local',
-        paginationSize: 20,
-        paginationSizeSelector: [20, 100, 500, 1000, true],
+        paginationSize: 5,
+        paginationSizeSelector: [5, 10, 20, 50, true],
         columns: [
             {
                 title: 'Series Code',
@@ -624,31 +664,21 @@ function initSessionsTable() {
             { title: 'Audit Name', field: 'audit_name', widthGrow: 2 },
             { title: 'Start', field: 'start_date', width: 120 },
             { title: 'End', field: 'end_date', width: 120 },
-            {
-                title: 'Status',
-                field: 'status',
-                width: 110,
-                formatter: function(cell) {
-                    const status = cell.getValue() || '';
-                    if (status === 'Active') return '<span class="badge bg-success">Active</span>';
-                    if (status === 'Closed') return '<span class="badge bg-secondary">Closed</span>';
-                    return '<span class="badge bg-warning text-dark">Pending</span>';
-                }
-            },
+            { title: 'Status', field: 'status', width: 110 },
             { title: 'Created By', field: 'created_by_name', width: 170 },
             {
                 title: 'Actions',
                 field: 'id',
-                width: 220,
+                width: 130,
+                hozAlign: 'center',
                 formatter: function(cell) {
+                    const row = cell.getRow().getData() || {};
+                    const status = String(row.status || '').toLowerCase();
+                    if (status !== 'active' && status !== 'pending') {
+                        return '<span class="text-muted small">-</span>';
+                    }
                     const id = cell.getValue();
-                    return `
-                        <div class="btn-group btn-group-sm">
-                            <button class="btn btn-outline-warning btn-set-status" data-id="${id}" data-status="Pending">Pending</button>
-                            <button class="btn btn-outline-success btn-set-status" data-id="${id}" data-status="Active">Active</button>
-                            <button class="btn btn-outline-secondary btn-set-status" data-id="${id}" data-status="Closed">Close</button>
-                        </div>
-                    `;
+                    return `<button class="btn btn-outline-danger btn-sm btn-cancel-session" data-id="${id}">Cancel</button>`;
                 }
             }
         ]
@@ -664,8 +694,9 @@ function initChecksTable() {
         responsiveLayout: 'collapse',
         placeholder: 'No checked items found',
         pagination: 'local',
-        paginationSize: 20,
-        paginationSizeSelector: [20, 100, 500, 1000, true],
+        paginationCounter: 'rows',
+        paginationSize: 10,
+        paginationSizeSelector: [5, 10, 20, 50, true],
         ajaxResponse: function(url, params, response) {
             return response.data || [];
         },
@@ -699,6 +730,9 @@ function initChecksTable() {
             { title: 'Checked By', field: 'checked_by_name', width: 150 },
             { title: 'Remarks', field: 'remarks', width: 200 }
         ]
+    });
+    checksTable.on('tableBuilt', function() {
+        checksTableReady = true;
     });
 }
 
@@ -779,6 +813,33 @@ $(document).ready(function() {
     initSessionsTable();
     initChecksTable();
     loadSessions();
+    if ($.fn.select2) {
+        $('#activeSession').select2({ placeholder: 'Select Active Session', allowClear: true, width: '100%' });
+        $('#filterSession').select2({ placeholder: 'All Sessions', allowClear: true, width: '200px' });
+    }
+
+    $('#sessionDateRange').on('change keyup', syncSessionDates);
+    if (typeof $.fn.daterangepicker === 'function') {
+        $('#sessionDateRange').daterangepicker({
+            autoUpdateInput: false,
+            locale: {
+                format: 'YYYY-MM-DD',
+                cancelLabel: 'Clear'
+            },
+            opens: 'left'
+        });
+
+        $('#sessionDateRange').on('apply.daterangepicker', function(ev, picker) {
+            const value = picker.startDate.format('YYYY-MM-DD') + ' - ' + picker.endDate.format('YYYY-MM-DD');
+            $(this).val(value);
+            syncSessionDates();
+        });
+
+        $('#sessionDateRange').on('cancel.daterangepicker', function() {
+            $(this).val('');
+            syncSessionDates();
+        });
+    }
 
     $('#openSearchScanner').on('click', function() {
         $('#scanQrModal').modal('show');
@@ -808,30 +869,51 @@ $(document).ready(function() {
     $('#sessionForm').on('submit', function(e) {
         e.preventDefault();
         if (!isAdmin) return;
+        const range = syncSessionDates();
+        const start = range.start;
+        const end = range.end;
+        if (!start || !end) {
+            showMessage('#sessionMsg', 'danger', 'Please select a valid date range.');
+            return;
+        }
+        if (start > end) {
+            showMessage('#sessionMsg', 'danger', 'End date must be after start date.');
+            return;
+        }
 
         const data = $(this).serialize() + '&action=create_session';
         $.post(PROCESS_URL, data, function(res) {
             if (res.success) {
                 showMessage('#sessionMsg', 'success', res.message || 'Session created.');
                 $('#sessionForm')[0].reset();
+                $('#sessionDateRange').val('');
+                $('#sessionStartDate').val('');
+                $('#sessionEndDate').val('');
                 loadSessions();
             } else {
                 showMessage('#sessionMsg', 'danger', res.message || 'Failed to create session.');
             }
-        }, 'json');
+        }, 'json').fail(function(xhr) {
+            const msg = (xhr && xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Failed to create session.';
+            showMessage('#sessionMsg', 'danger', msg);
+        });
     });
 
-    $('#sessionsTable').on('click', '.btn-set-status', function() {
-        const id = $(this).data('id');
-        const status = $(this).data('status');
-
-        $.post(PROCESS_URL, { action: 'update_session_status', session_id: id, status: status }, function(res) {
+    $('#sessionsTable').on('click', '.btn-cancel-session', function() {
+        const sessionId = $(this).data('id');
+        if (!sessionId) return;
+        if (!window.confirm('Cancel this session? This will close it immediately.')) return;
+        $.post(PROCESS_URL, { action: 'cancel_session', session_id: sessionId }, function(res) {
             if (res.success) {
+                showMessage('#sessionMsg', 'success', res.message || 'Session cancelled.');
                 loadSessions();
             } else {
-                showMessage('#sessionMsg', 'danger', res.message || 'Failed to update status.');
+                showMessage('#sessionMsg', 'danger', res.message || 'Failed to cancel session.');
             }
-        }, 'json');
+        }, 'json').fail(function(xhr) {
+            const msg = (xhr && xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Failed to cancel session.';
+            showMessage('#sessionMsg', 'danger', msg);
+        });
     });
 
     $('#saveCheck').on('click', function() {
@@ -882,19 +964,40 @@ $(document).ready(function() {
     });
 
     $('#filterSession').on('change', function() {
-        checksTable.setData(PROCESS_URL, {
-            action: 'list_checks',
-            session_id: $('#filterSession').val(),
-            search: $('#checkSearch').val().trim()
-        }, 'POST');
+        if (checksTableReady) {
+            checksTable.setData(PROCESS_URL, {
+                action: 'list_checks',
+                session_id: $('#filterSession').val(),
+                search: $('#checkSearch').val().trim()
+            }, 'POST');
+        }
     });
 
-    $('#checkSearch').on('keyup', function() {
-        checksTable.setData(PROCESS_URL, {
-            action: 'list_checks',
-            session_id: $('#filterSession').val(),
-            search: $('#checkSearch').val().trim()
-        }, 'POST');
+    let searchTimer = null;
+    $('#checkSearch').on('input', function() {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(function() {
+            if (checksTableReady) {
+                checksTable.setData(PROCESS_URL, {
+                    action: 'list_checks',
+                    session_id: $('#filterSession').val(),
+                    search: $('#checkSearch').val().trim()
+                }, 'POST');
+            }
+        }, 250);
+    });
+
+    $('#exportChecksCsv').on('click', function() {
+        if (checksTable) checksTable.download('csv', 'csm_physical_checks.csv');
+    });
+    $('#exportChecksXlsx').on('click', function() {
+        if (checksTable) checksTable.download('xlsx', 'csm_physical_checks.xlsx', { sheetName: 'Checks' });
+    });
+    $('#exportChecksJson').on('click', function() {
+        if (checksTable) checksTable.download('json', 'csm_physical_checks.json');
+    });
+    $('#printChecks').on('click', function() {
+        if (checksTable) checksTable.print(false, true);
     });
 });
 
