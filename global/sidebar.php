@@ -95,6 +95,11 @@ function sidebar_badge_html($count, $class = 'badge-danger')
     return '<span class="badge badge-count ' . $class . ' ms-2">' . $n . '</span>';
 }
 
+function sidebar_action_badge_total($a = 0, $b = 0, $c = 0)
+{
+    return ((int)$a + (int)$b + (int)$c);
+}
+
 $adminCsmReqPending = 0;
 $adminAstReqPending = 0;
 $adminReqPendingTotal = 0;
@@ -110,6 +115,7 @@ $adminCsmAuditActive = 0;
 $adminAstAuditActive = 0;
 $adminCsmMainBadge = 0;
 $adminAstMainBadge = 0;
+$adminTxMainBadge = 0;
 if (role_has("ADMIN")) {
     if (sidebar_table_exists('requisition_items') && sidebar_column_exists('requisition_items', 'module_type') && sidebar_column_exists('requisition_items', 'status')) {
         $adminCsmReqPending = sidebar_count_query("SELECT COUNT(*) AS cnt
@@ -169,6 +175,8 @@ if (role_has("ADMIN")) {
     }
     $adminCsmMainBadge = $adminCsmReqPending + $adminCsmInventoryAttention + $adminCsmAuditActive;
     $adminAstMainBadge = $adminAstReqPending + $adminReqForClaimingTotal + $adminReturnRequested + $adminAstAuditActive;
+    /* Transactions badge: action-required only */
+    $adminTxMainBadge = $adminReqPendingTotal + $adminReqForClaimingTotal + $adminReturnRequested;
 }
 ?>
 <style>
@@ -198,6 +206,41 @@ if (role_has("ADMIN")) {
         transform: none !important;
         width: auto !important;
         max-width: none !important;
+    }
+    .sidebar .nav .sidebar-group-badge {
+        display: inline-flex !important;
+        position: absolute !important;
+        top: 50% !important;
+        right: 6px !important; /* push badge more to the right in expanded mode */
+        left: auto !important;
+        transform: translateY(-50%) !important;
+        margin: 0 !important;
+        z-index: 3;
+    }
+    .sidebar .nav .nav-item > a {
+        position: relative;
+    }
+    /* Collapsed sidebar: place badge in item corner so it doesn't cover the icon */
+    .sidebar_minimize .sidebar .sidebar-wrapper .nav-item > a .sidebar-group-badge {
+        top: 6px !important;
+        right: 6px !important;
+        transform: none !important;
+        min-width: 16px;
+        height: 16px;
+        line-height: 16px;
+        padding: 0 4px;
+        font-size: 10px;
+    }
+    /* Hover-expanded from collapsed: restore right-side centered placement */
+    .sidebar_minimize.sidebar_minimize_hover .sidebar .sidebar-wrapper .nav-item > a .sidebar-group-badge {
+        top: 50% !important;
+        right: 6px !important;
+        transform: translateY(-50%) !important;
+        min-width: 20px;
+        height: 20px;
+        line-height: 20px;
+        padding: 0 6px;
+        font-size: inherit;
     }
 </style>
 <div class="sidebar" data-background-color="dark">
@@ -292,7 +335,8 @@ if (role_has("ADMIN")) {
                     <li class="nav-item <?php echo navigation_active("csm_category,csm_manage_inventory,csm_manage_invtest,csm_available_items,csm_physical_checking,csm_qrcode", "active submenu"); ?>">
                         <a class="collapsed" aria-expanded="false" data-bs-toggle="collapse" href="#csm_nav">
                             <i class="fas fa-cubes"></i>
-                            <p>Consumable (CSM)<?php echo sidebar_badge_html($adminCsmMainBadge); ?></p>
+                            <span class="sidebar-group-badge"><?php echo sidebar_badge_html($adminCsmMainBadge); ?></span>
+                            <p>Consumable (CSM)</p>
                             <span class="caret"></span>
                         </a>
                         <div class="collapse <?php echo navigation_active("csm_category,csm_manage_inventory,csm_manage_invtest,csm_available_items,csm_physical_checking,csm_qrcode", "show"); ?>" id="csm_nav">
@@ -362,7 +406,8 @@ if (role_has("ADMIN")) {
                     <li class="nav-item <?php echo navigation_active("ast_category,ast_inventory,ast_summary_report,ast_manage_inventory,ast_qrcode,ast_physical_checking,ast_issuance", "active submenu"); ?>">
                         <a class="collapsed" aria-expanded="false" data-bs-toggle="collapse" href="#ast_nav">
                             <i class="fas fa-boxes"></i>
-                            <p>Non-Consumable (AST)<?php echo sidebar_badge_html($adminAstMainBadge); ?></p>
+                            <span class="sidebar-group-badge"><?php echo sidebar_badge_html($adminAstMainBadge); ?></span>
+                            <p>Non-Consumable (AST)</p>
                             <span class="caret"></span>
                         </a>
                         <div class="collapse <?php echo navigation_active("ast_category,ast_inventory,ast_summary_report,ast_manage_inventory,ast_qrcode,ast_physical_checking,ast_issuance", "show"); ?>" id="ast_nav">
@@ -419,6 +464,7 @@ if (role_has("ADMIN")) {
                     <li class="nav-item <?php echo navigation_active("requisition,manage_returns,facility_inventory_records", "active submenu"); ?>">
                         <a class="collapsed" aria-expanded="false" data-bs-toggle="collapse" href="#tx_nav">
                             <i class="fas fa-exchange-alt"></i>
+                            <span class="sidebar-group-badge"><?php echo sidebar_badge_html($adminTxMainBadge); ?></span>
                             <p>Transactions</p>
                             <span class="caret"></span>
                         </a>
@@ -434,7 +480,7 @@ if (role_has("ADMIN")) {
                                 <?php if (role_has("ADMIN") || $staffHasAST || $staffHasCSM) { ?>
                                     <li class="<?php echo navigation_active("requisition", "active", array("type" => array("AST", "CSM"))); ?>">
                                         <a href="<?php echo BASE_URL . "admin/modules/transactions/requisition.php?type=" . ($staffHasCSM && !$staffHasAST ? "CSM" : "AST"); ?>">
-                                            <span class="sub-item">Requisition Item<?php echo sidebar_badge_html($adminReqPendingTotal, 'badge-danger'); ?><?php echo sidebar_badge_html($adminReqForClaimingTotal, 'badge-primary'); ?><?php echo sidebar_badge_html($adminReqNotClaimedTotal, 'badge-default'); ?></span>
+                                            <span class="sub-item">Requisition Item<?php echo sidebar_badge_html(sidebar_action_badge_total($adminReqPendingTotal, $adminReqForClaimingTotal, $adminReqNotClaimedTotal), 'badge-primary'); ?></span>
                                         </a>
                                     </li>
                                 <?php } ?>
