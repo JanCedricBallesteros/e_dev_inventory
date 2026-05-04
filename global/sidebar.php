@@ -67,7 +67,139 @@ if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) {
     $staffHasAST = user_has_access("AST");
     $staffHasAnyModuleAccess = ($staffHasPO || $staffHasCSM || $staffHasAST);
 }
+
+function sidebar_count_query($sql)
+{
+    $res = call_mysql_query($sql);
+    if (!$res) return 0;
+    $row = call_mysql_fetch_array($res);
+    return (int)($row['cnt'] ?? 0);
+}
+
+function sidebar_table_exists($table)
+{
+    $res = call_mysql_query("SHOW TABLES LIKE '" . addslashes((string)$table) . "'");
+    return $res && mysqli_num_rows($res) > 0;
+}
+
+function sidebar_column_exists($table, $column)
+{
+    $res = call_mysql_query("SHOW COLUMNS FROM `" . str_replace('`', '``', (string)$table) . "` LIKE '" . addslashes((string)$column) . "'");
+    return $res && mysqli_num_rows($res) > 0;
+}
+
+function sidebar_badge_html($count, $class = 'badge-danger')
+{
+    $n = (int)$count;
+    if ($n <= 0) return '';
+    return '<span class="badge badge-count ' . $class . ' ms-2">' . $n . '</span>';
+}
+
+$adminCsmReqPending = 0;
+$adminAstReqPending = 0;
+$adminReqPendingTotal = 0;
+$adminReqForClaimingTotal = 0;
+$adminReqNotClaimedTotal = 0;
+$adminReturnRequested = 0;
+$adminFacilityReported = 0;
+$adminFacilityAttentionTotal = 0;
+$adminCsmCritical = 0;
+$adminCsmOutOfStock = 0;
+$adminCsmInventoryAttention = 0;
+$adminCsmAuditActive = 0;
+$adminAstAuditActive = 0;
+$adminCsmMainBadge = 0;
+$adminAstMainBadge = 0;
+if (role_has("ADMIN")) {
+    if (sidebar_table_exists('requisition_items') && sidebar_column_exists('requisition_items', 'module_type') && sidebar_column_exists('requisition_items', 'status')) {
+        $adminCsmReqPending = sidebar_count_query("SELECT COUNT(*) AS cnt
+                                                   FROM requisition_items
+                                                   WHERE module_type = 'CSM'
+                                                     AND status IN ('pending', 'reviewed')");
+        $adminAstReqPending = sidebar_count_query("SELECT COUNT(*) AS cnt
+                                                   FROM requisition_items
+                                                   WHERE module_type = 'AST'
+                                                     AND status IN ('pending', 'reviewed')");
+        $adminReqPendingTotal = $adminCsmReqPending + $adminAstReqPending;
+        $adminReqForClaimingTotal = sidebar_count_query("SELECT COUNT(*) AS cnt
+                                                         FROM requisition_items
+                                                         WHERE status = 'approved'");
+        $adminReqNotClaimedTotal = sidebar_count_query("SELECT COUNT(*) AS cnt
+                                                        FROM requisition_items
+                                                        WHERE status = 'not_claimed'");
+    }
+    if (sidebar_table_exists('facility_records_assignments') && sidebar_column_exists('facility_records_assignments', 'status')) {
+        $adminReturnRequested = sidebar_count_query("SELECT COUNT(*) AS cnt
+                                                     FROM facility_records_assignments
+                                                     WHERE status = 'RETURN_REQUESTED'");
+        $adminFacilityReported = sidebar_count_query("SELECT COUNT(*) AS cnt
+                                                      FROM facility_records_assignments
+                                                      WHERE status = 'REPORTED'");
+        $adminFacilityAttentionTotal = $adminReturnRequested + $adminFacilityReported;
+    }
+    if (sidebar_table_exists('csm_inventory')) {
+        $qtyCol = '';
+        if (sidebar_column_exists('csm_inventory', 'current_unit_quantity')) {
+            $qtyCol = 'current_unit_quantity';
+        } elseif (sidebar_column_exists('csm_inventory', 'quantity')) {
+            $qtyCol = 'quantity';
+        }
+        if ($qtyCol !== '' && sidebar_column_exists('csm_inventory', 'qty_crit_level')) {
+            $adminCsmCritical = sidebar_count_query("SELECT COUNT(*) AS cnt
+                                                     FROM csm_inventory
+                                                     WHERE {$qtyCol} > 0
+                                                       AND {$qtyCol} <= qty_crit_level");
+        }
+        if ($qtyCol !== '') {
+            $adminCsmOutOfStock = sidebar_count_query("SELECT COUNT(*) AS cnt
+                                                       FROM csm_inventory
+                                                       WHERE {$qtyCol} <= 0");
+        }
+        $adminCsmInventoryAttention = $adminCsmCritical + $adminCsmOutOfStock;
+    }
+    if (sidebar_table_exists('csm_audit_sessions') && sidebar_column_exists('csm_audit_sessions', 'status')) {
+        $adminCsmAuditActive = sidebar_count_query("SELECT COUNT(*) AS cnt
+                                                    FROM csm_audit_sessions
+                                                    WHERE status IN ('active','ongoing','open','in_progress')");
+    }
+    if (sidebar_table_exists('ast_audit_sessions') && sidebar_column_exists('ast_audit_sessions', 'status')) {
+        $adminAstAuditActive = sidebar_count_query("SELECT COUNT(*) AS cnt
+                                                    FROM ast_audit_sessions
+                                                    WHERE status IN ('active','ongoing','open','in_progress')");
+    }
+    $adminCsmMainBadge = $adminCsmReqPending + $adminCsmInventoryAttention + $adminCsmAuditActive;
+    $adminAstMainBadge = $adminAstReqPending + $adminReqForClaimingTotal + $adminReturnRequested + $adminAstAuditActive;
+}
 ?>
+<style>
+    /* Sidebar notification badges: keep compact/fixed look with no white border */
+    .sidebar .nav .badge.badge-count {
+        border: 0 !important;
+        box-shadow: none !important;
+        min-width: 20px;
+        height: 20px;
+        line-height: 20px;
+        padding: 0 6px;
+        display: inline-flex !important;
+        align-items: center;
+        justify-content: center;
+        white-space: nowrap;
+        border-radius: 999px;
+        vertical-align: middle;
+        flex: 0 0 auto;
+    }
+    .sidebar .nav .sub-item .badge.badge-count,
+    .sidebar .nav p .badge.badge-count {
+        margin-left: 6px !important;
+    }
+    .sidebar .nav .nav-item a:hover .badge.badge-count,
+    .sidebar .nav .nav-item.active a .badge.badge-count,
+    .sidebar .nav .nav-item .collapse .active a .badge.badge-count {
+        transform: none !important;
+        width: auto !important;
+        max-width: none !important;
+    }
+</style>
 <div class="sidebar" data-background-color="dark">
     <div class="sidebar-logo">
         <div class="logo-header" data-background-color="dark">
@@ -160,7 +292,7 @@ if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) {
                     <li class="nav-item <?php echo navigation_active("csm_category,csm_manage_inventory,csm_manage_invtest,csm_available_items,csm_physical_checking,csm_qrcode", "active submenu"); ?>">
                         <a class="collapsed" aria-expanded="false" data-bs-toggle="collapse" href="#csm_nav">
                             <i class="fas fa-cubes"></i>
-                            <p>Consumable (CSM)</p>
+                            <p>Consumable (CSM)<?php echo sidebar_badge_html($adminCsmMainBadge); ?></p>
                             <span class="caret"></span>
                         </a>
                         <div class="collapse <?php echo navigation_active("csm_category,csm_manage_inventory,csm_manage_invtest,csm_available_items,csm_physical_checking,csm_qrcode", "show"); ?>" id="csm_nav">
@@ -172,7 +304,7 @@ if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) {
                                 </li>
                                 <li class="<?php echo navigation_active("csm_manage_inventory"); ?>">
                                     <a href="<?php echo BASE_URL . "admin/modules/consumable/csm_manage_inventory.php"; ?>">
-                                        <span class="sub-item">Inventory</span>
+                                        <span class="sub-item">Inventory<?php echo sidebar_badge_html($adminCsmInventoryAttention, 'badge-warning'); ?></span>
                                     </a>
                                 </li>
                                 <li class="<?php echo navigation_active("csm_available_items"); ?>">
@@ -188,7 +320,7 @@ if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) {
                                 <?php if (role_has("ADMIN")) { ?>
                                     <li class="<?php echo navigation_active("csm_physical_checking"); ?>">
                                         <a href="<?php echo BASE_URL . "admin/modules/consumable/csm_physical_checking.php"; ?>">
-                                            <span class="sub-item">Physical Checking</span>
+                                            <span class="sub-item">Physical Checking<?php echo sidebar_badge_html($adminCsmAuditActive, 'badge-info'); ?></span>
                                         </a>
                                     </li>
                                 <?php } ?>
@@ -230,7 +362,7 @@ if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) {
                     <li class="nav-item <?php echo navigation_active("ast_category,ast_inventory,ast_summary_report,ast_manage_inventory,ast_qrcode,ast_physical_checking,ast_issuance", "active submenu"); ?>">
                         <a class="collapsed" aria-expanded="false" data-bs-toggle="collapse" href="#ast_nav">
                             <i class="fas fa-boxes"></i>
-                            <p>Non-Consumable (AST)</p>
+                            <p>Non-Consumable (AST)<?php echo sidebar_badge_html($adminAstMainBadge); ?></p>
                             <span class="caret"></span>
                         </a>
                         <div class="collapse <?php echo navigation_active("ast_category,ast_inventory,ast_summary_report,ast_manage_inventory,ast_qrcode,ast_physical_checking,ast_issuance", "show"); ?>" id="ast_nav">
@@ -249,7 +381,7 @@ if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) {
                                 </li>
                                 <li class="<?php echo navigation_active("ast_summary_report"); ?>">
                                     <a href="<?php echo BASE_URL . "admin/modules/nonconsumable/ast_summary_report.php"; ?>">
-                                        <span class="sub-item">Property Report</span>
+                                        <span class="sub-item">Property Report<?php echo sidebar_badge_html($adminFacilityReported, 'badge-warning'); ?></span>
                                     </a>
                                 </li>
                                 <?php if (role_has("ADMIN") || $staffHasPO) { ?>
@@ -267,7 +399,7 @@ if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) {
                                 <?php if (role_has("ADMIN") || ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && $staffHasAST)) { ?>
                                     <li class="<?php echo navigation_active("ast_physical_checking"); ?>">
                                         <a href="<?php echo BASE_URL . "admin/modules/nonconsumable/ast_physical_checking.php"; ?>">
-                                            <span class="sub-item">Physical Checking</span>
+                                            <span class="sub-item">Physical Checking<?php echo sidebar_badge_html($adminAstAuditActive, 'badge-info'); ?></span>
                                         </a>
                                     </li>
                                 <?php } ?>
@@ -295,20 +427,20 @@ if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) {
                                 <?php if (role_has("ADMIN") || $staffHasAST) { ?>
                                     <li class="<?php echo navigation_active("manage_returns"); ?>">
                                         <a href="<?php echo BASE_URL . "admin/modules/transactions/manage_returns.php"; ?>">
-                                            <span class="sub-item">Property Return</span>
+                                            <span class="sub-item">Property Return<?php echo sidebar_badge_html($adminReturnRequested, 'badge-warning'); ?></span>
                                         </a>
                                     </li>
                                 <?php } ?>
                                 <?php if (role_has("ADMIN") || $staffHasAST || $staffHasCSM) { ?>
                                     <li class="<?php echo navigation_active("requisition", "active", array("type" => array("AST", "CSM"))); ?>">
                                         <a href="<?php echo BASE_URL . "admin/modules/transactions/requisition.php?type=" . ($staffHasCSM && !$staffHasAST ? "CSM" : "AST"); ?>">
-                                            <span class="sub-item">Requisition Item</span>
+                                            <span class="sub-item">Requisition Item<?php echo sidebar_badge_html($adminReqPendingTotal, 'badge-danger'); ?><?php echo sidebar_badge_html($adminReqForClaimingTotal, 'badge-primary'); ?><?php echo sidebar_badge_html($adminReqNotClaimedTotal, 'badge-default'); ?></span>
                                         </a>
                                     </li>
                                 <?php } ?>
                                 <li class="<?php echo navigation_active("facility_inventory_records"); ?>">
                                     <a href="<?php echo BASE_URL . "admin/modules/transactions/facility_inventory_records.php"; ?>">
-                                        <span class="sub-item">Facility Inventory Records</span>
+                                        <span class="sub-item">Facility Inventory Records<?php echo sidebar_badge_html($adminFacilityAttentionTotal, 'badge-warning'); ?></span>
                                     </a>
                                 </li>
                             </ul>
