@@ -1378,8 +1378,40 @@ function initTable() {
                 }
             },
             { title: 'Unit', field: 'unit', width: 100, hozAlign: 'center', headerFilter: 'input', headerFilterPlaceholder: 'Filter...' },
-            { title: 'Actual Qty', field: 'quantity', width: 100, hozAlign: 'center' },
-            { title: 'Available', field: 'current_quantity', width: 100, hozAlign: 'center' },
+            {
+                title: 'Actual Qty',
+                field: 'quantity',
+                width: 130,
+                hozAlign: 'center',
+                formatter: function(cell){
+                    const row = cell.getRow().getData() || {};
+                    if (String(row.recent_activity_type || '') === 'quantity_added'
+                        && row.logged_old_quantity !== null
+                        && row.logged_old_quantity !== undefined
+                        && row.logged_new_quantity !== null
+                        && row.logged_new_quantity !== undefined) {
+                        return `<span class="small text-muted">${escHtml(String(row.logged_old_quantity))}</span> &rarr; <span class="fw-semibold">${escHtml(String(row.logged_new_quantity))}</span>`;
+                    }
+                    return escHtml(String(cell.getValue() ?? '0'));
+                }
+            },
+            {
+                title: 'Available',
+                field: 'current_quantity',
+                width: 130,
+                hozAlign: 'center',
+                formatter: function(cell){
+                    const row = cell.getRow().getData() || {};
+                    if (String(row.recent_activity_type || '') === 'quantity_added'
+                        && row.logged_old_current_quantity !== null
+                        && row.logged_old_current_quantity !== undefined
+                        && row.logged_new_current_quantity !== null
+                        && row.logged_new_current_quantity !== undefined) {
+                        return `<span class="small text-muted">${escHtml(String(row.logged_old_current_quantity))}</span> &rarr; <span class="fw-semibold">${escHtml(String(row.logged_new_current_quantity))}</span>`;
+                    }
+                    return escHtml(String(cell.getValue() ?? '0'));
+                }
+            },
             { title: 'Critical', field: 'qty_crit_level', width: 95, hozAlign: 'center' },
             {
                 title: 'Cost',
