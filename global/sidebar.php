@@ -101,6 +101,33 @@ function sidebar_action_badge_total($a = 0, $b = 0, $c = 0)
     return ((int)$a + (int)$b + (int)$c);
 }
 
+function sidebar_admin_staff_without_access_total()
+{
+    if (!sidebar_table_exists('users') || !sidebar_table_exists('user_access')) {
+        return 0;
+    }
+
+    $res = call_mysql_query("SELECT u.user_id, u.user_role, COUNT(ua.user_access_id) AS active_access_total
+                             FROM users u
+                             LEFT JOIN user_access ua ON ua.user_id = u.user_id AND ua.is_active = 1
+                             GROUP BY u.user_id, u.user_role");
+    if (!$res) {
+        return 0;
+    }
+
+    $total = 0;
+    while ($row = call_mysql_fetch_array($res)) {
+        $role_ids = json_decode($row['user_role'] ?? '[]', true);
+        $role_ids = is_array($role_ids) ? $role_ids : array();
+        $isAdminStaff = in_array(3, $role_ids, true) || in_array('3', $role_ids, true);
+        if ($isAdminStaff && (int)($row['active_access_total'] ?? 0) === 0) {
+            $total++;
+        }
+    }
+
+    return $total;
+}
+
 $adminCsmReqPending = 0;
 $adminAstReqPending = 0;
 $adminReqPendingTotal = 0;
@@ -117,6 +144,7 @@ $adminAstAuditActive = 0;
 $adminCsmMainBadge = 0;
 $adminAstMainBadge = 0;
 $adminTxMainBadge = 0;
+$superAdminStaffNoAccessTotal = 0;
 if ($sidebarShouldShowBadges) {
     if (sidebar_table_exists('requisition_items') && sidebar_column_exists('requisition_items', 'module_type') && sidebar_column_exists('requisition_items', 'status')) {
         $adminCsmReqPending = sidebar_count_query("SELECT COUNT(*) AS cnt
@@ -181,6 +209,7 @@ if ($sidebarShouldShowBadges) {
     $adminCsmMainBadge = $adminCsmInventoryAttention + $adminCsmAuditActive;
     $adminAstMainBadge = $adminFacilityReported + $adminAstAuditActive;
     $adminTxMainBadge = $adminReqPendingTotal + $adminReturnRequested + $adminFacilityAttentionTotal;
+    $superAdminStaffNoAccessTotal = sidebar_admin_staff_without_access_total();
 }
 ?>
 <style>
@@ -281,7 +310,7 @@ if ($sidebarShouldShowBadges) {
                     <li class="nav-item <?php echo navigation_active("user_information"); ?>">
                         <a href="<?php echo BASE_URL . "superadmin/pages/user_information.php"; ?>">
                             <i class="fas fa-user"></i>
-                            <p>User Information</p>
+                            <p>User Information<?php echo sidebar_badge_html($superAdminStaffNoAccessTotal, 'badge-warning'); ?></p>
                         </a>
                     </li>
                     <li class="nav-item <?php echo navigation_active("school_info"); ?>">
@@ -509,7 +538,7 @@ if ($sidebarShouldShowBadges) {
                         <li class="nav-item <?php echo navigation_active("user_information"); ?>">
                             <a href="<?php echo BASE_URL . "superadmin/pages/user_information.php"; ?>">
                                 <i class="fas fa-users"></i>
-                                <p>Staff Information</p>
+                                <p>Staff Information<?php echo sidebar_badge_html($superAdminStaffNoAccessTotal, 'badge-warning'); ?></p>
                             </a>
                         </li>
                     <?php } ?>
