@@ -61,6 +61,7 @@ $staffHasAnyModuleAccess = false;
 $staffHasPO = false;
 $staffHasCSM = false;
 $staffHasAST = false;
+$sidebarShouldShowBadges = role_has("ADMIN") || role_has("ADMIN_STAFF") || role_has("ADMINSTAFF");
 if (role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) {
     $staffHasPO = user_has_access("PO");
     $staffHasCSM = user_has_access("CSM");
@@ -116,7 +117,7 @@ $adminAstAuditActive = 0;
 $adminCsmMainBadge = 0;
 $adminAstMainBadge = 0;
 $adminTxMainBadge = 0;
-if (role_has("ADMIN")) {
+if ($sidebarShouldShowBadges) {
     if (sidebar_table_exists('requisition_items') && sidebar_column_exists('requisition_items', 'module_type') && sidebar_column_exists('requisition_items', 'status')) {
         $adminCsmReqPending = sidebar_count_query("SELECT COUNT(*) AS cnt
                                                    FROM requisition_items
@@ -380,6 +381,7 @@ if (role_has("ADMIN")) {
                     <li class="nav-item <?php echo navigation_active("csm_category,csm_manage_inventory,csm_manage_invtest,csm_available_items,csm_physical_checking,csm_qrcode", "active submenu"); ?>">
                         <a class="collapsed" aria-expanded="false" data-bs-toggle="collapse" href="#csm_nav">
                             <i class="fas fa-cubes"></i>
+                            <span class="sidebar-group-badge"><?php echo sidebar_badge_html($adminCsmMainBadge); ?></span>
                             <p>Consumable (CSM)</p>
                             <span class="caret"></span>
                         </a>
@@ -387,7 +389,7 @@ if (role_has("ADMIN")) {
                             <ul class="nav nav-collapse">
                                 <li class="<?php echo navigation_active("csm_manage_inventory"); ?>">
                                     <a href="<?php echo BASE_URL . "admin/modules/consumable/csm_manage_inventory.php"; ?>">
-                                        <span class="sub-item">Inventory</span>
+                                        <span class="sub-item">Inventory<?php echo sidebar_badge_html($adminCsmInventoryAttention, 'badge-warning'); ?></span>
                                     </a>
                                 </li>                               
                                 <li class="<?php echo navigation_active("csm_qrcode"); ?>">
@@ -397,7 +399,7 @@ if (role_has("ADMIN")) {
                                 </li>
                                 <li class="<?php echo navigation_active("csm_physical_checking"); ?>">
                                     <a href="<?php echo BASE_URL . "admin/modules/consumable/csm_physical_checking.php"; ?>">
-                                        <span class="sub-item">Physical Checking</span>
+                                        <span class="sub-item">Physical Checking<?php echo sidebar_badge_html($adminCsmAuditActive, 'badge-info'); ?></span>
                                     </a>
                                 </li>
                             </ul>
