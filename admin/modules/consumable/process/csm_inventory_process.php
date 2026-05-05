@@ -370,6 +370,95 @@ function enrich_csm_row($row, $statusMap) {
     return $row;
 }
 
+function extract_activity_log_details_json($actionText) {
+    $actionText = (string)$actionText;
+    $marker = ':: DETAILS::';
+    $pos = strpos($actionText, $marker);
+    if ($pos === false) return null;
+
+    $json = trim(substr($actionText, $pos + strlen($marker)));
+    if ($json === '') return null;
+
+    $decoded = json_decode($json, true);
+    return is_array($decoded) ? $decoded : null;
+}
+
+function build_recent_added_rows(array $items) {
+    if (empty($items)) return array();
+
+    $inventoryIds = [];
+    $inventoryCodes = [];
+    $baseRows = [];
+    foreach ($items as $row) {
+        $id = (int)($row['inventory_id'] ?? 0);
+        $code = trim((string)($row['inventory_system_item_code'] ?? ''));
+        if ($id > 0) $inventoryIds[$id] = true;
+        if ($code !== '') $inventoryCodes[$code] = true;
+
+        $key = $id > 0 ? ('id:' . $id) : ('code:' . $code);
+        $baseRows[$key] = $row;
+    }
+
+    if (empty($inventoryIds) && empty($inventoryCodes)) return $items;
+
+    $expanded = [];
+    foreach ($baseRows as $key => $row) {
+        $row['latest_add_quantity'] = null;
+        $row['latest_add_quantity_at'] = null;
+        $row['recent_activity_at'] = $row['created_at'] ?? null;
+        $row['recent_activity_type'] = 'inventory_added';
+        $row['_recent_row_key'] = $key . ':created';
+        $expanded[] = $row;
+    }
+
+    $res = call_mysql_query("
+        SELECT activity_log_id, action, date_log
+        FROM activity_log
+        WHERE action LIKE 'CSM ADD QUANTITY::SUCCESS:: DETAILS::%'
+        ORDER BY activity_log_id DESC
+        LIMIT 2000
+    ");
+
+    if ($res) {
+        while ($log = call_mysql_fetch_array($res)) {
+            $details = extract_activity_log_details_json($log['action'] ?? '');
+            if (!$details) continue;
+
+            $inventoryId = (int)($details['inventory_id'] ?? 0);
+            $inventoryCode = trim((string)($details['inventory_system_item_code'] ?? ''));
+            $matchesId = $inventoryId > 0 && isset($inventoryIds[$inventoryId]);
+            $matchesCode = $inventoryCode !== '' && isset($inventoryCodes[$inventoryCode]);
+
+            if (!$matchesId && !$matchesCode) continue;
+
+            $key = $matchesId ? ('id:' . $inventoryId) : ('code:' . $inventoryCode);
+            if (!isset($baseRows[$key])) continue;
+
+            $row = $baseRows[$key];
+            $row['latest_add_quantity'] = (int)($details['added_quantity'] ?? 0);
+            $row['latest_add_quantity_at'] = (string)($log['date_log'] ?? '');
+            $row['recent_activity_at'] = (string)($log['date_log'] ?? '');
+            $row['recent_activity_type'] = 'quantity_added';
+            $row['_recent_row_key'] = $key . ':log:' . (int)($log['activity_log_id'] ?? 0);
+            $expanded[] = $row;
+        }
+    }
+
+    usort($expanded, function ($a, $b) {
+        $aTime = strtotime((string)($a['recent_activity_at'] ?? '')) ?: 0;
+        $bTime = strtotime((string)($b['recent_activity_at'] ?? '')) ?: 0;
+        if ($aTime === $bTime) {
+            $aCreated = strtotime((string)($a['created_at'] ?? '')) ?: 0;
+            $bCreated = strtotime((string)($b['created_at'] ?? '')) ?: 0;
+            if ($aCreated === $bCreated) return 0;
+            return ($aCreated < $bCreated) ? 1 : -1;
+        }
+        return ($aTime < $bTime) ? 1 : -1;
+    });
+
+    return array_slice($expanded, 0, 200);
+}
+
 /**
  * Resolve display_image and include new unit/cost_value fields
  */
@@ -613,6 +702,7 @@ try {
                     $items[] = enrich_csm_row($row, $statusMap);
                 }
             }
+            $items = build_recent_added_rows($items);
             echo json_encode(['success' => true, 'data' => $items]);
             exit();
         }
