@@ -976,6 +976,19 @@ function groupLabel(code, name){
     return cDisp || n;
 }
 
+function formatDateTime(value) {
+    if (!value) return '-';
+    const d = new Date(String(value).replace(' ', 'T'));
+    if (isNaN(d.getTime())) return value;
+    return d.toLocaleString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit'
+    });
+}
+
 function extractNumericSuffix(fullCode) {
     const s = String(fullCode || '').trim();
     const m = s.match(/-(\d{4})$/);
@@ -1270,6 +1283,7 @@ function initTable() {
         paginationSize: 20,
         paginationSizeSelector: [20, 100, 500, 1000, true],
         initialSort: [
+            { column: "recent_activity_at", dir: "desc" },
             { column: "created_at", dir: "desc" }
         ],
         ajaxResponse: function(url, params, response) {
@@ -1338,6 +1352,21 @@ function initTable() {
                 headerFilterPlaceholder: 'Filter...'
             },
             {
+                title: 'Entry',
+                field: 'recent_activity_type',
+                width: 130,
+                hozAlign: 'center',
+                headerFilter: 'input',
+                headerFilterPlaceholder: 'Filter...',
+                formatter: function(cell) {
+                    const val = String(cell.getValue() || '').toLowerCase();
+                    if (val === 'quantity_added') {
+                        return '<span class="badge bg-primary">Quantity Added</span>';
+                    }
+                    return '<span class="badge bg-success">Item Added</span>';
+                }
+            },
+            {
                 title: 'Category',
                 field: 'item_category_code',
                 width: 220,
@@ -1370,17 +1399,34 @@ function initTable() {
                 sorter: 'datetime',
                 sorterParams: { format: 'yyyy-MM-dd HH:mm:ss' },
                 formatter: function(cell){
-                    const value = cell.getValue();
-                    if (!value) return '-';
-                    const d = new Date(value.replace(' ', 'T'));
-                    if (isNaN(d.getTime())) return value;
-                    return d.toLocaleString('en-US', {
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric',
-                        hour: 'numeric',
-                        minute: '2-digit'
-                    });
+                    return formatDateTime(cell.getValue());
+                }
+            },
+            {
+                title: 'Qty Added',
+                field: 'latest_add_quantity',
+                width: 135,
+                hozAlign: 'center',
+                headerSort: false,
+                formatter: function(cell){
+                    const row = cell.getRow().getData() || {};
+                    const qty = row.latest_add_quantity;
+                    if (qty === null || qty === undefined || qty === '') {
+                        return '<span class="text-muted">-</span>';
+                    }
+                    const qtyNum = Number(qty || 0);
+                    const qtyText = qtyNum > 0 ? `+${qtyNum}` : `${qtyNum}`;
+                    return `<span class="fw-semibold text-primary">${escHtml(qtyText)}</span>`;
+                }
+            },
+            {
+                title: 'Qty Added On',
+                field: 'latest_add_quantity_at',
+                width: 185,
+                sorter: 'datetime',
+                sorterParams: { format: 'yyyy-MM-dd HH:mm:ss' },
+                formatter: function(cell){
+                    return formatDateTime(cell.getValue());
                 }
             },
             {
@@ -1446,7 +1492,10 @@ function refreshTable() {
     inventoryTable.setData(PROCESS_URL, { action: 'list_recent_added' }, 'POST').then(function() {
         if (!search) {
             inventoryTable.clearFilter(true);
-            inventoryTable.setSort("created_at", "desc");
+            inventoryTable.setSort([
+                { column: "recent_activity_at", dir: "desc" },
+                { column: "created_at", dir: "desc" }
+            ]);
             return;
         }
 
@@ -1462,7 +1511,10 @@ function refreshTable() {
 
             return hay.indexOf(search) !== -1;
         });
-        inventoryTable.setSort("created_at", "desc");
+        inventoryTable.setSort([
+            { column: "recent_activity_at", dir: "desc" },
+            { column: "created_at", dir: "desc" }
+        ]);
     }).catch(function() {});
 }
 
