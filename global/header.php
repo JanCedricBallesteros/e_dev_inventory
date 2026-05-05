@@ -12,6 +12,82 @@
  **/
 
 ## remove some section if not needed
+
+function topbar_count_query($sql)
+{
+    $res = call_mysql_query($sql);
+    if (!$res) return 0;
+    $row = call_mysql_fetch_array($res);
+    return (int)($row['cnt'] ?? 0);
+}
+
+function topbar_table_exists($table)
+{
+    $res = call_mysql_query("SHOW TABLES LIKE '" . addslashes((string)$table) . "'");
+    return $res && mysqli_num_rows($res) > 0;
+}
+
+function topbar_column_exists($table, $column)
+{
+    $res = call_mysql_query("SHOW COLUMNS FROM `" . str_replace('`', '``', (string)$table) . "` LIKE '" . addslashes((string)$column) . "'");
+    return $res && mysqli_num_rows($res) > 0;
+}
+
+$topbarNotifications = [];
+$topbarNotifTotal = 0;
+
+if (role_has("ADMIN")) {
+    if (topbar_table_exists('requisition_items') && topbar_column_exists('requisition_items', 'status') && topbar_column_exists('requisition_items', 'module_type')) {
+        $cntPendingAll = topbar_count_query("SELECT COUNT(*) AS cnt FROM requisition_items WHERE status IN ('pending','reviewed')");
+        $cntPendingAst = topbar_count_query("SELECT COUNT(*) AS cnt FROM requisition_items WHERE module_type='AST' AND status IN ('pending','reviewed')");
+        $cntPendingCsm = topbar_count_query("SELECT COUNT(*) AS cnt FROM requisition_items WHERE module_type='CSM' AND status IN ('pending','reviewed')");
+
+        if ($cntPendingAst > 0) {
+            $topbarNotifications[] = [
+                'icon_class' => 'notif-info',
+                'icon' => 'fa fa-boxes',
+                'text' => $cntPendingAst . ' AST requisition(s) pending',
+                'url' => BASE_URL . 'admin/modules/transactions/requisition.php?type=AST'
+            ];
+        }
+        if ($cntPendingCsm > 0) {
+            $topbarNotifications[] = [
+                'icon_class' => 'notif-success',
+                'icon' => 'fa fa-cubes',
+                'text' => $cntPendingCsm . ' CSM requisition(s) pending',
+                'url' => BASE_URL . 'admin/modules/transactions/requisition.php?type=CSM'
+            ];
+        }
+    }
+
+    if (topbar_table_exists('facility_records_assignments') && topbar_column_exists('facility_records_assignments', 'status')) {
+        $cntReturnRequested = topbar_count_query("SELECT COUNT(*) AS cnt FROM facility_records_assignments WHERE status='RETURN_REQUESTED'");
+        if ($cntReturnRequested > 0) {
+            $topbarNotifications[] = [
+                'icon_class' => 'notif-warning',
+                'icon' => 'fa fa-undo',
+                'text' => $cntReturnRequested . ' property return request(s)',
+                'url' => BASE_URL . 'admin/modules/transactions/manage_returns.php'
+            ];
+        }
+    }
+}
+
+if ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && user_has_access("AST")) {
+    if (topbar_table_exists('requisition_items') && topbar_column_exists('requisition_items', 'status') && topbar_column_exists('requisition_items', 'module_type')) {
+        $cntForClaimingAst = topbar_count_query("SELECT COUNT(*) AS cnt FROM requisition_items WHERE module_type='AST' AND status='approved'");
+        if ($cntForClaimingAst > 0) {
+            $topbarNotifications[] = [
+                'icon_class' => 'notif-primary',
+                'icon' => 'fa fa-truck-loading',
+                'text' => $cntForClaimingAst . ' AST request(s) ready for issuance',
+                'url' => BASE_URL . 'admin/modules/nonconsumable/ast_issuance.php'
+            ];
+        }
+    }
+}
+
+$topbarNotifTotal = count($topbarNotifications);
 ?>
 
 <div class="main-header">
@@ -142,63 +218,36 @@
                 <li class="nav-item topbar-icon dropdown hidden-caret">
                     <a class="nav-link dropdown-toggle" href="#" id="notifDropdown" role="button" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
                         <i class="fa fa-bell"></i>
-                        <span class="notification">4</span>
+                        <?php if ($topbarNotifTotal > 0) { ?>
+                            <span class="notification"><?php echo $topbarNotifTotal; ?></span>
+                        <?php } ?>
                     </a>
                     <ul class="dropdown-menu notif-box animated fadeIn" aria-labelledby="notifDropdown">
                         <li>
                             <div class="dropdown-title">
-                                You have 4 new notification
+                                <?php echo $topbarNotifTotal > 0 ? ('You have ' . $topbarNotifTotal . ' notification(s)') : 'No new notifications'; ?>
                             </div>
                         </li>
                         <li>
                             <div class="notif-scroll scrollbar-outer">
                                 <div class="notif-center">
-                                    <a href="#">
-                                        <div class="notif-icon notif-primary">
-                                            <i class="fa fa-user-plus"></i>
-                                        </div>
-                                        <div class="notif-content">
-                                            <span class="block"> New user registered </span>
-                                            <span class="time">5 minutes ago</span>
-                                        </div>
-                                    </a>
-                                    <a href="#">
-                                        <div class="notif-icon notif-success">
-                                            <i class="fa fa-comment"></i>
-                                        </div>
-                                        <div class="notif-content">
-                                            <span class="block">
-                                                Rahmad commented on Admin
-                                            </span>
-                                            <span class="time">12 minutes ago</span>
-                                        </div>
-                                    </a>
-                                    <a href="#">
-                                        <div class="notif-img">
-                                            <img src="<?php echo IMG_PATH . $g_photo; ?>" alt="Img Profile" />
-                                        </div>
-                                        <div class="notif-content">
-                                            <span class="block">
-                                                Reza send messages to you
-                                            </span>
-                                            <span class="time">12 minutes ago</span>
-                                        </div>
-                                    </a>
-                                    <a href="#">
-                                        <div class="notif-icon notif-danger">
-                                            <i class="fa fa-heart"></i>
-                                        </div>
-                                        <div class="notif-content">
-                                            <span class="block"> Farrah liked Admin </span>
-                                            <span class="time">17 minutes ago</span>
-                                        </div>
-                                    </a>
+                                    <?php if ($topbarNotifTotal > 0): ?>
+                                        <?php foreach ($topbarNotifications as $notif): ?>
+                                            <a href="<?php echo htmlspecialchars($notif['url']); ?>">
+                                                <div class="notif-icon <?php echo htmlspecialchars($notif['icon_class']); ?>">
+                                                    <i class="<?php echo htmlspecialchars($notif['icon']); ?>"></i>
+                                                </div>
+                                                <div class="notif-content">
+                                                    <span class="block"><?php echo htmlspecialchars($notif['text']); ?></span>
+                                                    <span class="time">Live</span>
+                                                </div>
+                                            </a>
+                                        <?php endforeach; ?>
+                                    <?php else: ?>
+                                        <div class="px-3 py-2 text-muted small">You're all caught up.</div>
+                                    <?php endif; ?>
                                 </div>
                             </div>
-                        </li>
-                        <li>
-                            <a class="see-all" href="javascript:void(0);">See all notifications<i class="fa fa-angle-right"></i>
-                            </a>
                         </li>
                     </ul>
                 </li>

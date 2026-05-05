@@ -173,10 +173,13 @@ if (role_has("ADMIN")) {
                                                     FROM ast_audit_sessions
                                                     WHERE status IN ('active','ongoing','open','in_progress')");
     }
-    $adminCsmMainBadge = $adminCsmReqPending + $adminCsmInventoryAttention + $adminCsmAuditActive;
-    $adminAstMainBadge = $adminAstReqPending + $adminReqForClaimingTotal + $adminReturnRequested + $adminAstAuditActive;
-    /* Transactions badge: action-required only */
-    $adminTxMainBadge = $adminReqPendingTotal + $adminReqForClaimingTotal + $adminReturnRequested;
+    /*
+     * Keep parent-group badges consistent with the currently visible
+     * sub-item badges inside each group.
+     */
+    $adminCsmMainBadge = $adminCsmInventoryAttention + $adminCsmAuditActive;
+    $adminAstMainBadge = $adminFacilityReported + $adminAstAuditActive;
+    $adminTxMainBadge = $adminReqPendingTotal + $adminReturnRequested + $adminFacilityAttentionTotal;
 }
 ?>
 <style>
@@ -480,7 +483,7 @@ if (role_has("ADMIN")) {
                                 <?php if (role_has("ADMIN") || $staffHasAST || $staffHasCSM) { ?>
                                     <li class="<?php echo navigation_active("requisition", "active", array("type" => array("AST", "CSM"))); ?>">
                                         <a href="<?php echo BASE_URL . "admin/modules/transactions/requisition.php?type=" . ($staffHasCSM && !$staffHasAST ? "CSM" : "AST"); ?>">
-                                            <span class="sub-item">Requisition Item<?php echo sidebar_badge_html(sidebar_action_badge_total($adminReqPendingTotal, $adminReqForClaimingTotal, $adminReqNotClaimedTotal), 'badge-primary'); ?></span>
+                                            <span class="sub-item">Requisition Item<?php echo sidebar_badge_html($adminReqPendingTotal, 'badge-primary'); ?></span>
                                         </a>
                                     </li>
                                 <?php } ?>
