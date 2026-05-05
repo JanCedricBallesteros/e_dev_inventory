@@ -437,6 +437,10 @@ function build_recent_added_rows(array $items) {
             $row = $baseRows[$key];
             $row['latest_add_quantity'] = (int)($details['added_quantity'] ?? 0);
             $row['latest_add_quantity_at'] = (string)($log['date_log'] ?? '');
+            $row['logged_old_quantity'] = isset($details['old_quantity']) ? (int)$details['old_quantity'] : null;
+            $row['logged_new_quantity'] = isset($details['new_quantity']) ? (int)$details['new_quantity'] : null;
+            $row['logged_old_current_quantity'] = isset($details['old_current_quantity']) ? (int)$details['old_current_quantity'] : null;
+            $row['logged_new_current_quantity'] = isset($details['new_current_quantity']) ? (int)$details['new_current_quantity'] : null;
             $row['recent_activity_at'] = (string)($log['date_log'] ?? '');
             $row['recent_activity_type'] = 'quantity_added';
             $row['_recent_row_key'] = $key . ':log:' . (int)($log['activity_log_id'] ?? 0);
