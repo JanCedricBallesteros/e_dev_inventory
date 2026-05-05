@@ -501,6 +501,8 @@ $updated = 0;
 $skipped = 0;
 $errors = [];
 $errorsLimit = 20;
+$insertedCodes = [];
+$updatedCodes = [];
 
 $rowNum = 1;
 $today = _today();
@@ -620,7 +622,10 @@ foreach ($rows as $r) {
         ";
 
         $ok = call_mysql_query($sql);
-        if ($ok) $updated++;
+        if ($ok) {
+            $updated++;
+            $updatedCodes[] = $fullCode;
+        }
         else {
             if (count($errors) < $errorsLimit) $errors[] = "Row {$rowNum}: Update failed for {$fullCode}";
             $skipped++;
@@ -665,12 +670,25 @@ foreach ($rows as $r) {
     ";
 
     $ok = call_mysql_query($sql);
-    if ($ok) $inserted++;
+    if ($ok) {
+        $inserted++;
+        $insertedCodes[] = $fullCode;
+    }
     else {
         if (count($errors) < $errorsLimit) $errors[] = "Row {$rowNum}: Insert failed for {$fullCode}";
         $skipped++;
     }
 }
+
+activity_log_new("CSM BULK IMPORT INVENTORY", "SUCCESS", array(
+    'mode' => $mode,
+    'inserted' => $inserted,
+    'updated' => $updated,
+    'skipped' => $skipped,
+    'inserted_codes' => $insertedCodes,
+    'updated_codes' => $updatedCodes,
+    'errors_count' => count($errors)
+));
 
 echo json_encode([
     'success' => true,

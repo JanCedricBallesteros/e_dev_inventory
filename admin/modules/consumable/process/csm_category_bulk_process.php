@@ -241,6 +241,9 @@ try {
             $inserted = 0;
             $skipped  = 0;
             $errors   = [];
+            $insertedNames = [];
+            $insertedCodes = [];
+            $skippedEntries = [];
 
             // CSV internal duplicate protection
             $seenNames = [];
@@ -256,6 +259,7 @@ try {
                 if ($name === '') {
                     $skipped++;
                     $errors[] = "Row {$rowIndex}: Missing Category Name.";
+                    $skippedEntries[] = '(missing name)';
                     continue;
                 }
 
@@ -265,6 +269,7 @@ try {
                 if (isset($seenNames[$nameKey])) {
                     $skipped++;
                     $errors[] = "Row {$rowIndex}: Duplicate name in CSV: {$nameNorm}";
+                    $skippedEntries[] = $nameNorm . ' (duplicate_name)';
                     continue;
                 }
                 $seenNames[$nameKey] = true;
@@ -275,6 +280,7 @@ try {
                     if ($dbCode === '') {
                         $skipped++;
                         $errors[] = "Row {$rowIndex}: Invalid Code '{$codeRaw}'. Use letters, numbers, '-' or '_' or leave blank.";
+                        $skippedEntries[] = $nameNorm . ' [' . $codeRaw . '] (invalid_code)';
                         continue;
                     }
                 } else {
@@ -282,6 +288,7 @@ try {
                     if ($dbCode === '') {
                         $skipped++;
                         $errors[] = "Row {$rowIndex}: Failed to generate next code.";
+                        $skippedEntries[] = $nameNorm . ' (generate_code_failed)';
                         continue;
                     }
                 }
@@ -293,6 +300,7 @@ try {
                 if (isset($seenCodes[$dbCodeKey])) {
                     $skipped++;
                     $errors[] = "Row {$rowIndex}: Duplicate code in CSV: {$dbCode}";
+                    $skippedEntries[] = $nameNorm . ' [' . $dbCode . '] (duplicate_code)';
                     continue;
                 }
                 $seenCodes[$dbCodeKey] = true;
@@ -301,6 +309,7 @@ try {
                 if (code_exists_any_format($dbCode)) {
                     $skipped++;
                     $errors[] = "Row {$rowIndex}: Code already exists: {$dbCode}";
+                    $skippedEntries[] = $nameNorm . ' [' . $dbCode . '] (duplicate_code)';
                     continue;
                 }
 
@@ -314,6 +323,7 @@ try {
                 if ($chkName && call_mysql_fetch_array($chkName)) {
                     $skipped++;
                     $errors[] = "Row {$rowIndex}: Name already exists: {$nameNorm}";
+                    $skippedEntries[] = $nameNorm . ' [' . $dbCode . '] (duplicate_name)';
                     continue;
                 }
 
@@ -324,9 +334,12 @@ try {
                 ");
                 if ($ok) {
                     $inserted++;
+                    $insertedNames[] = $nameNorm;
+                    $insertedCodes[] = $dbCode;
                 } else {
                     $skipped++;
                     $errors[] = "Row {$rowIndex}: Insert failed for {$nameNorm} ({$dbCode}).";
+                    $skippedEntries[] = $nameNorm . ' [' . $dbCode . '] (insert_failed)';
                 }
             }
 
@@ -336,6 +349,21 @@ try {
                 $errors = array_slice($errors, 0, 20);
                 $errors[] = "More issues exist (showing up to 20).";
             }
+
+            $logDetails = array(
+                'inserted' => $inserted,
+                'skipped' => $skipped
+            );
+            if (!empty($insertedNames)) {
+                $logDetails['added_names'] = $insertedNames;
+            }
+            if (!empty($insertedCodes)) {
+                $logDetails['added_codes'] = $insertedCodes;
+            }
+            if (!empty($skippedEntries)) {
+                $logDetails['not_added'] = $skippedEntries;
+            }
+            activity_log_new("CSM CATEGORY BULK IMPORT", "SUCCESS", $logDetails);
 
             json_out([
                 'success'  => true,

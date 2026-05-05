@@ -558,7 +558,23 @@ try {
             ";
 
             $res = call_mysql_query($sql);
-            if ($res) { echo "success"; exit(); }
+            if ($res) {
+                activity_log_new("CSM ADD ITEM", "SUCCESS", array(
+                    'inventory_system_item_code' => $inventory_system_item_code,
+                    'item_description' => $item_description,
+                    'item_category_code' => $item_category_code,
+                    'cost_value' => $cost_value,
+                    'unit' => $unit,
+                    'quantity' => $quantity,
+                    'current_quantity' => $current_quantity,
+                    'qty_crit_level' => $qty_crit_level,
+                    'source_of_funds' => $source_of_funds,
+                    'allowed_status' => $allowed_json,
+                    'status' => $status
+                ));
+                echo "success";
+                exit();
+            }
 
             http_response_code(500);
             echo "Database insert failed.";
@@ -733,7 +749,7 @@ try {
                 exit();
             }
 
-            $chk = call_mysql_query("SELECT inventory_id, qty_crit_level, quantity FROM csm_inventory WHERE inventory_id={$inventory_id} LIMIT 1");
+            $chk = call_mysql_query("SELECT inventory_id, inventory_system_item_code, current_quantity, qty_crit_level, quantity, status, allowed_employment_status FROM csm_inventory WHERE inventory_id={$inventory_id} LIMIT 1");
             $r = $chk ? call_mysql_fetch_array($chk) : null;
             if (!$r) {
                 http_response_code(404);
@@ -767,6 +783,16 @@ try {
 
             $res = call_mysql_query($sql);
             if ($res) {
+                activity_log_new("CSM SET AVAILABLE RULES", "SUCCESS", array(
+                    'inventory_id' => $inventory_id,
+                    'inventory_system_item_code' => $r['inventory_system_item_code'] ?? null,
+                    'old_current_quantity' => (int)($r['current_quantity'] ?? 0),
+                    'new_current_quantity' => $current_quantity,
+                    'old_allowed_status' => $r['allowed_employment_status'] ?? null,
+                    'new_allowed_status' => $allowed_json,
+                    'old_status' => (int)($r['status'] ?? 0),
+                    'new_status' => $status
+                ));
                 echo json_encode(['success' => true, 'message' => 'Availability rules updated.']);
                 exit();
             }
@@ -804,6 +830,8 @@ try {
             $allowed_json = $allowed_norm['json'];
             $today = _today();
             $updated = 0;
+            $updatedCodes = [];
+            $updatedQtyMap = [];
             $perItemQtyMap = [];
 
             if ($bulk_qty_mode === 'same_for_all') {
@@ -904,8 +932,21 @@ try {
                 ";
 
                 $res = call_mysql_query($sql);
-                if ($res) $updated++;
+                if ($res) {
+                    $updated++;
+                    $updatedCodes[] = (string)($row['inventory_system_item_code'] ?? '');
+                    $updatedQtyMap[(string)$inventory_id] = $currentQty;
+                }
             }
+
+            activity_log_new("CSM BULK SET AVAILABLE RULES", "SUCCESS", array(
+                'count' => $updated,
+                'inventory_ids' => $inventoryIds,
+                'inventory_system_item_codes' => $updatedCodes,
+                'allowed_status' => $allowed_json,
+                'bulk_qty_mode' => $bulk_qty_mode,
+                'applied_current_quantities' => $updatedQtyMap
+            ));
 
             echo json_encode([
                 'success' => true,
@@ -993,7 +1034,7 @@ try {
                 exit();
             }
 
-            $oldRes = call_mysql_query("SELECT current_quantity, allowed_employment_status FROM csm_inventory WHERE inventory_id={$inventory_id} LIMIT 1");
+            $oldRes = call_mysql_query("SELECT inventory_system_item_code, item_description, item_category_code, cost_value, unit, quantity, current_quantity, qty_crit_level, source_of_funds, status, allowed_employment_status FROM csm_inventory WHERE inventory_id={$inventory_id} LIMIT 1");
             $oldRow = $oldRes ? call_mysql_fetch_array($oldRes) : null;
             $currentQty = $oldRow ? (int)$oldRow['current_quantity'] : 0;
             if ($currentQty > $quantity) $currentQty = $quantity;
@@ -1020,7 +1061,33 @@ try {
             ";
 
             $res = call_mysql_query($sql);
-            if ($res) { echo "success"; exit(); }
+            if ($res) {
+                activity_log_new("CSM UPDATE ITEM", "SUCCESS", array(
+                    'inventory_id' => $inventory_id,
+                    'old_inventory_system_item_code' => $oldRow['inventory_system_item_code'] ?? null,
+                    'new_inventory_system_item_code' => $inventory_system_item_code,
+                    'old_item_description' => $oldRow['item_description'] ?? null,
+                    'new_item_description' => $item_description,
+                    'old_item_category_code' => $oldRow['item_category_code'] ?? null,
+                    'new_item_category_code' => $item_category_code,
+                    'old_cost_value' => isset($oldRow['cost_value']) ? (float)$oldRow['cost_value'] : null,
+                    'new_cost_value' => $cost_value,
+                    'old_unit' => $oldRow['unit'] ?? null,
+                    'new_unit' => $unit,
+                    'old_quantity' => isset($oldRow['quantity']) ? (int)$oldRow['quantity'] : null,
+                    'new_quantity' => $quantity,
+                    'old_current_quantity' => isset($oldRow['current_quantity']) ? (int)$oldRow['current_quantity'] : null,
+                    'new_current_quantity' => $currentQty,
+                    'old_qty_crit_level' => isset($oldRow['qty_crit_level']) ? (int)$oldRow['qty_crit_level'] : null,
+                    'new_qty_crit_level' => $qty_crit_level,
+                    'old_source_of_funds' => $oldRow['source_of_funds'] ?? null,
+                    'new_source_of_funds' => $source_of_funds,
+                    'old_status' => isset($oldRow['status']) ? (int)$oldRow['status'] : null,
+                    'new_status' => $status
+                ));
+                echo "success";
+                exit();
+            }
 
             http_response_code(500);
             echo "Database update failed.";
@@ -1048,7 +1115,7 @@ try {
                 exit();
             }
 
-            $q = call_mysql_query("SELECT quantity, current_quantity, qty_crit_level, source_of_funds, cost_value, allowed_employment_status FROM csm_inventory WHERE inventory_id={$inventory_id} LIMIT 1");
+            $q = call_mysql_query("SELECT inventory_system_item_code, quantity, current_quantity, qty_crit_level, source_of_funds, cost_value, allowed_employment_status FROM csm_inventory WHERE inventory_id={$inventory_id} LIMIT 1");
             $row = $q ? call_mysql_fetch_array($q) : null;
             if (!$row) {
                 http_response_code(404);
@@ -1086,6 +1153,21 @@ try {
                 exit();
             }
 
+            activity_log_new("CSM ADD QUANTITY", "SUCCESS", array(
+                'inventory_id' => $inventory_id,
+                'inventory_system_item_code' => $row['inventory_system_item_code'] ?? null,
+                'added_quantity' => $add_qty,
+                'old_quantity' => (int)($row['quantity'] ?? 0),
+                'new_quantity' => $new_unit_qty,
+                'old_current_quantity' => (int)($row['current_quantity'] ?? 0),
+                'new_current_quantity' => $new_cur_qty,
+                'old_source_of_funds' => $row['source_of_funds'] ?? null,
+                'new_source_of_funds' => $final_source,
+                'old_cost_value' => isset($row['cost_value']) ? (float)$row['cost_value'] : null,
+                'new_cost_value' => (float)$final_cost,
+                'new_status' => $status
+            ));
+
             echo json_encode(['success' => true]);
             exit();
         }
@@ -1106,7 +1188,7 @@ try {
                 exit();
             }
 
-            $chk = call_mysql_query("SELECT quantity, qty_crit_level, allowed_employment_status FROM csm_inventory WHERE inventory_id={$inventory_id} LIMIT 1");
+            $chk = call_mysql_query("SELECT inventory_system_item_code, quantity, current_quantity, qty_crit_level, status, allowed_employment_status FROM csm_inventory WHERE inventory_id={$inventory_id} LIMIT 1");
             $r = $chk ? call_mysql_fetch_array($chk) : null;
             if (!$r) {
                 http_response_code(404);
@@ -1137,7 +1219,18 @@ try {
             ";
 
             $res = call_mysql_query($sql);
-            if ($res) { echo "success"; exit(); }
+            if ($res) {
+                activity_log_new("CSM UPDATE AVAILABLE QTY", "SUCCESS", array(
+                    'inventory_id' => $inventory_id,
+                    'inventory_system_item_code' => $r['inventory_system_item_code'] ?? null,
+                    'old_current_quantity' => (int)($r['current_quantity'] ?? 0),
+                    'new_current_quantity' => $current_quantity,
+                    'old_status' => (int)($r['status'] ?? 0),
+                    'new_status' => $status
+                ));
+                echo "success";
+                exit();
+            }
 
             http_response_code(500);
             echo "Database update failed.";
