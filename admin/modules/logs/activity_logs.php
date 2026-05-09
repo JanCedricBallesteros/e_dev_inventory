@@ -6,7 +6,10 @@ require CONNECT_PATH;
 require VALIDATOR_PATH;
 require ISLOGIN;
 
-if (!role_has('ADMIN')) {
+$isAdmin = role_has('ADMIN');
+$isStaffCsm = (role_has('ADMIN_STAFF') || role_has('ADMINSTAFF')) && user_has_access('CSM');
+
+if (!$isAdmin && !$isStaffCsm) {
     header("Location: " . BASE_URL);
     exit();
 }
@@ -59,6 +62,22 @@ function flatten_activity_detail_lines($value, $prefix = '') {
     return $lines;
 }
 
+function activity_scope_matches_access($actionType, $actionRaw, $detailsRaw, $detailsPretty, $accessCode) {
+    $needle = strtoupper(trim((string)$accessCode));
+    if ($needle === '') {
+        return false;
+    }
+
+    $haystack = strtoupper(implode(' ', array(
+        (string)$actionType,
+        (string)$actionRaw,
+        (string)$detailsRaw,
+        (string)$detailsPretty
+    )));
+
+    return strpos($haystack, $needle) !== false;
+}
+
 $table_array = array();
 
 $select = "
@@ -77,9 +96,18 @@ $select = "
         u.email_address,
         u.position,
         u.employment_status_id,
-        u.user_role AS roles
+        u.user_role AS roles,
+        ua.access_codes
     FROM activity_log a
     LEFT JOIN users u ON u.user_id = a.user_id
+    LEFT JOIN (
+        SELECT
+            user_id,
+            GROUP_CONCAT(DISTINCT access_code ORDER BY access_code SEPARATOR ', ') AS access_codes
+        FROM user_access
+        WHERE is_active = 1
+        GROUP BY user_id
+    ) ua ON ua.user_id = a.user_id
     ORDER BY a.activity_log_id DESC
 ";
 
@@ -97,6 +125,10 @@ if ($query = call_mysql_query($select)) {
                 $roleLabels = role_labels_from_raw($data['roles'] ?? '');
             }
             $data['role_label'] = !empty($roleLabels) ? implode(', ', $roleLabels) : 'UNKNOWN';
+            $data['access_label'] = trim((string)($data['access_codes'] ?? ''));
+            if ($data['access_label'] === '') {
+                $data['access_label'] = '—';
+            }
 
             $adminRelated = false;
             foreach ($roleLabels as $roleLabel) {
@@ -137,6 +169,16 @@ if ($query = call_mysql_query($select)) {
                 } else {
                     $data['details_pretty'] = $details_raw;
                 }
+            }
+
+            if ($isStaffCsm && !activity_scope_matches_access(
+                $data['action_type'] ?? '',
+                $data['action_raw'] ?? '',
+                $data['details_raw'] ?? '',
+                $data['details_pretty'] ?? '',
+                'CSM'
+            )) {
+                continue;
             }
 
             $table_array[] = $data;
@@ -192,8 +234,16 @@ $json_table = output($table_array);
                     <div>
                         <i class="bi bi-clock-history"></i>&ensp;Activity Logs
                     </div>
+                    <?php if ($isStaffCsm && !$isAdmin) { ?>
+                        <div class="small">CSM access view</div>
+                    <?php } ?>
                 </div>
                 <div class="card-body mt-3 bg-white">
+                    <?php if ($isStaffCsm && !$isAdmin) { ?>
+                        <div class="alert alert-info py-2 mb-3">
+                            Showing CSM-related activity logs based on your current module access.
+                        </div>
+                    <?php } ?>
                     <div class="superadmin-toolbar mb-3">
                         <div class="toolbar-left d-flex gap-2">
                             <div class="input-group">
@@ -314,6 +364,7 @@ $json_table = output($table_array);
             { title: "Date & Time", field: "date_log", bottomCalc: record_details, hozAlign: "center", headerFilter: "input", minWidth: 150 },
             { title: "User", field: "name", headerFilter: "input", minWidth: 150 },
             { title: "Role", field: "role_label", hozAlign: "center", headerFilter: "input", minWidth: 130 },
+            { title: "Access", field: "access_label", hozAlign: "center", headerFilter: "input", minWidth: 110 },
             { title: "Action", field: "action_type", hozAlign: "left", headerFilter: "input", width: 700, minWidth: 200 },
             { title: "Status", field: "action_status", hozAlign: "center", headerFilter: "input", width: 80, minWidth: 80 },
             {
@@ -376,7 +427,7 @@ $json_table = output($table_array);
         }
         table.setFilter(function(data) {
             const hay = [
-                data.name, data.role_label, data.action_type,
+                data.name, data.role_label, data.access_label, data.action_type,
                 data.action_status, data.details_pretty, data.date_log
             ].join(' ').toLowerCase();
             return hay.indexOf(q) !== -1;

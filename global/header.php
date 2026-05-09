@@ -116,6 +116,7 @@ if (role_has("SUPER_ADMIN")) {
 
 if (role_has("ADMIN")) {
     topbar_add_search_item($topbarSearchItems, 'Dashboard', BASE_URL . 'admin/dashboard/main_admin.php', 'dashboard home overview', 'Admin');
+    topbar_add_search_item($topbarSearchItems, 'Inventory Audit', BASE_URL . 'admin/modules/audit/inventory_audit.php', 'inventory audit qr scan physical checking csm ast', 'Admin');
     topbar_add_search_item($topbarSearchItems, 'Staff Information', BASE_URL . 'superadmin/pages/user_information.php', 'users staff access employment status', 'Admin');
     topbar_add_search_item($topbarSearchItems, 'Activity Logs', BASE_URL . 'admin/modules/logs/activity_logs.php', 'activity logs audit history', 'Admin');
     topbar_add_search_item($topbarSearchItems, 'Consumable Inventory', BASE_URL . 'admin/modules/consumable/csm_manage_inventory.php', 'csm consumable inventory items', 'Consumable');
@@ -143,6 +144,7 @@ if ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && (user_has_access(arra
         topbar_add_search_item($topbarSearchItems, 'Add Consumable Item', BASE_URL . 'admin/modules/consumable/csm_available_items.php', 'csm add new item', 'Staff');
         topbar_add_search_item($topbarSearchItems, 'CSM QR Code', BASE_URL . 'admin/modules/consumable/csm_qrcode.php', 'csm qr code', 'Staff');
         topbar_add_search_item($topbarSearchItems, 'CSM Physical Checking', BASE_URL . 'admin/modules/consumable/csm_physical_checking.php', 'csm physical checking', 'Staff');
+        topbar_add_search_item($topbarSearchItems, 'Activity Logs', BASE_URL . 'admin/modules/logs/activity_logs.php', 'activity logs csm staff audit history', 'Staff');
     }
     if (user_has_access(array("AST", "PO")) || user_has_access("AST")) {
         topbar_add_search_item($topbarSearchItems, 'Non-Consumable Inventory', BASE_URL . 'admin/modules/nonconsumable/ast_inventory.php', 'ast property inventory assets', 'Staff');

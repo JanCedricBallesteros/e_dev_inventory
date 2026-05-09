@@ -353,6 +353,12 @@ if ($sidebarShouldShowBadges) {
                             <p>Dashboard</p>
                         </a>
                     </li>
+                    <li class="nav-item <?php echo navigation_active("inventory_audit"); ?>">
+                        <a href="<?php echo BASE_URL . "admin/modules/audit/inventory_audit.php"; ?>">
+                            <i class="fas fa-clipboard-check"></i>
+                            <p>Inventory Audit</p>
+                        </a>
+                    </li>
                 <?php } ?>
 
                 <?php if ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && $staffHasAnyModuleAccess) { ?>
@@ -527,12 +533,14 @@ if ($sidebarShouldShowBadges) {
                         </div>
                     </li>
 
-                    <li class="nav-item <?php echo navigation_active("activity_logs"); ?>">
-                        <a href="<?php echo BASE_URL . "admin/modules/logs/activity_logs.php"; ?>">
-                            <i class="fas fa-list"></i>
-                            <p>Activity Logs</p>
-                        </a>
-                    </li>
+                    <?php if (role_has("ADMIN") || ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && $staffHasCSM)) { ?>
+                        <li class="nav-item <?php echo navigation_active("activity_logs"); ?>">
+                            <a href="<?php echo BASE_URL . "admin/modules/logs/activity_logs.php"; ?>">
+                                <i class="fas fa-list"></i>
+                                <p>Activity Logs</p>
+                            </a>
+                        </li>
+                    <?php } ?>
 
                     <?php if (role_has("ADMIN")) { ?>
                         <li class="nav-item <?php echo navigation_active("user_information"); ?>">
