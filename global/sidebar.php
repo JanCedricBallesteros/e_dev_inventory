@@ -526,7 +526,7 @@ if ($sidebarShouldShowBadges) {
                                 <?php } ?>
                                 <li class="<?php echo navigation_active("facility_inventory_records"); ?>">
                                     <a href="<?php echo BASE_URL . "admin/modules/transactions/facility_inventory_records.php"; ?>">
-                                        <span class="sub-item">Facility Inventory Records<?php echo sidebar_badge_html($adminFacilityAttentionTotal, 'badge-warning'); ?></span>
+                                        <span class="sub-item">Facility Inventory Records</span>
                                     </a>
                                 </li>
                             </ul>
