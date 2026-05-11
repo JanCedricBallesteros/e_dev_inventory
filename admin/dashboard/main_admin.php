@@ -20,6 +20,24 @@ function dashboard_count($sql, $field = 'cnt')
     return 0;
 }
 
+function dashboard_column_exists($table, $column)
+{
+    $table = str_replace('`', '``', (string)$table);
+    $column = addslashes((string)$column);
+    $res = call_mysql_query("SHOW COLUMNS FROM `{$table}` LIKE '{$column}'");
+    return $res && mysqli_num_rows($res) > 0;
+}
+
+function dashboard_first_existing_column($table, array $candidates, $fallback = '')
+{
+    foreach ($candidates as $candidate) {
+        if (dashboard_column_exists($table, $candidate)) {
+            return $candidate;
+        }
+    }
+    return $fallback;
+}
+
 $ast_items = dashboard_count("SELECT COUNT(*) AS cnt FROM ast_inventory");
 $ast_categories = dashboard_count("SELECT COUNT(*) AS cnt FROM ast_inventory_category");
 $csm_items = dashboard_count("SELECT COUNT(*) AS cnt FROM csm_inventory");
@@ -30,7 +48,12 @@ $approved_reqs = dashboard_count("SELECT COUNT(*) AS cnt FROM requisition_items 
 $disapproved_reqs = dashboard_count("SELECT COUNT(*) AS cnt FROM requisition_items WHERE status='disapproved'");
 $activity_logs = dashboard_count("SELECT COUNT(*) AS cnt FROM activity_log");
 $ast_unavailable = dashboard_count("SELECT COUNT(*) AS cnt FROM ast_inventory WHERE is_available = 0");
-$csm_critical = dashboard_count("SELECT COUNT(*) AS cnt FROM csm_inventory WHERE current_unit_quantity <= unit_crit_level");
+$csmQtyColumn = dashboard_first_existing_column('csm_inventory', array('current_quantity', 'current_unit_quantity', 'quantity'));
+$csmCritColumn = dashboard_first_existing_column('csm_inventory', array('qty_crit_level', 'unit_crit_level'));
+$csm_critical = 0;
+if ($csmQtyColumn !== '' && $csmCritColumn !== '') {
+    $csm_critical = dashboard_count("SELECT COUNT(*) AS cnt FROM csm_inventory WHERE {$csmQtyColumn} <= {$csmCritColumn}");
+}
 $facility_active = dashboard_count("SELECT COUNT(*) AS cnt FROM facility_records_assignments WHERE status='ACTIVE'");
 $facility_reported = dashboard_count("SELECT COUNT(*) AS cnt FROM facility_records_assignments WHERE status='REPORTED'");
 $users_locked = dashboard_count("SELECT COUNT(*) AS cnt FROM users WHERE locked = 1");

@@ -56,26 +56,25 @@ function dashboard_user_assignment_where($userId, $alias = 'a')
 
 $display_name = !empty($g_fullname) ? $g_fullname : (!empty($g_name) ? $g_name : 'User');
 $display_position = !empty($g_position) ? $g_position : 'User';
-<<<<<<< HEAD
 $currentUserId = (int)($s_user_id ?? 0);
+$uid = $currentUserId;
 $dashboardPendingRequestCount = 0;
 $dashboardReadyToClaimCount = 0;
 $dashboardFacilityActionCount = 0;
 $dashboardPersonalItemCount = 0;
-
-if ($currentUserId > 0 && dashboard_table_exists('requisition_items') && dashboard_column_exists('requisition_items', 'requester_user_id') && dashboard_column_exists('requisition_items', 'status')) {
+if ($uid > 0 && dashboard_table_exists('requisition_items') && dashboard_column_exists('requisition_items', 'requester_user_id') && dashboard_column_exists('requisition_items', 'status')) {
     $dashboardPendingRequestCount = dashboard_count_query("SELECT COUNT(*) AS cnt
                                                            FROM requisition_items
-                                                           WHERE requester_user_id = {$currentUserId}
+                                                           WHERE requester_user_id = {$uid}
                                                              AND status IN ('pending','reviewed')");
     $dashboardReadyToClaimCount = dashboard_count_query("SELECT COUNT(*) AS cnt
                                                          FROM requisition_items
-                                                         WHERE requester_user_id = {$currentUserId}
+                                                         WHERE requester_user_id = {$uid}
                                                            AND status = 'approved'");
 }
 
-if ($currentUserId > 0 && dashboard_table_exists('facility_records_assignments') && dashboard_column_exists('facility_records_assignments', 'status')) {
-    $assignmentWhere = dashboard_user_assignment_where($currentUserId, 'a');
+if ($uid > 0 && dashboard_table_exists('facility_records_assignments') && dashboard_column_exists('facility_records_assignments', 'status')) {
+    $assignmentWhere = dashboard_user_assignment_where($uid, 'a');
     $dashboardFacilityActionCount = dashboard_count_query("SELECT COUNT(*) AS cnt
                                                            FROM facility_records_assignments a
                                                            WHERE {$assignmentWhere}
@@ -84,7 +83,7 @@ if ($currentUserId > 0 && dashboard_table_exists('facility_records_assignments')
                                                          FROM facility_records_assignments a
                                                          WHERE {$assignmentWhere}
                                                            AND a.status IN ('ACTIVE','REPORTED','RETURN_REQUESTED')");
-=======
+}
 
 function user_dashboard_count($sql, $field = 'cnt')
 {
@@ -95,7 +94,6 @@ function user_dashboard_count($sql, $field = 'cnt')
     return 0;
 }
 
-$uid = (int)$s_user_id;
 $my_pending_reqs = user_dashboard_count("SELECT COUNT(*) AS cnt FROM requisition_items WHERE requester_user_id = {$uid} AND status = 'pending'");
 $my_reviewed_reqs = user_dashboard_count("SELECT COUNT(*) AS cnt FROM requisition_items WHERE requester_user_id = {$uid} AND status = 'reviewed'");
 $my_approved_reqs = user_dashboard_count("SELECT COUNT(*) AS cnt FROM requisition_items WHERE requester_user_id = {$uid} AND status = 'approved'");
@@ -129,15 +127,12 @@ $quick_actions = array(
         'sub' => 'View assigned items and status'
     )
 );
-if (function_exists('user_has_managing_facility_unit') && user_has_managing_facility_unit()) {
-    $quick_actions[] = array(
-        'label' => 'Facility Records',
-        'href' => BASE_URL . 'users/modules/facility_records.php',
-        'icon' => 'bi-building',
-        'sub' => 'Manage assigned facility records'
-    );
->>>>>>> f8d7b0a8c5d0fcf9494dfcd0f20f4372265daf02
-}
+$quick_actions[] = array(
+    'label' => 'Facility Records',
+    'href' => BASE_URL . 'users/modules/facility_records.php',
+    'icon' => 'bi-building',
+    'sub' => 'View assigned facilities and inventory records'
+);
 ?>
 <!DOCTYPE html>
 <html lang="en" class="h-100">
@@ -148,32 +143,6 @@ if (function_exists('user_has_managing_facility_unit') && user_has_managing_faci
     include_once DOMAIN_PATH . '/global/include_top.php';
     ?>
     <style>
-<<<<<<< HEAD
-        .section-card { border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
-        .muted { color: #6c757d; }
-        .summary-card {
-            border: 1px solid #e5e7eb;
-            border-radius: 14px;
-            padding: 1rem;
-            background: #fff;
-            height: 100%;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-        }
-        .summary-card .value {
-            font-size: 2rem;
-            font-weight: 700;
-            line-height: 1;
-        }
-        .summary-card .label {
-            font-size: 0.92rem;
-            font-weight: 600;
-            margin-top: 0.35rem;
-        }
-        .summary-card .subtext {
-            font-size: 0.8rem;
-            color: #6c757d;
-            margin-top: 0.35rem;
-=======
         :root {
             --usr-ink: #12213b;
             --usr-muted: #5f6e82;
@@ -239,10 +208,19 @@ if (function_exists('user_has_managing_facility_unit') && user_has_managing_faci
             line-height: 1.35;
             min-height: 2.7em;
         }
+        .summary-card {
+            background: #fff;
+            border: 1px solid var(--usr-border);
+            border-radius: 11px;
+            padding: 12px;
+            height: 100%;
+        }
+        .summary-card .value { font-size: 1.75rem; font-weight: 700; color: var(--usr-ink); line-height: 1.1; }
+        .summary-card .label { font-size: 0.9rem; font-weight: 600; margin-top: 0.35rem; color: var(--usr-ink); }
+        .summary-card .subtext { font-size: 0.8rem; color: var(--usr-muted); margin-top: 0.35rem; }
         .muted { color: var(--usr-muted); }
         @media (min-width: 992px) {
             .kpi-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
->>>>>>> f8d7b0a8c5d0fcf9494dfcd0f20f4372265daf02
         }
     </style>
 </head>
@@ -300,7 +278,6 @@ if (function_exists('user_has_managing_facility_unit') && user_has_managing_faci
 
         <section class="section">
             <div class="row g-3">
-<<<<<<< HEAD
                 <div class="col-12">
                     <div class="row g-3">
                         <div class="col-md-3 col-sm-6">
@@ -333,11 +310,7 @@ if (function_exists('user_has_managing_facility_unit') && user_has_managing_faci
                         </div>
                     </div>
                 </div>
-
-                <div class="col-12">
-=======
                 <div class="col-12 col-lg-4">
->>>>>>> f8d7b0a8c5d0fcf9494dfcd0f20f4372265daf02
                     <div class="card section-card">
                         <div class="card-header fw-semibold">
                             <i class="bi bi-person-badge-fill"></i>&ensp;Profile Snapshot
@@ -370,20 +343,6 @@ if (function_exists('user_has_managing_facility_unit') && user_has_managing_faci
                             <i class="bi bi-lightning-charge-fill"></i>&ensp;Quick Actions
                         </div>
                         <div class="card-body mt-3 bg-white">
-<<<<<<< HEAD
-                            <div class="row g-2">
-                                <div class="col-md-4">
-                                    <a class="btn btn-outline-primary w-100" href="<?php echo BASE_URL; ?>users/modules/request_items.php">Request Items (<?php echo $dashboardPendingRequestCount + $dashboardReadyToClaimCount; ?>)</a>
-                                </div>
-                                <div class="col-md-4">
-                                    <a class="btn btn-outline-secondary w-100" href="<?php echo BASE_URL; ?>users/modules/facility_records.php">Facility Records (<?php echo $dashboardFacilityActionCount; ?>)</a>
-                                </div>
-                                <div class="col-md-4">
-                                    <a class="btn btn-outline-secondary w-100" href="<?php echo BASE_URL; ?>users/modules/personal_records.php">Personal Inventory (<?php echo $dashboardPersonalItemCount; ?>)</a>
-                                </div>
-                            </div>
-                            <div class="small text-muted mt-2">Jump straight to requests, facility inventory records, and personal inventory tracking.</div>
-=======
                             <div class="quick-grid">
                                 <?php foreach ($quick_actions as $action) { ?>
                                 <a class="quick-card" href="<?php echo htmlspecialchars($action['href']); ?>">
@@ -395,7 +354,6 @@ if (function_exists('user_has_managing_facility_unit') && user_has_managing_faci
                                 </a>
                                 <?php } ?>
                             </div>
->>>>>>> f8d7b0a8c5d0fcf9494dfcd0f20f4372265daf02
                         </div>
                     </div>
                 </div>

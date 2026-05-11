@@ -20,6 +20,24 @@ function staff_dashboard_count($sql, $field = 'cnt')
     return 0;
 }
 
+function staff_dashboard_column_exists($table, $column)
+{
+    $table = str_replace('`', '``', (string)$table);
+    $column = addslashes((string)$column);
+    $res = call_mysql_query("SHOW COLUMNS FROM `{$table}` LIKE '{$column}'");
+    return $res && mysqli_num_rows($res) > 0;
+}
+
+function staff_dashboard_first_existing_column($table, array $candidates, $fallback = '')
+{
+    foreach ($candidates as $candidate) {
+        if (staff_dashboard_column_exists($table, $candidate)) {
+            return $candidate;
+        }
+    }
+    return $fallback;
+}
+
 $has_ast = user_has_access(array("AST", "PO"));
 $has_csm = user_has_access(array("CSM", "PO"));
 $has_any_access = user_has_access(array("PO", "CSM", "AST"));
@@ -34,7 +52,12 @@ $facility_active = staff_dashboard_count("SELECT COUNT(*) AS cnt FROM facility_r
 $facility_reported = staff_dashboard_count("SELECT COUNT(*) AS cnt FROM facility_records_assignments WHERE status='REPORTED'");
 $activity_today = staff_dashboard_count("SELECT COUNT(*) AS cnt FROM activity_log WHERE DATE(date_log) = CURDATE()");
 $ast_unavailable = staff_dashboard_count("SELECT COUNT(*) AS cnt FROM ast_inventory WHERE is_available = 0");
-$csm_critical = staff_dashboard_count("SELECT COUNT(*) AS cnt FROM csm_inventory WHERE current_unit_quantity <= unit_crit_level");
+$csmQtyColumn = staff_dashboard_first_existing_column('csm_inventory', array('current_quantity', 'current_unit_quantity', 'quantity'));
+$csmCritColumn = staff_dashboard_first_existing_column('csm_inventory', array('qty_crit_level', 'unit_crit_level'));
+$csm_critical = 0;
+if ($csmQtyColumn !== '' && $csmCritColumn !== '') {
+    $csm_critical = staff_dashboard_count("SELECT COUNT(*) AS cnt FROM csm_inventory WHERE {$csmQtyColumn} <= {$csmCritColumn}");
+}
 
 if ($has_ast) {
     $kpis[] = array('label' => 'AST Items', 'value' => staff_dashboard_count("SELECT COUNT(*) AS cnt FROM ast_inventory"), 'icon' => 'bi-box-seam');
