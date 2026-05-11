@@ -33,6 +33,30 @@ function topbar_column_exists($table, $column)
     return $res && mysqli_num_rows($res) > 0;
 }
 
+function topbar_user_assignment_where($userId, $alias = 'a')
+{
+    $userId = (int)$userId;
+    if ($userId <= 0) {
+        return '0=1';
+    }
+
+    $alias = preg_replace('/[^a-zA-Z0-9_]/', '', (string)$alias);
+    if ($alias === '') {
+        $alias = 'a';
+    }
+
+    $parts = array(
+        "{$alias}.issued_to_user_id = {$userId}",
+        "{$alias}.accountable_user_id = {$userId}",
+    );
+
+    if (topbar_table_exists('facility_records_assignments') && topbar_column_exists('facility_records_assignments', 'managed_by_user_id')) {
+        $parts[] = "{$alias}.managed_by_user_id = {$userId}";
+    }
+
+    return '(' . implode(' OR ', $parts) . ')';
+}
+
 $topbarNotifications = [];
 $topbarNotifTotal = 0;
 
@@ -87,6 +111,93 @@ if ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && user_has_access("AST"
     }
 }
 
+if ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && user_has_access("CSM")) {
+    if (topbar_table_exists('requisition_items') && topbar_column_exists('requisition_items', 'status') && topbar_column_exists('requisition_items', 'module_type')) {
+        $cntForClaimingCsm = topbar_count_query("SELECT COUNT(*) AS cnt FROM requisition_items WHERE module_type='CSM' AND status='approved'");
+        if ($cntForClaimingCsm > 0) {
+            $topbarNotifications[] = [
+                'icon_class' => 'notif-success',
+                'icon' => 'fa fa-cubes',
+                'text' => $cntForClaimingCsm . ' CSM request(s) ready for issuance',
+                'url' => BASE_URL . 'admin/modules/consumable/csm_issuance.php'
+            ];
+        }
+    }
+}
+
+if (role_has("USER") || role_has("USERS")) {
+    $currentUserId = (int)($s_user_id ?? 0);
+
+    if ($currentUserId > 0 && topbar_table_exists('requisition_items') && topbar_column_exists('requisition_items', 'requester_user_id') && topbar_column_exists('requisition_items', 'status')) {
+        $cntUserPending = topbar_count_query("SELECT COUNT(*) AS cnt
+                                              FROM requisition_items
+                                              WHERE requester_user_id = {$currentUserId}
+                                                AND status IN ('pending','reviewed')");
+        $cntUserApproved = topbar_count_query("SELECT COUNT(*) AS cnt
+                                               FROM requisition_items
+                                               WHERE requester_user_id = {$currentUserId}
+                                                 AND status = 'approved'");
+        $cntUserNotClaimed = topbar_count_query("SELECT COUNT(*) AS cnt
+                                                 FROM requisition_items
+                                                 WHERE requester_user_id = {$currentUserId}
+                                                   AND status = 'not_claimed'");
+
+        if ($cntUserPending > 0) {
+            $topbarNotifications[] = [
+                'icon_class' => 'notif-info',
+                'icon' => 'fa fa-clipboard-list',
+                'text' => $cntUserPending . ' request(s) are still under review',
+                'url' => BASE_URL . 'users/modules/request_items.php'
+            ];
+        }
+        if ($cntUserApproved > 0) {
+            $topbarNotifications[] = [
+                'icon_class' => 'notif-success',
+                'icon' => 'fa fa-box-open',
+                'text' => $cntUserApproved . ' request(s) are ready for claiming',
+                'url' => BASE_URL . 'users/modules/request_items.php'
+            ];
+        }
+        if ($cntUserNotClaimed > 0) {
+            $topbarNotifications[] = [
+                'icon_class' => 'notif-warning',
+                'icon' => 'fa fa-clock',
+                'text' => $cntUserNotClaimed . ' request(s) were marked not claimed',
+                'url' => BASE_URL . 'users/modules/request_items.php'
+            ];
+        }
+    }
+
+    if ($currentUserId > 0 && topbar_table_exists('facility_records_assignments') && topbar_column_exists('facility_records_assignments', 'status')) {
+        $assignmentWhere = topbar_user_assignment_where($currentUserId, 'a');
+        $cntUserReported = topbar_count_query("SELECT COUNT(*) AS cnt
+                                               FROM facility_records_assignments a
+                                               WHERE {$assignmentWhere}
+                                                 AND a.status = 'REPORTED'");
+        $cntUserReturnRequested = topbar_count_query("SELECT COUNT(*) AS cnt
+                                                      FROM facility_records_assignments a
+                                                      WHERE {$assignmentWhere}
+                                                        AND a.status = 'RETURN_REQUESTED'");
+
+        if ($cntUserReported > 0) {
+            $topbarNotifications[] = [
+                'icon_class' => 'notif-danger',
+                'icon' => 'fa fa-tools',
+                'text' => $cntUserReported . ' item(s) are flagged as unserviceable',
+                'url' => BASE_URL . 'users/modules/facility_records.php'
+            ];
+        }
+        if ($cntUserReturnRequested > 0) {
+            $topbarNotifications[] = [
+                'icon_class' => 'notif-warning',
+                'icon' => 'fa fa-undo',
+                'text' => $cntUserReturnRequested . ' return request(s) are in progress',
+                'url' => BASE_URL . 'users/modules/facility_records.php'
+            ];
+        }
+    }
+}
+
 $topbarNotifTotal = count($topbarNotifications);
 
 $g_photo = isset($g_photo) && $g_photo !== '' ? $g_photo : 'profile_img.png';
@@ -123,6 +234,7 @@ if (role_has("ADMIN")) {
     topbar_add_search_item($topbarSearchItems, 'Consumable Categories', BASE_URL . 'admin/modules/consumable/csm_category.php', 'csm category item category', 'Consumable');
     topbar_add_search_item($topbarSearchItems, 'Add Consumable Item', BASE_URL . 'admin/modules/consumable/csm_available_items.php', 'csm add new item', 'Consumable');
     topbar_add_search_item($topbarSearchItems, 'CSM QR Code', BASE_URL . 'admin/modules/consumable/csm_qrcode.php', 'csm qr code', 'Consumable');
+    topbar_add_search_item($topbarSearchItems, 'CSM Issuance', BASE_URL . 'admin/modules/consumable/csm_issuance.php', 'csm issuance release approved request', 'Consumable');
     topbar_add_search_item($topbarSearchItems, 'CSM Physical Checking', BASE_URL . 'admin/modules/consumable/csm_physical_checking.php', 'csm physical checking audit', 'Consumable');
     topbar_add_search_item($topbarSearchItems, 'Non-Consumable Inventory', BASE_URL . 'admin/modules/nonconsumable/ast_inventory.php', 'ast property inventory assets', 'Non-Consumable');
     topbar_add_search_item($topbarSearchItems, 'Non-Consumable Categories', BASE_URL . 'admin/modules/nonconsumable/ast_category.php', 'ast category item category', 'Non-Consumable');
@@ -143,6 +255,7 @@ if ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && (user_has_access(arra
         topbar_add_search_item($topbarSearchItems, 'Consumable Categories', BASE_URL . 'admin/modules/consumable/csm_category.php', 'csm category item category', 'Staff');
         topbar_add_search_item($topbarSearchItems, 'Add Consumable Item', BASE_URL . 'admin/modules/consumable/csm_available_items.php', 'csm add new item', 'Staff');
         topbar_add_search_item($topbarSearchItems, 'CSM QR Code', BASE_URL . 'admin/modules/consumable/csm_qrcode.php', 'csm qr code', 'Staff');
+        topbar_add_search_item($topbarSearchItems, 'CSM Issuance', BASE_URL . 'admin/modules/consumable/csm_issuance.php', 'csm issuance release approved request', 'Staff');
         topbar_add_search_item($topbarSearchItems, 'CSM Physical Checking', BASE_URL . 'admin/modules/consumable/csm_physical_checking.php', 'csm physical checking', 'Staff');
         topbar_add_search_item($topbarSearchItems, 'Activity Logs', BASE_URL . 'admin/modules/logs/activity_logs.php', 'activity logs csm staff audit history', 'Staff');
     }

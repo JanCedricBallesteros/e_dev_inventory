@@ -44,6 +44,7 @@ if ($has_ast) {
 }
 if ($has_csm) {
     $quick_actions[] = array('label' => 'CSM Inventory', 'href' => BASE_URL . 'admin/modules/consumable/csm_manage_inventory.php', 'icon' => 'bi-box');
+    $quick_actions[] = array('label' => 'CSM Issuance', 'href' => BASE_URL . 'admin/modules/consumable/csm_issuance.php', 'icon' => 'bi-truck');
 }
 if ($has_any_access) {
     $quick_actions[] = array('label' => 'Requisition', 'href' => BASE_URL . 'admin/modules/transactions/requisition.php?type=AST', 'icon' => 'bi-list-check');

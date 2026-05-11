@@ -58,6 +58,14 @@ $isAdmin = role_has("ADMIN");
             background: #f8f9fa;
             cursor: zoom-in;
         }
+        .table-thumb {
+            width: 48px;
+            height: 48px;
+            border-radius: 10px;
+            object-fit: cover;
+            border: 1px solid #e5e7eb;
+            background: #f8f9fa;
+        }
         .info-label {
             font-size: 12px;
             color: #6c757d;
@@ -105,6 +113,10 @@ $isAdmin = role_has("ADMIN");
         .table-toolbar .form-control,
         .table-toolbar .form-select {
             height: 38px;
+        }
+        .hint-text {
+            font-size: 12px;
+            color: #6c757d;
         }
 
         /* Camera preview copied from csm_manage_inventory.php */
@@ -218,7 +230,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 <main id="main" class="main">
     <div class="pagetitle">
         <h1 class="h4 fw-semibold mb-1">Physical Checking (CSM)</h1>
-        <p class="text-muted small mb-0">Create stock-check sessions and record physical counts for consumable inventory items.</p>
+        <p class="text-muted small mb-0">Configure a date and time window, then record and review consumable physical-check counts by series code.</p>
     </div>
 
     <section class="section">
@@ -232,20 +244,29 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                     </div>
                     <div class="card-body mt-3 bg-white">
                         <form id="sessionForm" class="row g-2 align-items-end">
-                            <div class="col-md-3">
+                            <div class="col-md-2">
                                 <div class="filter-label">Audit Name (optional)</div>
                                 <input type="text" class="form-control" name="audit_name" placeholder="e.g., March 2026 stock check">
                             </div>
-                            <div class="col-md-7">
+                            <div class="col-md-4">
                                 <div class="filter-label">Date Range</div>
                                 <input type="text" class="form-control" id="sessionDateRange" placeholder="YYYY-MM-DD - YYYY-MM-DD" autocomplete="off">
                                 <input type="hidden" name="start_date" id="sessionStartDate">
                                 <input type="hidden" name="end_date" id="sessionEndDate">
                             </div>
                             <div class="col-md-2 d-grid">
+                                <div class="filter-label">Start Time</div>
+                                <input type="time" class="form-control" name="start_time" id="sessionStartTime" value="08:00">
+                            </div>
+                            <div class="col-md-2 d-grid">
+                                <div class="filter-label">End Time</div>
+                                <input type="time" class="form-control" name="end_time" id="sessionEndTime" value="17:00">
+                            </div>
+                            <div class="col-md-2 d-grid">
                                 <button type="submit" class="btn btn-primary">Create</button>
                             </div>
                         </form>
+                        <div class="hint-text mt-2">Only one active CSM checking window can run at a time.</div>
                         <div id="sessionMsg" class="mt-2"></div>
                         <div class="mt-3" id="sessionsTable"></div>
                     </div>
@@ -341,13 +362,13 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 
                                     <div class="col-md-3">
                                         <div class="mini-stat">
-                                            <div class="info-label">Original Qty</div>
+                                            <div class="info-label">Total Qty</div>
                                             <div class="info-value" id="infoUnitQty">-</div>
                                         </div>
                                     </div>
                                     <div class="col-md-3">
                                         <div class="mini-stat">
-                                            <div class="info-label">Current Qty</div>
+                                            <div class="info-label">System On Hand</div>
                                             <div class="info-value" id="infoCurrentQty">-</div>
                                         </div>
                                     </div>
@@ -371,8 +392,9 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
 
                         <div class="row g-2">
                             <div class="col-md-3">
-                                <div class="filter-label">Counted Quantity</div>
+                                <div class="filter-label">On Hand Quantity (physical count)</div>
                                 <input type="number" min="0" class="form-control" id="countedQuantity" value="0">
+                                <div class="hint-text mt-1" id="countedUnitHint">Unit: -</div>
                             </div>
 
                             <div class="col-md-3">
@@ -419,7 +441,7 @@ include_once DOMAIN_PATH . '/global/sidebar.php';
                         <span><i class="bi bi-table"></i>&ensp;Checked Items</span>
                         <div class="table-toolbar">
                             <select class="form-select form-select-sm" id="filterSession" style="min-width: 180px;"></select>
-                            <input type="text" class="form-control form-control-sm" id="checkSearch" placeholder="Search code, description, category, location" style="max-width:280px;">
+                            <input type="text" class="form-control form-control-sm" id="checkSearch" placeholder="Search series, code, description, remarks" style="max-width:300px;">
                             <button class="btn btn-outline-light btn-sm" id="exportChecksCsv">CSV</button>
                             <button class="btn btn-outline-light btn-sm" id="exportChecksXlsx">XLSX</button>
                             <button class="btn btn-outline-light btn-sm" id="exportChecksJson">JSON</button>
@@ -585,6 +607,44 @@ function syncSessionDates() {
     return range;
 }
 
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function formatQtyUnitText(value, unit) {
+    const num = Number(value);
+    const displayValue = Number.isFinite(num) ? String(num) : String(value ?? '-');
+    const unitText = String(unit || '').trim();
+    return unitText ? `${displayValue} ${unitText}` : displayValue;
+}
+
+function qtyUnitBadge(value, unit) {
+    return `<span class="badge bg-light text-dark border">${escapeHtml(formatQtyUnitText(value, unit))}</span>`;
+}
+
+function getSessionWindowLabel(session) {
+    if (!session) return '';
+    const label = String(session.window_label || '').trim();
+    if (label) return label;
+    const start = String(session.start_display || session.start_date || '').trim();
+    const end = String(session.end_display || session.end_date || '').trim();
+    if (start && end && start !== end) return `${start} to ${end}`;
+    return start || end || '';
+}
+
+function reportImageCell(row) {
+    const thumb = row.item_image_thumb_url || '';
+    if (!thumb) {
+        return '<span class="text-muted small">No image</span>';
+    }
+    return `<img src="${escapeHtml(thumb)}" alt="Category image" class="table-thumb">`;
+}
+
 function peso(value) {
     const num = Number(value || 0);
     return new Intl.NumberFormat('en-PH', {
@@ -601,16 +661,19 @@ function stockBadge(label) {
     return `<span class="status-pill pill-available">${label || 'Available'}</span>`;
 }
 
-function varianceBadge(value) {
+function varianceBadge(value, unit = '') {
     const n = Number(value || 0);
     let cls = 'bg-secondary';
     if (n > 0) cls = 'bg-primary';
     if (n < 0) cls = 'bg-danger';
     if (n === 0) cls = 'bg-success';
-    return `<span class="badge ${cls}">${n}</span>`;
+    return `<span class="badge ${cls}">${escapeHtml(formatQtyUnitText(n, unit))}</span>`;
 }
 
 function loadSessions() {
+    const selectedActiveSession = $('#activeSession').val() || '';
+    const selectedFilterSession = $('#filterSession').val() || '';
+
     $.post(PROCESS_URL, { action: 'list_sessions' }, function(res) {
         if (!res.success) return;
 
@@ -622,22 +685,22 @@ function loadSessions() {
         const options = ['<option value="">Select Active Session</option>'];
 
         active.forEach(s => {
-            const label = `${s.series_code} (${s.start_date} to ${s.end_date})`;
+            const label = `${s.series_code} (${getSessionWindowLabel(s) || 'No window'})`;
             options.push(`<option value="${s.id}">${label}</option>`);
         });
 
         $('#activeSession').html(options.join(''));
         if ($.fn.select2) {
-            $('#activeSession').val('').trigger('change');
+            $('#activeSession').val(selectedActiveSession).trigger('change');
         }
 
         const filterOpts = ['<option value="">All Sessions</option>'];
         (res.data || []).forEach(s => {
-            filterOpts.push(`<option value="${s.id}">${s.series_code}</option>`);
+            filterOpts.push(`<option value="${s.id}">${s.series_code} ${getSessionWindowLabel(s) ? '- ' + getSessionWindowLabel(s) : ''}</option>`);
         });
         $('#filterSession').html(filterOpts.join(''));
         if ($.fn.select2) {
-            $('#filterSession').val('').trigger('change');
+            $('#filterSession').val(selectedFilterSession).trigger('change');
         }
     }, 'json');
 }
@@ -662,8 +725,8 @@ function initSessionsTable() {
                 }
             },
             { title: 'Audit Name', field: 'audit_name', widthGrow: 2 },
-            { title: 'Start', field: 'start_date', width: 120 },
-            { title: 'End', field: 'end_date', width: 120 },
+            { title: 'Start', field: 'start_display', width: 155 },
+            { title: 'End', field: 'end_display', width: 155 },
             { title: 'Status', field: 'status', width: 110 },
             { title: 'Created By', field: 'created_by_name', width: 170 },
             {
@@ -690,7 +753,7 @@ function initChecksTable() {
         ajaxURL: PROCESS_URL,
         ajaxParams: { action: 'list_checks' },
         ajaxConfig: 'POST',
-        layout: 'fitColumns',
+        layout: 'fitDataStretch',
         responsiveLayout: 'collapse',
         placeholder: 'No checked items found',
         pagination: 'local',
@@ -701,34 +764,62 @@ function initChecksTable() {
             return response.data || [];
         },
         columns: [
-            { title: 'Series', field: 'series_code', width: 145 },
-            { title: 'Item Code', field: 'inventory_system_item_code', width: 165 },
-            { title: 'Category Code', field: 'item_category_code', width: 130 },
-            { title: 'Item Description', field: 'item_description', widthGrow: 2 },
-            { title: 'System Qty', field: 'system_current_quantity', width: 110, hozAlign: 'center' },
-            { title: 'Counted Qty', field: 'counted_quantity', width: 110, hozAlign: 'center' },
+            { title: 'Series Code', field: 'series_code', width: 155 },
             {
-                title: 'Variance',
-                field: 'variance_quantity',
-                width: 100,
+                title: 'Category Image',
+                field: 'item_image_thumb_url',
+                width: 110,
+                hozAlign: 'center',
+                headerSort: false,
+                formatter: function(cell) {
+                    return reportImageCell(cell.getRow().getData() || {});
+                }
+            },
+            { title: 'Item Code', field: 'inventory_system_item_code', width: 170 },
+            { title: 'Item Description', field: 'item_description', minWidth: 240, widthGrow: 2 },
+            {
+                title: 'On Hand Qty / Unit',
+                field: 'on_hand_quantity',
+                width: 155,
                 hozAlign: 'center',
                 formatter: function(cell) {
-                    return varianceBadge(cell.getValue());
+                    const row = cell.getRow().getData() || {};
+                    return qtyUnitBadge(row.on_hand_quantity, row.item_unit);
                 }
             },
             {
-                title: 'Status',
-                field: 'status_at_check',
-                width: 130,
+                title: 'Issued Qty / Unit',
+                field: 'issued_quantity',
+                width: 150,
+                hozAlign: 'center',
                 formatter: function(cell) {
-                    return stockBadge(cell.getValue());
+                    const row = cell.getRow().getData() || {};
+                    return qtyUnitBadge(row.issued_quantity, row.item_unit);
                 }
             },
-            { title: 'Condition', field: 'condition', width: 110 },
-            { title: 'Location', field: 'storage_location', width: 150 },
-            { title: 'Checked At', field: 'checked_at', width: 160 },
-            { title: 'Checked By', field: 'checked_by_name', width: 150 },
-            { title: 'Remarks', field: 'remarks', width: 200 }
+            {
+                title: 'Total Qty / Unit',
+                field: 'total_quantity',
+                width: 145,
+                hozAlign: 'center',
+                formatter: function(cell) {
+                    const row = cell.getRow().getData() || {};
+                    return qtyUnitBadge(row.total_quantity, row.item_unit);
+                }
+            },
+            {
+                title: 'Discrepancy Qty / Unit',
+                field: 'discrepancy_quantity',
+                width: 175,
+                hozAlign: 'center',
+                formatter: function(cell) {
+                    const row = cell.getRow().getData() || {};
+                    return varianceBadge(row.discrepancy_quantity, row.item_unit);
+                }
+            },
+            { title: 'Remarks', field: 'remarks', minWidth: 220, widthGrow: 1.5 },
+            { title: 'Date Check', field: 'date_check', width: 170 },
+            { title: 'Checked By', field: 'checked_by_name', width: 155 }
         ]
     });
     checksTable.on('tableBuilt', function() {
@@ -761,12 +852,13 @@ function loadItem(code) {
         $('#infoLastUpdated').text(currentItem.last_updated || currentItem.updated_at || '-');
         $('#infoItemCost').text(typeof currentItem.cost_value !== 'undefined' ? peso(currentItem.cost_value) : '-');
         $('#infoSourceOfFunds').text(currentItem.source_of_funds || '-');
-        $('#infoUnitQty').text(currentItem.quantity ?? '-');
-        $('#infoCurrentQty').text(currentItem.current_quantity ?? '-');
-        $('#infoCritLevel').text(currentItem.qty_crit_level ?? '-');
+        $('#infoUnitQty').text(formatQtyUnitText(currentItem.quantity ?? '-', currentItem.unit || ''));
+        $('#infoCurrentQty').text(formatQtyUnitText(currentItem.current_quantity ?? '-', currentItem.unit || ''));
+        $('#infoCritLevel').text(formatQtyUnitText(currentItem.qty_crit_level ?? '-', currentItem.unit || ''));
         $('#infoStockStatus').html(stockBadge(currentItem.system_stock_label || 'Available'));
 
         $('#countedQuantity').val(Number(currentItem.current_quantity || 0));
+        $('#countedUnitHint').text('Unit: ' + (currentItem.unit || '-'));
         $('#statusAtCheck').val(currentItem.system_stock_label || '');
         $('#condition').val('');
         $('#storageLocation').val('');
@@ -798,6 +890,7 @@ function resetItemUI() {
     $('#infoCurrentQty').text('-');
     $('#infoCritLevel').text('-');
     $('#infoStockStatus').text('-');
+    $('#countedUnitHint').text('Unit: -');
 
     $('#countedQuantity').val(0);
     $('#condition').val('');
@@ -813,6 +906,8 @@ $(document).ready(function() {
     initSessionsTable();
     initChecksTable();
     loadSessions();
+    $('#sessionStartTime').val($('#sessionStartTime').val() || '08:00');
+    $('#sessionEndTime').val($('#sessionEndTime').val() || '17:00');
     if ($.fn.select2) {
         $('#activeSession').select2({ placeholder: 'Select Active Session', allowClear: true, width: '100%' });
         $('#filterSession').select2({ placeholder: 'All Sessions', allowClear: true, width: '200px' });
@@ -872,12 +967,20 @@ $(document).ready(function() {
         const range = syncSessionDates();
         const start = range.start;
         const end = range.end;
+        const startTime = ($('#sessionStartTime').val() || '').trim();
+        const endTime = ($('#sessionEndTime').val() || '').trim();
         if (!start || !end) {
             showMessage('#sessionMsg', 'danger', 'Please select a valid date range.');
             return;
         }
-        if (start > end) {
-            showMessage('#sessionMsg', 'danger', 'End date must be after start date.');
+        if (!startTime || !endTime) {
+            showMessage('#sessionMsg', 'danger', 'Please provide both start and end times.');
+            return;
+        }
+        const startStamp = new Date(`${start}T${startTime}:00`).getTime();
+        const endStamp = new Date(`${end}T${endTime}:00`).getTime();
+        if (!Number.isFinite(startStamp) || !Number.isFinite(endStamp) || endStamp < startStamp) {
+            showMessage('#sessionMsg', 'danger', 'End date/time must be after start date/time.');
             return;
         }
 
@@ -889,6 +992,8 @@ $(document).ready(function() {
                 $('#sessionDateRange').val('');
                 $('#sessionStartDate').val('');
                 $('#sessionEndDate').val('');
+                $('#sessionStartTime').val('08:00');
+                $('#sessionEndTime').val('17:00');
                 loadSessions();
             } else {
                 showMessage('#sessionMsg', 'danger', res.message || 'Failed to create session.');

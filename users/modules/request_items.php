@@ -103,6 +103,7 @@ if (!(role_has("USER") || role_has("USERS"))) {
                         <div class="ms-auto d-flex align-items-center gap-2">
                             <span class="small text-muted" id="selectedItemsCount">No item selected.</span>
                             <button class="btn btn-primary" id="requestSelectedBtn" disabled>Batch Request (AST only)</button>
+                            <button class="btn btn-outline-primary" id="requestWishItemBtn" type="button">Request Wish Item</button>
                             <button class="btn btn-outline-secondary" id="clearSelectedItems">Clear Selected</button>
                         </div>
                     </div>
@@ -184,10 +185,26 @@ if (!(role_has("USER") || role_has("USERS"))) {
                         <div id="reqBatchItemsTable" class="border rounded"></div>
                         <div class="small text-muted mt-2">Set quantity per item in the table.</div>
                     </div>
+                    <div id="reqWishInfo" class="d-none">
+                        <div class="row g-2">
+                            <div class="col-12 col-md-4">
+                                <label class="form-label fw-semibold">Preferred Item Code</label>
+                                <input type="text" class="form-control" id="reqWishItemCode" placeholder="Optional">
+                            </div>
+                            <div class="col-12 col-md-8">
+                                <label class="form-label fw-semibold">Wish Item Description</label>
+                                <input type="text" class="form-control" id="reqWishItemDesc" placeholder="Describe the consumable item you need">
+                            </div>
+                        </div>
+                    </div>
                     <div class="mb-3" id="reqQtyGroup">
                         <label class="form-label fw-semibold" id="reqQtyLabel">Quantity to request</label>
                         <input type="number" class="form-control" id="reqQtyInput" min="1" value="1">
                         <div class="small text-muted mt-1" id="reqQtyHelp">Must be exactly 1 for AST requests.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Purpose</label>
+                        <textarea id="reqReasonInput" class="form-control" rows="3" placeholder="State the purpose of this request."></textarea>
                     </div>
                     <div class="row g-2">
                         <div class="col-12">
@@ -291,10 +308,20 @@ function updateBatchButtonState() {
     $btn.prop('disabled', selectedCount === 0).text('Request Selected (' + selectedCount + ')');
 }
 
+function updateWishButtonState() {
+    const $btn = $('#requestWishItemBtn');
+    if (currentType === 'CSM') {
+        $btn.prop('disabled', false).removeClass('d-none').text('Request Wish Item');
+        return;
+    }
+    $btn.prop('disabled', true).addClass('d-none');
+}
+
 function renderSelectedItemsReview() {
     const selectedCount = getSelectedCodes(currentType).length;
     $('#selectedItemsCount').text(selectedCount > 0 ? (selectedCount + ' item(s) selected in ' + currentType) : 'No item selected.');
     updateBatchButtonState();
+    updateWishButtonState();
 }
 
 function restoreSelectionForCurrentType() {
@@ -408,7 +435,7 @@ function removeBatchItemByCode(code) {
 }
 
 function setRequestModalMode(mode, batchItems) {
-    reqMode = mode === 'batch' ? 'batch' : 'single';
+    reqMode = (mode === 'batch' || mode === 'wish') ? mode : 'single';
     if (reqMode === 'batch') {
         reqSelected = null;
         reqBatchItems = (Array.isArray(batchItems) ? batchItems : []).map(function(item) {
@@ -420,6 +447,7 @@ function setRequestModalMode(mode, batchItems) {
         $('#reqModalTitle').html('<i class="bi bi-bag-plus"></i>&ensp;Request items');
         $('#reqSingleInfo').addClass('d-none');
         $('#reqBatchInfo').removeClass('d-none');
+        $('#reqWishInfo').addClass('d-none');
         $('#reqQtyGroup').addClass('d-none');
         $('#reqBatchCount').text(reqBatchItems.length);
         if (!reqBatchTable) {
@@ -496,10 +524,25 @@ function setRequestModalMode(mode, batchItems) {
         $('#btnSubmitRequest').prop('disabled', reqBatchItems.length === 0).text('Submit Batch Request');
         return;
     }
+    if (reqMode === 'wish') {
+        reqSelected = null;
+        reqBatchItems = [];
+        $('#reqModalTitle').html('<i class="bi bi-stars"></i>&ensp;Request Wish Item');
+        $('#reqSingleInfo').addClass('d-none');
+        $('#reqBatchInfo').addClass('d-none');
+        $('#reqWishInfo').removeClass('d-none');
+        $('#reqQtyGroup').removeClass('d-none');
+        $('#reqQtyLabel').text('Quantity to request');
+        $('#reqQtyHelp').text('Describe the consumable item and state your purpose.');
+        $('#reqQtyInput').val(1).prop('readonly', false);
+        $('#btnSubmitRequest').prop('disabled', false).text('Submit Wish Item Request');
+        return;
+    }
     reqBatchItems = [];
     $('#reqModalTitle').html('<i class="bi bi-bag-plus"></i>&ensp;Request Item');
     $('#reqSingleInfo').removeClass('d-none');
     $('#reqBatchInfo').addClass('d-none');
+    $('#reqWishInfo').addClass('d-none');
     $('#reqQtyGroup').removeClass('d-none');
     $('#btnSubmitRequest').prop('disabled', false).text('Submit Request');
     syncRequestQtyUI();
@@ -516,6 +559,44 @@ function openBatchRequestModal() {
         return;
     }
     setRequestModalMode('batch', items);
+    $('#reqReasonInput').val('');
+    $('#reqModalMsg').addClass('d-none').text('');
+    $('#reqFacilityUnit').val(null).trigger('change');
+    loadRequestFacilityUnits();
+    $('#requestModal').modal('show');
+}
+
+function openWishRequestModal() {
+    if (currentType !== 'CSM') {
+        showReqMessage('Wish item requests are available under the CSM tab only.');
+        return;
+    }
+    setRequestModalMode('wish', []);
+    $('#reqWishItemCode').val('');
+    $('#reqWishItemDesc').val('');
+    $('#reqReasonInput').val('');
+    $('#reqModalMsg').addClass('d-none').text('');
+    $('#reqFacilityUnit').val(null).trigger('change');
+    loadRequestFacilityUnits();
+    $('#requestModal').modal('show');
+}
+
+function openSingleRequestModal(item) {
+    if (!item || !item.item_code) {
+        showReqMessage('Select a valid item first.');
+        return;
+    }
+    reqSelected = Object.assign({}, item);
+    reqBatchItems = [];
+    setRequestModalMode('single', []);
+    $('#reqItemCode').text(reqSelected.item_code || '-');
+    $('#reqItemDesc').text(reqSelected.item_description || '-');
+    $('#reqItemAvail').text(currentType === 'CSM' ? (reqSelected.available_qty || 0) : 1);
+    $('#reqItemUnit').text(reqSelected.unit || '');
+    $('#reqQtyInput').val(currentType === 'AST' ? 1 : 1);
+    $('#reqReasonInput').val('');
+    $('#reqWishItemCode').val('');
+    $('#reqWishItemDesc').val('');
     $('#reqModalMsg').addClass('d-none').text('');
     $('#reqFacilityUnit').val(null).trigger('change');
     loadRequestFacilityUnits();
@@ -838,7 +919,21 @@ function syncRequestQtyUI() {
                 const qty = parseInt(row.available_qty, 10);
                 const safeQty = Number.isFinite(qty) ? qty : 0;
                 return unit ? (safeQty + ' / ' + escapeHtml(unit)) : String(safeQty);
-            }}
+            }},
+            {
+                title: 'Action',
+                field: 'item_code',
+                width: 110,
+                hozAlign: 'center',
+                headerSort: false,
+                formatter: function() {
+                    return '<button type="button" class="btn btn-primary btn-sm">Request</button>';
+                },
+                cellClick: function(e, cell) {
+                    const row = cell.getRow().getData() || {};
+                    openSingleRequestModal(row);
+                }
+            }
         ]
     });
 
@@ -995,6 +1090,10 @@ $(document).ready(function() {
         openBatchRequestModal();
     });
 
+    $('#requestWishItemBtn').on('click', function() {
+        openWishRequestModal();
+    });
+
     $('#clearSelectedItems').on('click', function() {
         selectedItemCodesByType[currentType] = {};
         suppressSelectionSync = true;
@@ -1049,13 +1148,50 @@ $(document).ready(function() {
         const unitRaw = $picked.attr('data-unit-id');
         const facilityId = facilityRaw != null ? String(facilityRaw) : '';
         const unitId = unitRaw != null ? String(unitRaw) : '';
+        const reason = ($('#reqReasonInput').val() || '').trim();
         if (!facilityId || !unitId) {
             $('#reqModalMsg').removeClass('d-none').text('Facility / Unit is required.');
+            return;
+        }
+        if (!reason) {
+            $('#reqModalMsg').removeClass('d-none').text('Purpose is required.');
             return;
         }
         const qtyVal = parseInt($('#reqQtyInput').val(), 10);
         if (isNaN(qtyVal) || qtyVal <= 0) {
             $('#reqModalMsg').removeClass('d-none').text('Invalid quantity.');
+            return;
+        }
+
+        if (reqMode === 'wish') {
+            const wishDescription = ($('#reqWishItemDesc').val() || '').trim();
+            const preferredItemCode = ($('#reqWishItemCode').val() || '').trim();
+            if (!wishDescription) {
+                $('#reqModalMsg').removeClass('d-none').text('Wish item description is required.');
+                return;
+            }
+            $.post(PROCESS_URL, {
+                action: 'create_wish_request',
+                type: currentType,
+                item_description: wishDescription,
+                preferred_item_code: preferredItemCode,
+                qty_requested: qtyVal,
+                reason: reason,
+                facility_id: facilityId,
+                unit_id: unitId
+            }, function(res) {
+                if (res && res.success) {
+                    $('#requestModal').modal('hide');
+                    showReqMessage(res.message || 'Wish item request submitted.');
+                    loadItems();
+                    setTimeout(loadMyReqs, 400);
+                } else {
+                    $('#reqModalMsg').removeClass('d-none').text((res && res.message) || 'Wish item request failed.');
+                }
+            }, 'json').fail(function(xhr) {
+                const msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Server error while submitting wish item request.';
+                $('#reqModalMsg').removeClass('d-none').text(msg);
+            });
             return;
         }
 
@@ -1082,6 +1218,7 @@ $(document).ready(function() {
                 type: 'AST',
                 facility_id: facilityId,
                 unit_id: unitId,
+                reason: reason,
                 items: JSON.stringify(payloadItems)
             }, function(res) {
                 if (res && res.success) {
@@ -1114,10 +1251,18 @@ $(document).ready(function() {
             $('#reqModalMsg').removeClass('d-none').text('Quantity exceeds available.');
             return;
         }
-        $.post(PROCESS_URL, { action: 'create_request', type: currentType, item_code: reqSelected.item_code, qty_requested: qtyVal, facility_id: facilityId, unit_id: unitId }, function(res) {
+        $.post(PROCESS_URL, {
+            action: 'create_request',
+            type: currentType,
+            item_code: reqSelected.item_code,
+            qty_requested: qtyVal,
+            reason: reason,
+            facility_id: facilityId,
+            unit_id: unitId
+        }, function(res) {
             if (res && res.success) {
                 $('#requestModal').modal('hide');
-                showReqMessage('');
+                showReqMessage(res.message || 'Request submitted.');
                 loadItems();
                 setTimeout(loadMyReqs, 400);
             } else {

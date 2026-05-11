@@ -11,7 +11,6 @@ if (!(role_has("USER") || role_has("USERS"))) {
     exit();
 }
 
-$has_managing_facility_unit = user_has_managing_facility_unit($s_user_id ?? 0);
 ?>
 <!DOCTYPE html>
 <html lang="en" class="h-100">
@@ -61,23 +60,19 @@ $has_managing_facility_unit = user_has_managing_facility_unit($s_user_id ?? 0);
     <main id="main" class="main">
         <div class="pagetitle">
             <h1 class="h4 fw-semibold mb-1">Facility Inventory Records</h1>
-            <p class="text-muted small mb-0">View items inside units you manage.</p>
+            <p class="text-muted small mb-0">View assigned facilities, managed units, and personal-use inventory records.</p>
         </div>
 
         <section class="section">
             <div id="pageMsg" class="alert alert-danger d-none"></div>
-            <?php if (!$has_managing_facility_unit) { ?>
-                <div class="alert alert-warning">You have no managing facility units.</div>
-            <?php } ?>
-            <?php if ($has_managing_facility_unit) { ?>
             <div class="row g-3">
                 <div class="col-12 col-lg-4">
                     <div class="card section-card h-100">
                         <div class="card-header bg-eclearance text-white fw-semibold">
-                            <i class="bi bi-door-open"></i>&ensp;Units I Manage
+                            <i class="bi bi-building"></i>&ensp;Assigned Facilities & Units
                         </div>
                         <div class="card-body bg-white mt-3" style="max-height: 600px; overflow-y: auto;">
-                            <div id="unitsEmpty" class="alert alert-info d-none">No assigned units yet.</div>
+                            <div id="unitsEmpty" class="alert alert-info d-none">No assigned facilities or units yet.</div>
                             <div id="unitList"></div>
                         </div>
                     </div>
@@ -102,7 +97,6 @@ $has_managing_facility_unit = user_has_managing_facility_unit($s_user_id ?? 0);
                     </div>
                 </div>
             </div>
-            <?php } ?>
         </section>
     </main>
 
@@ -127,7 +121,6 @@ $has_managing_facility_unit = user_has_managing_facility_unit($s_user_id ?? 0);
 <script src="<?= BASE_URL ?>assets/js/tabulator.min.js"></script>
 <script>
 const PROCESS_URL = <?php echo json_encode(BASE_URL . 'users/modules/facility_records_process.php'); ?>;
-const HAS_MANAGING_FACILITY_UNIT = <?php echo $has_managing_facility_unit ? 'true' : 'false'; ?>;
 let managedUnits = [];
 let selectedUnit = null;
 let selectedFacility = null;
@@ -468,10 +461,6 @@ function updateStatus(assignmentId, status, label) {
 }
 
 $(document).ready(function() {
-    if (!HAS_MANAGING_FACILITY_UNIT) {
-        return;
-    }
-
     initAssignmentTable();
     loadManagedUnits();
 

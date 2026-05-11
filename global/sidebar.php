@@ -101,6 +101,29 @@ function sidebar_action_badge_total($a = 0, $b = 0, $c = 0)
     return ((int)$a + (int)$b + (int)$c);
 }
 
+function sidebar_user_assignment_where($userId, $alias = 'a')
+{
+    $uid = (int)$userId;
+    if ($uid <= 0) {
+        return '0=1';
+    }
+
+    $safeAlias = preg_replace('/[^a-zA-Z0-9_]/', '', (string)$alias);
+    if ($safeAlias === '') {
+        $safeAlias = 'a';
+    }
+
+    $parts = array(
+        "{$safeAlias}.issued_to_user_id = {$uid}",
+        "{$safeAlias}.accountable_user_id = {$uid}",
+    );
+    if (sidebar_table_exists('facility_records_assignments') && sidebar_column_exists('facility_records_assignments', 'managed_by_user_id')) {
+        $parts[] = "{$safeAlias}.managed_by_user_id = {$uid}";
+    }
+
+    return '(' . implode(' OR ', $parts) . ')';
+}
+
 function sidebar_admin_staff_without_access_total()
 {
     if (!sidebar_table_exists('users') || !sidebar_table_exists('user_access')) {
@@ -131,6 +154,8 @@ function sidebar_admin_staff_without_access_total()
 $adminCsmReqPending = 0;
 $adminAstReqPending = 0;
 $adminReqPendingTotal = 0;
+$adminCsmReqForClaiming = 0;
+$adminAstReqForClaiming = 0;
 $adminReqForClaimingTotal = 0;
 $adminReqNotClaimedTotal = 0;
 $adminReturnRequested = 0;
@@ -145,6 +170,9 @@ $adminCsmMainBadge = 0;
 $adminAstMainBadge = 0;
 $adminTxMainBadge = 0;
 $superAdminStaffNoAccessTotal = 0;
+$userReqActionCount = 0;
+$userFacilityActionCount = 0;
+$userPersonalActiveCount = 0;
 if ($sidebarShouldShowBadges) {
     if (sidebar_table_exists('requisition_items') && sidebar_column_exists('requisition_items', 'module_type') && sidebar_column_exists('requisition_items', 'status')) {
         $adminCsmReqPending = sidebar_count_query("SELECT COUNT(*) AS cnt
@@ -156,6 +184,14 @@ if ($sidebarShouldShowBadges) {
                                                    WHERE module_type = 'AST'
                                                      AND status IN ('pending', 'reviewed')");
         $adminReqPendingTotal = $adminCsmReqPending + $adminAstReqPending;
+        $adminCsmReqForClaiming = sidebar_count_query("SELECT COUNT(*) AS cnt
+                                                       FROM requisition_items
+                                                       WHERE module_type = 'CSM'
+                                                         AND status = 'approved'");
+        $adminAstReqForClaiming = sidebar_count_query("SELECT COUNT(*) AS cnt
+                                                       FROM requisition_items
+                                                       WHERE module_type = 'AST'
+                                                         AND status = 'approved'");
         $adminReqForClaimingTotal = sidebar_count_query("SELECT COUNT(*) AS cnt
                                                          FROM requisition_items
                                                          WHERE status = 'approved'");
@@ -206,10 +242,32 @@ if ($sidebarShouldShowBadges) {
      * Keep parent-group badges consistent with the currently visible
      * sub-item badges inside each group.
      */
-    $adminCsmMainBadge = $adminCsmInventoryAttention + $adminCsmAuditActive;
+    $adminCsmMainBadge = $adminCsmInventoryAttention + $adminCsmAuditActive + $adminCsmReqForClaiming;
     $adminAstMainBadge = $adminFacilityReported + $adminAstAuditActive;
     $adminTxMainBadge = $adminReqPendingTotal + $adminReturnRequested + $adminFacilityAttentionTotal;
     $superAdminStaffNoAccessTotal = sidebar_admin_staff_without_access_total();
+}
+
+if (role_has("USER") || role_has("USERS")) {
+    $currentUserId = (int)($s_user_id ?? 0);
+    if ($currentUserId > 0 && sidebar_table_exists('requisition_items') && sidebar_column_exists('requisition_items', 'requester_user_id') && sidebar_column_exists('requisition_items', 'status')) {
+        $userReqActionCount = sidebar_count_query("SELECT COUNT(*) AS cnt
+                                                   FROM requisition_items
+                                                   WHERE requester_user_id = {$currentUserId}
+                                                     AND status IN ('pending','reviewed','approved','not_claimed')");
+    }
+
+    if ($currentUserId > 0 && sidebar_table_exists('facility_records_assignments') && sidebar_column_exists('facility_records_assignments', 'status')) {
+        $assignmentWhere = sidebar_user_assignment_where($currentUserId, 'a');
+        $userFacilityActionCount = sidebar_count_query("SELECT COUNT(*) AS cnt
+                                                        FROM facility_records_assignments a
+                                                        WHERE {$assignmentWhere}
+                                                          AND a.status IN ('REPORTED','RETURN_REQUESTED')");
+        $userPersonalActiveCount = sidebar_count_query("SELECT COUNT(*) AS cnt
+                                                        FROM facility_records_assignments a
+                                                        WHERE {$assignmentWhere}
+                                                          AND a.status IN ('ACTIVE','REPORTED','RETURN_REQUESTED')");
+    }
 }
 ?>
 <style>
@@ -371,14 +429,14 @@ if ($sidebarShouldShowBadges) {
                 <?php } ?>
 
                 <?php if (role_has("ADMIN") || ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && ($staffHasPO))) { ?>
-                    <li class="nav-item <?php echo navigation_active("csm_category,csm_manage_inventory,csm_manage_invtest,csm_available_items,csm_physical_checking,csm_qrcode", "active submenu"); ?>">
+                    <li class="nav-item <?php echo navigation_active("csm_category,csm_manage_inventory,csm_manage_invtest,csm_available_items,csm_physical_checking,csm_qrcode,csm_issuance", "active submenu"); ?>">
                         <a class="collapsed" aria-expanded="false" data-bs-toggle="collapse" href="#csm_nav">
                             <i class="fas fa-cubes"></i>
                             <span class="sidebar-group-badge"><?php echo sidebar_badge_html($adminCsmMainBadge); ?></span>
                             <p>Consumable (CSM)</p>
                             <span class="caret"></span>
                         </a>
-                        <div class="collapse <?php echo navigation_active("csm_category,csm_manage_inventory,csm_manage_invtest,csm_available_items,csm_physical_checking,csm_qrcode", "show"); ?>" id="csm_nav">
+                        <div class="collapse <?php echo navigation_active("csm_category,csm_manage_inventory,csm_manage_invtest,csm_available_items,csm_physical_checking,csm_qrcode,csm_issuance", "show"); ?>" id="csm_nav">
                             <ul class="nav nav-collapse">
                                 <li class="<?php echo navigation_active("csm_category"); ?>">
                                     <a href="<?php echo BASE_URL . "admin/modules/consumable/csm_category.php"; ?>">
@@ -400,6 +458,11 @@ if ($sidebarShouldShowBadges) {
                                         <span class="sub-item">QR Code</span>
                                     </a>
                                 </li>
+                                <li class="<?php echo navigation_active("csm_issuance"); ?>">
+                                    <a href="<?php echo BASE_URL . "admin/modules/consumable/csm_issuance.php"; ?>">
+                                        <span class="sub-item">Issuance<?php echo sidebar_badge_html($adminCsmReqForClaiming, 'badge-primary'); ?></span>
+                                    </a>
+                                </li>
                                 <?php if (role_has("ADMIN")) { ?>
                                     <li class="<?php echo navigation_active("csm_physical_checking"); ?>">
                                         <a href="<?php echo BASE_URL . "admin/modules/consumable/csm_physical_checking.php"; ?>">
@@ -413,14 +476,14 @@ if ($sidebarShouldShowBadges) {
                 <?php } ?>
 
                 <?php if ((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && ($staffHasCSM)) { ?>
-                    <li class="nav-item <?php echo navigation_active("csm_category,csm_manage_inventory,csm_manage_invtest,csm_available_items,csm_physical_checking,csm_qrcode", "active submenu"); ?>">
+                    <li class="nav-item <?php echo navigation_active("csm_category,csm_manage_inventory,csm_manage_invtest,csm_available_items,csm_physical_checking,csm_qrcode,csm_issuance", "active submenu"); ?>">
                         <a class="collapsed" aria-expanded="false" data-bs-toggle="collapse" href="#csm_nav">
                             <i class="fas fa-cubes"></i>
                             <span class="sidebar-group-badge"><?php echo sidebar_badge_html($adminCsmMainBadge); ?></span>
                             <p>Consumable (CSM)</p>
                             <span class="caret"></span>
                         </a>
-                        <div class="collapse <?php echo navigation_active("csm_category,csm_manage_inventory,csm_manage_invtest,csm_available_items,csm_physical_checking,csm_qrcode", "show"); ?>" id="csm_nav">
+                        <div class="collapse <?php echo navigation_active("csm_category,csm_manage_inventory,csm_manage_invtest,csm_available_items,csm_physical_checking,csm_qrcode,csm_issuance", "show"); ?>" id="csm_nav">
                             <ul class="nav nav-collapse">
                                 <li class="<?php echo navigation_active("csm_manage_inventory"); ?>">
                                     <a href="<?php echo BASE_URL . "admin/modules/consumable/csm_manage_inventory.php"; ?>">
@@ -430,6 +493,11 @@ if ($sidebarShouldShowBadges) {
                                 <li class="<?php echo navigation_active("csm_qrcode"); ?>">
                                     <a href="<?php echo BASE_URL . "admin/modules/consumable/csm_qrcode.php"; ?>">
                                         <span class="sub-item">QR Code</span>
+                                    </a>
+                                </li>
+                                <li class="<?php echo navigation_active("csm_issuance"); ?>">
+                                    <a href="<?php echo BASE_URL . "admin/modules/consumable/csm_issuance.php"; ?>">
+                                        <span class="sub-item">Issuance<?php echo sidebar_badge_html($adminCsmReqForClaiming, 'badge-primary'); ?></span>
                                     </a>
                                 </li>
                                 <li class="<?php echo navigation_active("csm_physical_checking"); ?>">
@@ -562,21 +630,19 @@ if ($sidebarShouldShowBadges) {
                     <li class="nav-item <?php echo navigation_active("request_items"); ?>">
                         <a href="<?php echo BASE_URL . "users/modules/request_items.php"; ?>">
                             <i class="fas fa-clipboard-list"></i>
-                            <p>Request Items</p>
+                            <p>Request Items<?php echo sidebar_badge_html($userReqActionCount, 'badge-primary'); ?></p>
                         </a>
                     </li>
-                    <?php if (user_has_managing_facility_unit()) { ?>
-                        <li class="nav-item <?php echo navigation_active("facility_records"); ?>">
-                            <a href="<?php echo BASE_URL . "users/modules/facility_records.php"; ?>">
-                                <i class="fas fa-building"></i>
-                                <p>Facility Records</p>
-                            </a>
-                        </li>
-                    <?php } ?>
+                    <li class="nav-item <?php echo navigation_active("facility_records"); ?>">
+                        <a href="<?php echo BASE_URL . "users/modules/facility_records.php"; ?>">
+                            <i class="fas fa-building"></i>
+                            <p>Facility Records<?php echo sidebar_badge_html($userFacilityActionCount, 'badge-warning'); ?></p>
+                        </a>
+                    </li>
                     <li class="nav-item <?php echo navigation_active("personal_records"); ?>">
                         <a href="<?php echo BASE_URL . "users/modules/personal_records.php"; ?>">
                             <i class="fas fa-archive"></i>
-                            <p>Personal Inventory</p>
+                            <p>Personal Inventory<?php echo sidebar_badge_html($userPersonalActiveCount, 'badge-info'); ?></p>
                         </a>
                     </li>
                 <?php } ?>

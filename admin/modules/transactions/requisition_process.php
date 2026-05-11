@@ -218,6 +218,38 @@ function can_access_module_type($type) {
     return user_has_access($type);
 }
 
+function csm_inventory_first_existing_column($candidates, $fallback = '')
+{
+    foreach ((array)$candidates as $column) {
+        if ($column !== '' && table_column_exists('csm_inventory', $column)) {
+            return $column;
+        }
+    }
+    return $fallback;
+}
+
+function is_wish_requisition_code($itemCode)
+{
+    $code = strtoupper(trim((string)$itemCode));
+    return $code !== '' && strpos($code, 'WISH-') === 0;
+}
+
+function requisition_is_overdue_for_claim($row, $hasApprovedAt)
+{
+    if (!$hasApprovedAt) return false;
+
+    $rawStatus = strtolower((string)($row['status'] ?? 'pending'));
+    if ($rawStatus !== 'approved') return false;
+
+    $approvedAt = trim((string)($row['approved_at'] ?? ''));
+    if ($approvedAt === '') return false;
+
+    $approvedTs = strtotime($approvedAt);
+    if (!$approvedTs) return false;
+
+    return (time() - $approvedTs) > (7 * 24 * 60 * 60);
+}
+
 function requisition_is_claimed($row, $hasClaimAssignment, $hasClaimedAt, $hasReqIdInAssignments) {
     $claimAssignmentId = (int)($row['claim_assignment_id'] ?? 0);
     if ($hasClaimAssignment && $claimAssignmentId > 0) return true;
@@ -246,10 +278,14 @@ if (!$isAdminActor) {
     $staffAllowedReadActions = array(
         'list_requisitions',
         'list_facilities',
-        'list_units'
+        'list_units',
+        'review_requisition',
+        'disapprove_requisition',
+        'claim_requisition',
+        'list_issued_items'
     );
     if (!in_array($action, $staffAllowedReadActions, true)) {
-        json_response(['success' => false, 'message' => 'Read-only access. Only admins can process requisition actions.'], 403);
+        json_response(['success' => false, 'message' => 'This action is not available for your staff access.'], 403);
     }
 }
 
@@ -377,24 +413,23 @@ try {
             }
             $rows = [];
             while ($row = call_mysql_fetch_array($res)) {
-                // Auto-expire AST approved requisitions that were not claimed within 7 days.
-                if ($type === 'AST' && $hasApprovedAt) {
+                // Auto-expire approved requisitions that were not claimed within 7 days.
+                if ($hasApprovedAt) {
                     $rawStatus = strtolower((string)($row['status'] ?? 'pending'));
                     $isClaimed = requisition_is_claimed($row, $hasClaimAssignment, $hasClaimedAt, $hasReqIdInAssignments);
-                    $approvedAt = $row['approved_at'] ?? null;
-                    if ($rawStatus === 'approved' && !$isClaimed && $approvedAt) {
-                        $approvedTs = strtotime($approvedAt);
-                        if ($approvedTs && (time() - $approvedTs) > (7 * 24 * 60 * 60)) {
-                            $itemCodeEsc = _esc($row['item_code'] ?? '');
-                            call_mysql_query("UPDATE requisition_items SET status = 'not_claimed', updated_at = NOW() WHERE requisition_id = " . (int)$row['requisition_id'] . " LIMIT 1");
+                    if ($rawStatus === 'approved' && !$isClaimed && requisition_is_overdue_for_claim($row, $hasApprovedAt)) {
+                        $requisitionId = (int)($row['requisition_id'] ?? 0);
+                        $itemCodeEsc = _esc($row['item_code'] ?? '');
+                        call_mysql_query("UPDATE requisition_items SET status = 'not_claimed', updated_at = NOW() WHERE requisition_id = {$requisitionId} LIMIT 1");
+                        if (strtoupper((string)($row['module_type'] ?? '')) === 'AST' && $itemCodeEsc !== '') {
                             call_mysql_query("UPDATE ast_inventory SET is_available = 1 WHERE property_code = '{$itemCodeEsc}' LIMIT 1");
-                            activity_log_new("REQUISITION NOT CLAIMED", "SUCCESS", array(
-                                'requisition_id' => (int)$row['requisition_id'],
-                                'item_code' => $row['item_code'] ?? '',
-                                'module_type' => $row['module_type'] ?? ''
-                            ));
-                            $row['status'] = 'not_claimed';
                         }
+                        activity_log_new("REQUISITION NOT CLAIMED", "SUCCESS", array(
+                            'requisition_id' => $requisitionId,
+                            'item_code' => $row['item_code'] ?? '',
+                            'module_type' => $row['module_type'] ?? ''
+                        ));
+                        $row['status'] = 'not_claimed';
                     }
                 }
                 $row['requester_name'] = get_full_name($row['f_name'], $row['m_name'], $row['l_name'], $row['suffix']);
@@ -427,6 +462,24 @@ try {
                         if (strpos($csmImg, 'upload/') === 0 || strpos($csmImg, '/') !== false) {
                             $row['category_photo_url'] = BASE_URL . $csmImg;
                             $row['category_photo_thumb_url'] = BASE_URL . 'admin/modules/tools/category_image_thumb.php?f=' . urlencode(basename($csmImg)) . '&s=100';
+                        } elseif (ctype_digit((string)$csmImg)) {
+                            $imgRes = call_mysql_query("SELECT file_name, file_url
+                                                        FROM csm_inventory_category_images
+                                                        WHERE image_id = " . (int)$csmImg . "
+                                                        LIMIT 1");
+                            $imgRow = $imgRes ? call_mysql_fetch_array($imgRes) : null;
+                            if ($imgRow) {
+                                $fileName = trim((string)($imgRow['file_name'] ?? ''));
+                                $fileUrl = trim((string)($imgRow['file_url'] ?? ''));
+                                if ($fileUrl !== '') {
+                                    $row['category_photo_url'] = BASE_URL . ltrim($fileUrl, '/');
+                                } elseif ($fileName !== '') {
+                                    $row['category_photo_url'] = BASE_URL . 'upload/category/' . $fileName;
+                                }
+                                if ($fileName !== '') {
+                                    $row['category_photo_thumb_url'] = BASE_URL . 'admin/modules/tools/category_image_thumb.php?f=' . urlencode($fileName) . '&s=100';
+                                }
+                            }
                         } else {
                             $row['category_photo_url'] = BASE_URL . 'upload/category/' . $csmImg;
                             $row['category_photo_thumb_url'] = BASE_URL . 'admin/modules/tools/category_image_thumb.php?f=' . urlencode($csmImg) . '&s=100';
@@ -440,9 +493,109 @@ try {
             json_response(['success' => true, 'data' => $rows]);
             break;
 
+        case 'review_requisition':
+            $id = _int(_post('requisition_id'));
+            if ($id <= 0) json_response(['success' => false, 'message' => 'Invalid requisition.'], 422);
+
+            $sql = "SELECT r.*, u.employment_status_id, u.position
+                    FROM requisition_items r
+                    LEFT JOIN users u ON u.user_id = r.requester_user_id
+                    WHERE r.requisition_id = {$id} LIMIT 1";
+            $res = call_mysql_query($sql);
+            $req = $res ? call_mysql_fetch_array($res) : null;
+            if (!$req) json_response(['success' => false, 'message' => 'Requisition not found.'], 404);
+            if (!can_access_module_type((string)($req['module_type'] ?? ''))) {
+                json_response(['success' => false, 'message' => 'Access denied for this module.'], 403);
+            }
+
+            $prevStatus = strtolower((string)($req['status'] ?? ''));
+            $hasClaimAssignment = table_column_exists('requisition_items', 'claim_assignment_id');
+            $hasClaimedAt = table_column_exists('requisition_items', 'claimed_at');
+            $hasReqIdInAssignments = table_column_exists('facility_records_assignments', 'requisition_id');
+            if (requisition_is_claimed($req, $hasClaimAssignment, $hasClaimedAt, $hasReqIdInAssignments)) {
+                json_response(['success' => false, 'message' => 'Requisition is already claimed.'], 409);
+            }
+            if (!in_array($prevStatus, ['pending', 'reviewed'], true)) {
+                json_response(['success' => false, 'message' => 'Only pending requisitions can be reviewed.'], 409);
+            }
+
+            $moduleType = strtoupper((string)($req['module_type'] ?? 'AST'));
+            $itemCode = trim((string)($req['item_code'] ?? ''));
+            $qtyRequested = (int)($req['qty_requested'] ?? 0);
+            if ($qtyRequested <= 0) $qtyRequested = 1;
+
+            if ($moduleType === 'AST') {
+                $itemCodeEsc = _esc($itemCode);
+                $invRes = call_mysql_query("SELECT is_available, allowed_employment_status
+                                            FROM ast_inventory
+                                            WHERE property_code = '{$itemCodeEsc}'
+                                            LIMIT 1");
+                $invRow = $invRes ? call_mysql_fetch_array($invRes) : null;
+                if (!$invRow) json_response(['success' => false, 'message' => 'AST item not found.'], 404);
+                if ((int)($invRow['is_available'] ?? 0) !== 1) {
+                    json_response(['success' => false, 'message' => 'AST item is not currently available for review.'], 422);
+                }
+                $norm = normalize_allowed_employment($invRow['allowed_employment_status'] ?? '');
+                if ($norm['mode'] !== 'all') {
+                    $statusId = (int)($req['employment_status_id'] ?? 0);
+                    $posCat = normalize_position_category($req['position'] ?? '');
+                    if (!requester_is_allowed_for_item($norm, $statusId, $posCat)) {
+                        json_response(['success' => false, 'message' => 'Requester employment settings are not allowed for this item.'], 422);
+                    }
+                }
+            } else {
+                if (!is_wish_requisition_code($itemCode)) {
+                    $itemCodeEsc = _esc($itemCode);
+                    $csmQtyColumn = csm_inventory_first_existing_column(array('current_unit_quantity', 'current_quantity', 'quantity'));
+                    $csmUnitStatusColumn = table_column_exists('csm_inventory', 'status');
+                    if ($csmQtyColumn === '') {
+                        json_response(['success' => false, 'message' => 'CSM inventory quantity column is missing.'], 500);
+                    }
+                    $csmRes = call_mysql_query("SELECT {$csmQtyColumn} AS available_qty" .
+                                               ($csmUnitStatusColumn ? ", status" : ", '' AS status") . "
+                                               FROM csm_inventory
+                                               WHERE inventory_system_item_code = '{$itemCodeEsc}'
+                                               LIMIT 1");
+                    $csmRow = $csmRes ? call_mysql_fetch_array($csmRes) : null;
+                    if (!$csmRow) {
+                        json_response(['success' => false, 'message' => 'CSM item not found.'], 404);
+                    }
+                    $csmStatus = strtolower((string)($csmRow['status'] ?? ''));
+                    if ($csmStatus !== '' && $csmStatus !== 'available' && $csmStatus !== '1') {
+                        json_response(['success' => false, 'message' => 'CSM item is not currently available for review.'], 422);
+                    }
+                    $availableQty = (int)($csmRow['available_qty'] ?? 0);
+                    if ($availableQty < $qtyRequested) {
+                        json_response(['success' => false, 'message' => 'CSM quantity is not enough for this request.'], 422);
+                    }
+                }
+            }
+
+            $ok = call_mysql_query("UPDATE requisition_items
+                                    SET status = 'reviewed',
+                                        updated_at = NOW()
+                                    WHERE requisition_id = {$id}
+                                      AND status IN ('pending','reviewed')
+                                    LIMIT 1");
+            if (!$ok || mysqli_affected_rows($db_connect) < 1) {
+                json_response(['success' => false, 'message' => 'Failed to mark requisition as reviewed.'], 409);
+            }
+
+            activity_log_new("REQUISITION REVIEW", "SUCCESS", array(
+                'requisition_id' => $id,
+                'module_type' => $req['module_type'] ?? '',
+                'item_code' => $req['item_code'] ?? '',
+                'qty_requested' => $qtyRequested,
+                'old_status' => $prevStatus,
+                'new_status' => 'reviewed'
+            ));
+            json_response(['success' => true, 'message' => 'Requisition reviewed and forwarded for admin approval.']);
+            break;
+
         case 'approve_requisition':
             $id = _int(_post('requisition_id'));
             $approvedQtyInput = _int(_post('qty_requested'), 0);
+            $fulfillItemCodeInput = strtoupper(trim((string)_post('fulfill_item_code')));
             if ($id <= 0) json_response(['success' => false, 'message' => 'Invalid requisition.'], 422);
 
             $sql = "SELECT r.*, u.employment_status_id, u.position
@@ -498,16 +651,18 @@ try {
                 }
                 $newIsAvailable = 0;
             } else {
-                $itemCodeEsc = _esc((string)($req['item_code'] ?? ''));
-                $csmQtyColumn = '';
-                if (table_column_exists('csm_inventory', 'current_unit_quantity')) {
-                    $csmQtyColumn = 'current_unit_quantity';
-                } elseif (table_column_exists('csm_inventory', 'quantity')) {
-                    $csmQtyColumn = 'quantity';
+                $resolvedItemCode = strtoupper(trim((string)($req['item_code'] ?? '')));
+                if (is_wish_requisition_code($resolvedItemCode)) {
+                    if ($fulfillItemCodeInput === '') {
+                        json_response(['success' => false, 'message' => 'Enter a CSM item code to fulfill this wish-item request.'], 422);
+                    }
+                    $resolvedItemCode = $fulfillItemCodeInput;
                 }
+                $itemCodeEsc = _esc($resolvedItemCode);
+                $csmQtyColumn = csm_inventory_first_existing_column(array('current_unit_quantity', 'current_quantity', 'quantity'));
                 $availableQty = (int)($req['qty_requested'] ?? 0);
                 if ($csmQtyColumn !== '') {
-                    $csmRes = call_mysql_query("SELECT {$csmQtyColumn} AS available_qty, status
+                    $csmRes = call_mysql_query("SELECT {$csmQtyColumn} AS available_qty, status, item_description, item_name
                                                FROM csm_inventory
                                                WHERE inventory_system_item_code = '{$itemCodeEsc}'
                                                LIMIT 1");
@@ -526,6 +681,10 @@ try {
                 }
                 if ($approvedQty > $availableQty) {
                     json_response(['success' => false, 'message' => 'Approved quantity exceeds available CSM quantity (' . $availableQty . ').'], 422);
+                }
+                if ($resolvedItemCode !== strtoupper(trim((string)($req['item_code'] ?? '')))) {
+                    $req['resolved_item_code'] = $resolvedItemCode;
+                    $req['resolved_item_description'] = $csmRow['item_description'] ?: ($csmRow['item_name'] ?? ($req['item_description'] ?? ''));
                 }
             }
 
@@ -548,11 +707,15 @@ try {
             if (table_column_exists('requisition_items', 'approved_at')) {
                 $setCols .= ", approved_at = NOW()";
             }
+            if (!empty($req['resolved_item_code'])) {
+                $setCols .= ", item_code = '" . _esc((string)$req['resolved_item_code']) . "'";
+                $setCols .= ", item_description = '" . _esc((string)($req['resolved_item_description'] ?? ($req['item_description'] ?? ''))) . "'";
+            }
             $ok = call_mysql_query("UPDATE requisition_items
                                     SET {$setCols}
                                     WHERE requisition_id = {$id}
                                       AND status IN ('pending','reviewed')
-                                    LIMIT 1");
+                                      LIMIT 1");
             if (!$ok || mysqli_affected_rows($db_connect) < 1) {
                 call_mysql_query("ROLLBACK");
                 json_response(['success' => false, 'message' => 'Failed to approve requisition. It may have been updated already.'], 409);
@@ -562,7 +725,9 @@ try {
                 'requisition_id' => $id,
                 'module_type' => $req['module_type'] ?? '',
                 'item_code' => $req['item_code'] ?? '',
+                'resolved_item_code' => $req['resolved_item_code'] ?? null,
                 'item_description' => $req['item_description'] ?? '',
+                'resolved_item_description' => $req['resolved_item_description'] ?? null,
                 'qty_requested' => $approvedQty,
                 'requester_user_id' => (int)($req['requester_user_id'] ?? 0),
                 'old_status' => $prevStatus,
@@ -664,6 +829,119 @@ try {
             json_response(['success' => true, 'data' => $rows]);
             break;
 
+        case 'list_issued_items':
+            $type = strtoupper(_post('type', 'CSM'));
+            $search = _post('search');
+            if (!in_array($type, ['AST', 'CSM'], true)) {
+                $type = 'CSM';
+            }
+            if (!can_access_module_type($type)) {
+                json_response(['success' => false, 'message' => 'Access denied for this module.'], 403);
+            }
+            if (!table_exists('facility_records_assignments')) {
+                json_response(['success' => false, 'message' => 'Facility assignment table is missing.'], 500);
+            }
+
+            $where = "WHERE a.module_type = '" . _esc($type) . "'";
+            if ($search !== '') {
+                $searchEsc = _esc('%' . $search . '%');
+                $where .= " AND (
+                    a.item_code LIKE '{$searchEsc}'
+                    OR a.item_description LIKE '{$searchEsc}'
+                    OR f.facility_name LIKE '{$searchEsc}'
+                    OR u.unit_name LIKE '{$searchEsc}'
+                    OR issued.f_name LIKE '{$searchEsc}'
+                    OR issued.l_name LIKE '{$searchEsc}'
+                )";
+            }
+
+            $hasManagedBy = table_column_exists('facility_records_assignments', 'managed_by_user_id');
+            $sql = "SELECT
+                        a.assignment_id,
+                        a.requisition_id,
+                        a.module_type,
+                        a.item_code,
+                        a.item_description,
+                        a.qty,
+                        a.unit,
+                        a.status,
+                        a.issued_at,
+                        a.remarks,
+                        f.facility_code,
+                        f.facility_name,
+                        u.unit_code,
+                        u.unit_name,
+                        CONCAT(COALESCE(issued.f_name,''), ' ', COALESCE(issued.l_name,'')) AS issued_to_name,
+                        " . ($hasManagedBy ? "CONCAT(COALESCE(manager.f_name,''), ' ', COALESCE(manager.l_name,''))" : "''") . " AS managed_by_name,
+                        ast_cat.category_photo AS ast_category_photo,
+                        ast_cat.item_category_name AS ast_category_name,
+                        csm_inv.item_category_img AS csm_category_img,
+                        csm_cat.item_category_name AS csm_category_name
+                    FROM facility_records_assignments a
+                    LEFT JOIN facility_records_facilities f ON f.facility_id = a.facility_id
+                    LEFT JOIN facility_records_units u ON u.unit_id = a.unit_id
+                    LEFT JOIN users issued ON issued.user_id = a.issued_to_user_id
+                    " . ($hasManagedBy ? "LEFT JOIN users manager ON manager.user_id = a.managed_by_user_id" : "") . "
+                    LEFT JOIN ast_inventory ast_inv ON a.module_type = 'AST' AND a.item_code = ast_inv.property_code
+                    LEFT JOIN ast_inventory_category ast_cat ON ast_inv.category_id = ast_cat.category_id
+                    LEFT JOIN csm_inventory csm_inv ON a.module_type = 'CSM' AND a.item_code = csm_inv.inventory_system_item_code
+                    LEFT JOIN csm_inventory_category csm_cat ON csm_inv.item_category_code = csm_cat.item_category_code
+                    {$where}
+                    ORDER BY a.issued_at DESC, a.assignment_id DESC
+                    LIMIT 250";
+
+            $res = call_mysql_query($sql);
+            $rows = [];
+            if ($res) {
+                while ($row = call_mysql_fetch_array($res)) {
+                    $row['category_photo_url'] = null;
+                    $row['category_photo_thumb_url'] = null;
+                    $row['item_category_name'] = null;
+
+                    if ($type === 'AST' && !empty($row['ast_category_photo'])) {
+                        $row['item_category_name'] = $row['ast_category_name'] ?? null;
+                        $row['category_photo_url'] = BASE_URL . 'upload/category/' . $row['ast_category_photo'];
+                        $row['category_photo_thumb_url'] = BASE_URL . 'admin/modules/tools/category_image_thumb.php?f=' . urlencode($row['ast_category_photo']) . '&s=100';
+                    } elseif ($type === 'CSM') {
+                        $row['item_category_name'] = $row['csm_category_name'] ?? null;
+                        $csmImg = trim((string)($row['csm_category_img'] ?? ''));
+                        if ($csmImg !== '') {
+                            if (strpos($csmImg, 'upload/') === 0 || strpos($csmImg, '/') !== false) {
+                                $row['category_photo_url'] = BASE_URL . ltrim($csmImg, '/');
+                                $row['category_photo_thumb_url'] = BASE_URL . 'admin/modules/tools/category_image_thumb.php?f=' . urlencode(basename($csmImg)) . '&s=100';
+                            } elseif (ctype_digit($csmImg)) {
+                                $imgRes = call_mysql_query("SELECT file_name, file_url
+                                                            FROM csm_inventory_category_images
+                                                            WHERE image_id = " . (int)$csmImg . "
+                                                            LIMIT 1");
+                                $imgRow = $imgRes ? call_mysql_fetch_array($imgRes) : null;
+                                if ($imgRow) {
+                                    $fileName = trim((string)($imgRow['file_name'] ?? ''));
+                                    $fileUrl = trim((string)($imgRow['file_url'] ?? ''));
+                                    if ($fileUrl !== '') {
+                                        $row['category_photo_url'] = BASE_URL . ltrim($fileUrl, '/');
+                                    } elseif ($fileName !== '') {
+                                        $row['category_photo_url'] = BASE_URL . 'upload/category/' . $fileName;
+                                    }
+                                    if ($fileName !== '') {
+                                        $row['category_photo_thumb_url'] = BASE_URL . 'admin/modules/tools/category_image_thumb.php?f=' . urlencode($fileName) . '&s=100';
+                                    }
+                                }
+                            } else {
+                                $row['category_photo_url'] = BASE_URL . 'upload/category/' . $csmImg;
+                                $row['category_photo_thumb_url'] = BASE_URL . 'admin/modules/tools/category_image_thumb.php?f=' . urlencode($csmImg) . '&s=100';
+                            }
+                        }
+                    }
+
+                    unset($row['ast_category_photo'], $row['ast_category_name'], $row['csm_category_img'], $row['csm_category_name']);
+                    $rows[] = $row;
+                }
+            }
+
+            json_response(['success' => true, 'data' => $rows]);
+            break;
+
         case 'list_users':
             $hasEmail = table_column_exists('users', 'email');
             $hasEmailAddress = table_column_exists('users', 'email_address');
@@ -743,7 +1021,7 @@ try {
                 json_response(['success' => false, 'message' => 'Requisition is already claimed.'], 409);
             }
             $status = strtolower((string)($req['status'] ?? ''));
-            if (!in_array($status, ['approved', 'reviewed'], true)) {
+            if ($status !== 'approved') {
                 json_response(['success' => false, 'message' => 'Requisition is not eligible for claim yet.'], 422);
             }
 
@@ -815,7 +1093,14 @@ try {
                 }
             } else {
                 $moduleType = 'CSM';
-                $invRes = call_mysql_query("SELECT inventory_id, inventory_system_item_code, item_description, item_name, current_unit_quantity
+                $csmQtyColumn = csm_inventory_first_existing_column(array('current_unit_quantity', 'current_quantity', 'quantity'));
+                $csmUnitColumn = csm_inventory_first_existing_column(array('unit'), '');
+                if ($csmQtyColumn === '') {
+                    call_mysql_query("ROLLBACK");
+                    json_response(['success' => false, 'message' => 'CSM inventory quantity column is missing.'], 500);
+                }
+                $invRes = call_mysql_query("SELECT inventory_id, inventory_system_item_code, item_description, item_name, {$csmQtyColumn} AS available_qty" .
+                                           ($csmUnitColumn !== '' ? ", {$csmUnitColumn} AS item_unit" : ", '' AS item_unit") . "
                                             FROM csm_inventory
                                             WHERE inventory_system_item_code = '{$itemCode}' LIMIT 1");
                 $inv = $invRes ? call_mysql_fetch_array($invRes) : null;
@@ -823,18 +1108,18 @@ try {
                     call_mysql_query("ROLLBACK");
                     json_response(['success' => false, 'message' => 'CSM inventory item not found.'], 404);
                 }
-                $available = (int)($inv['current_unit_quantity'] ?? 0);
+                $available = (int)($inv['available_qty'] ?? 0);
                 if ($available < $qtyRequested) {
                     call_mysql_query("ROLLBACK");
                     json_response(['success' => false, 'message' => 'CSM quantity is not enough for claim.'], 422);
                 }
                 $sourceItemId = (int)$inv['inventory_id'];
                 $itemDescription = $inv['item_description'] ?: ($inv['item_name'] ?? $itemDescription);
-                $itemUnit = '';
+                $itemUnit = (string)($inv['item_unit'] ?? '');
                 $decOk = call_mysql_query("UPDATE csm_inventory
-                                           SET current_unit_quantity = current_unit_quantity - {$qtyRequested}
+                                           SET {$csmQtyColumn} = {$csmQtyColumn} - {$qtyRequested}
                                            WHERE inventory_id = {$sourceItemId}
-                                             AND current_unit_quantity >= {$qtyRequested}
+                                             AND {$csmQtyColumn} >= {$qtyRequested}
                                            LIMIT 1");
                 if (!$decOk || mysqli_affected_rows($db_connect) < 1) {
                     call_mysql_query("ROLLBACK");
@@ -894,7 +1179,7 @@ try {
             $okReq = call_mysql_query("UPDATE requisition_items
                                        SET {$reqSet}
                                        WHERE requisition_id = {$id}
-                                         AND status IN ('approved','reviewed')
+                                         AND status = 'approved'
                                        LIMIT 1");
             if (!$okReq || mysqli_affected_rows($db_connect) < 1) {
                 call_mysql_query("ROLLBACK");
@@ -927,7 +1212,7 @@ try {
                 json_response(['success' => false, 'message' => 'Access denied for this module.'], 403);
             }
             $status = strtolower((string)($req['status'] ?? ''));
-            if (!in_array($status, ['approved', 'reviewed'], true)) {
+            if ($status !== 'approved') {
                 json_response(['success' => false, 'message' => 'Only for-claiming requisitions can be moved back to storage.'], 409);
             }
             $hasClaimAssignment = table_column_exists('requisition_items', 'claim_assignment_id');
@@ -954,7 +1239,7 @@ try {
                                     SET status = 'not_claimed',
                                         updated_at = NOW()
                                     WHERE requisition_id = {$id}
-                                      AND status IN ('approved','reviewed')
+                                      AND status = 'approved'
                                     LIMIT 1");
             if (!$ok || mysqli_affected_rows($db_connect) < 1) {
                 call_mysql_query("ROLLBACK");

@@ -11,8 +11,79 @@ if (!(role_has("USER") || role_has("USERS"))) {
     exit();
 }
 
+function dashboard_count_query($sql)
+{
+    $res = call_mysql_query($sql);
+    if (!$res) return 0;
+    $row = call_mysql_fetch_array($res);
+    return (int)($row['cnt'] ?? 0);
+}
+
+function dashboard_table_exists($table)
+{
+    $res = call_mysql_query("SHOW TABLES LIKE '" . addslashes((string)$table) . "'");
+    return $res && mysqli_num_rows($res) > 0;
+}
+
+function dashboard_column_exists($table, $column)
+{
+    $res = call_mysql_query("SHOW COLUMNS FROM `" . str_replace('`', '``', (string)$table) . "` LIKE '" . addslashes((string)$column) . "'");
+    return $res && mysqli_num_rows($res) > 0;
+}
+
+function dashboard_user_assignment_where($userId, $alias = 'a')
+{
+    $userId = (int)$userId;
+    if ($userId <= 0) {
+        return '0=1';
+    }
+
+    $alias = preg_replace('/[^a-zA-Z0-9_]/', '', (string)$alias);
+    if ($alias === '') {
+        $alias = 'a';
+    }
+
+    $parts = array(
+        "{$alias}.issued_to_user_id = {$userId}",
+        "{$alias}.accountable_user_id = {$userId}",
+    );
+    if (dashboard_table_exists('facility_records_assignments') && dashboard_column_exists('facility_records_assignments', 'managed_by_user_id')) {
+        $parts[] = "{$alias}.managed_by_user_id = {$userId}";
+    }
+
+    return '(' . implode(' OR ', $parts) . ')';
+}
+
 $display_name = !empty($g_fullname) ? $g_fullname : (!empty($g_name) ? $g_name : 'User');
 $display_position = !empty($g_position) ? $g_position : 'User';
+$currentUserId = (int)($s_user_id ?? 0);
+$dashboardPendingRequestCount = 0;
+$dashboardReadyToClaimCount = 0;
+$dashboardFacilityActionCount = 0;
+$dashboardPersonalItemCount = 0;
+
+if ($currentUserId > 0 && dashboard_table_exists('requisition_items') && dashboard_column_exists('requisition_items', 'requester_user_id') && dashboard_column_exists('requisition_items', 'status')) {
+    $dashboardPendingRequestCount = dashboard_count_query("SELECT COUNT(*) AS cnt
+                                                           FROM requisition_items
+                                                           WHERE requester_user_id = {$currentUserId}
+                                                             AND status IN ('pending','reviewed')");
+    $dashboardReadyToClaimCount = dashboard_count_query("SELECT COUNT(*) AS cnt
+                                                         FROM requisition_items
+                                                         WHERE requester_user_id = {$currentUserId}
+                                                           AND status = 'approved'");
+}
+
+if ($currentUserId > 0 && dashboard_table_exists('facility_records_assignments') && dashboard_column_exists('facility_records_assignments', 'status')) {
+    $assignmentWhere = dashboard_user_assignment_where($currentUserId, 'a');
+    $dashboardFacilityActionCount = dashboard_count_query("SELECT COUNT(*) AS cnt
+                                                           FROM facility_records_assignments a
+                                                           WHERE {$assignmentWhere}
+                                                             AND a.status IN ('REPORTED','RETURN_REQUESTED')");
+    $dashboardPersonalItemCount = dashboard_count_query("SELECT COUNT(*) AS cnt
+                                                         FROM facility_records_assignments a
+                                                         WHERE {$assignmentWhere}
+                                                           AND a.status IN ('ACTIVE','REPORTED','RETURN_REQUESTED')");
+}
 ?>
 <!DOCTYPE html>
 <html lang="en" class="h-100">
@@ -25,6 +96,29 @@ $display_position = !empty($g_position) ? $g_position : 'User';
     <style>
         .section-card { border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
         .muted { color: #6c757d; }
+        .summary-card {
+            border: 1px solid #e5e7eb;
+            border-radius: 14px;
+            padding: 1rem;
+            background: #fff;
+            height: 100%;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        }
+        .summary-card .value {
+            font-size: 2rem;
+            font-weight: 700;
+            line-height: 1;
+        }
+        .summary-card .label {
+            font-size: 0.92rem;
+            font-weight: 600;
+            margin-top: 0.35rem;
+        }
+        .summary-card .subtext {
+            font-size: 0.8rem;
+            color: #6c757d;
+            margin-top: 0.35rem;
+        }
     </style>
 </head>
 
@@ -50,6 +144,39 @@ $display_position = !empty($g_position) ? $g_position : 'User';
 
         <section class="section">
             <div class="row g-3">
+                <div class="col-12">
+                    <div class="row g-3">
+                        <div class="col-md-3 col-sm-6">
+                            <div class="summary-card">
+                                <div class="value"><?php echo $dashboardPendingRequestCount; ?></div>
+                                <div class="label">Requests Under Review</div>
+                                <div class="subtext">Pending and reviewed requisitions waiting for staff/admin action.</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3 col-sm-6">
+                            <div class="summary-card">
+                                <div class="value"><?php echo $dashboardReadyToClaimCount; ?></div>
+                                <div class="label">Ready for Claiming</div>
+                                <div class="subtext">Approved requests that can move into the issuance window.</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3 col-sm-6">
+                            <div class="summary-card">
+                                <div class="value"><?php echo $dashboardFacilityActionCount; ?></div>
+                                <div class="label">Facility Actions</div>
+                                <div class="subtext">Reported or return-requested items tied to your facilities.</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3 col-sm-6">
+                            <div class="summary-card">
+                                <div class="value"><?php echo $dashboardPersonalItemCount; ?></div>
+                                <div class="label">Active Assigned Items</div>
+                                <div class="subtext">Consumable, non-consumable, and personal items currently assigned to you.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="col-12">
                     <div class="card section-card">
                         <div class="card-header bg-eclearance text-white fw-semibold">
@@ -79,16 +206,16 @@ $display_position = !empty($g_position) ? $g_position : 'User';
                         <div class="card-body mt-3 bg-white">
                             <div class="row g-2">
                                 <div class="col-md-4">
-                                    <a class="btn btn-outline-primary w-100" href="<?php echo BASE_URL; ?>users/modules/request_items.php">Request Items</a>
+                                    <a class="btn btn-outline-primary w-100" href="<?php echo BASE_URL; ?>users/modules/request_items.php">Request Items (<?php echo $dashboardPendingRequestCount + $dashboardReadyToClaimCount; ?>)</a>
                                 </div>
                                 <div class="col-md-4">
-                                    <a class="btn btn-outline-secondary w-100" href="<?php echo BASE_URL; ?>users/modules/facility_records.php">Facility Records</a>
+                                    <a class="btn btn-outline-secondary w-100" href="<?php echo BASE_URL; ?>users/modules/facility_records.php">Facility Records (<?php echo $dashboardFacilityActionCount; ?>)</a>
                                 </div>
                                 <div class="col-md-4">
-                                    <a class="btn btn-outline-secondary w-100" href="<?php echo BASE_URL; ?>users/modules/personal_records.php">Personal Inventory</a>
+                                    <a class="btn btn-outline-secondary w-100" href="<?php echo BASE_URL; ?>users/modules/personal_records.php">Personal Inventory (<?php echo $dashboardPersonalItemCount; ?>)</a>
                                 </div>
                             </div>
-                            <div class="small text-muted mt-2">Buttons link to user pages (placeholders for now).</div>
+                            <div class="small text-muted mt-2">Jump straight to requests, facility inventory records, and personal inventory tracking.</div>
                         </div>
                     </div>
                 </div>

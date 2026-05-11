@@ -21,6 +21,8 @@ $type = isset($_GET['type']) ? strtoupper(trim($_GET['type'])) : '';
 $canAST = role_has("ADMIN") || user_has_access('AST');
 $canCSM = role_has("ADMIN") || user_has_access('CSM');
 $canManageRequisitionActions = role_has("ADMIN");
+$canReviewRequisition = role_has("ADMIN") || (((role_has("ADMIN_STAFF") || role_has("ADMINSTAFF")) && user_has_access($type)));
+$canIssueApprovedRequests = !$canManageRequisitionActions && $canReviewRequisition;
 
 if (!in_array($type, ['AST', 'CSM'], true)) {
     if ($canAST && !$canCSM) {
@@ -151,8 +153,19 @@ if (($type === 'AST' && !$canAST) || ($type === 'CSM' && !$canCSM)) {
 
     <main id="main" class="main">
         <div class="pagetitle">
-            <h1 class="h4 fw-semibold mb-1">Requisition Approval</h1>
-            <p class="text-muted small mb-0"><?php echo $canManageRequisitionActions ? 'Review, approve, or disapprove requests.' : 'View-only requisition list.'; ?> Mode: <?php echo htmlspecialchars($type); ?></p>
+            <h1 class="h4 fw-semibold mb-1">Requisition Item</h1>
+            <p class="text-muted small mb-0">
+                <?php
+                if ($canManageRequisitionActions) {
+                    echo 'Approve, disapprove, and manage claim-ready requests.';
+                } elseif ($canIssueApprovedRequests) {
+                    echo 'Review stock for pending requests and issue approved requests.';
+                } else {
+                    echo 'View requisition requests.';
+                }
+                ?>
+                Mode: <?php echo htmlspecialchars($type); ?>
+            </p>
         </div>
 
         <section class="section">
@@ -229,13 +242,14 @@ if (($type === 'AST' && !$canAST) || ($type === 'CSM' && !$canCSM)) {
                                 <th>Description</th>
                                 <th style="width:60px;" class="text-center">Qty</th>
                                 <th style="width:110px;">Requester</th>
+                                <th style="width:180px;">Fulfill Item Code</th>
                                 <th style="width:220px;">Not Approved Reason</th>
                                 <th style="width:70px;" class="text-center">Action</th>
                             </tr>
                         </thead>
                         <tbody id="approvePreviewBody">
                             <tr>
-                                <td colspan="8" class="text-muted small">No request selected.</td>
+                                <td colspan="9" class="text-muted small">No request selected.</td>
                             </tr>
                         </tbody>
                     </table>
@@ -339,6 +353,8 @@ if (($type === 'AST' && !$canAST) || ($type === 'CSM' && !$canCSM)) {
 const BASE_URL = <?php echo json_encode(BASE_URL); ?>;
 const REQ_TYPE = <?php echo json_encode($type); ?>;
 const CAN_MANAGE_REQUISITION = <?php echo $canManageRequisitionActions ? 'true' : 'false'; ?>;
+const CAN_REVIEW_REQUISITION = <?php echo $canReviewRequisition ? 'true' : 'false'; ?>;
+const CAN_ISSUE_APPROVED_REQUESTS = <?php echo $canIssueApprovedRequests ? 'true' : 'false'; ?>;
 const PROCESS_URL = BASE_URL + 'admin/modules/transactions/requisition_process.php';
 const DEFAULT_DISAPPROVE_REASON_FROM_APPROVE = 'Not approved during grouped approval.';
 let reqTable = null;
@@ -535,6 +551,11 @@ function threeLineText(value, fallback) {
     return `<span class="three-line-cell" title="${safe}">${safe}</span>`;
 }
 
+function isWishItemCode(value) {
+    const code = String(value || '').trim().toUpperCase();
+    return code.indexOf('WISH-') === 0;
+}
+
 function statusBadge(raw) {
     let s = canonicalStatus(raw);
     if (!s) s = 'unknown';
@@ -581,12 +602,14 @@ function renderApprovePreview(row) {
     const $body = $('#approvePreviewBody');
     const rows = Array.isArray(row) ? row : (row ? [row] : []);
     if (!rows.length) {
-        $body.html('<tr><td colspan="8" class="text-muted small">No request selected.</td></tr>');
+        $body.html('<tr><td colspan="9" class="text-muted small">No request selected.</td></tr>');
         return;
     }
     const html = rows.map(function(entry) {
         const reqId = safeNumber(entry.requisition_id, 0);
-        const code = escapeHtml(entry.item_code || '-');
+        const rawCode = String(entry.item_code || '');
+        const code = escapeHtml(rawCode || '-');
+        const wishRequest = String(entry.module_type || REQ_TYPE || '').toUpperCase() === 'CSM' && isWishItemCode(rawCode);
         const desc = threeLineText(entry.item_description || '-', '-');
         const moduleType = String(entry.module_type || REQ_TYPE || '').toUpperCase();
         const csmMaxQty = safeNumber(entry.csm_available_qty, 0);
@@ -611,13 +634,17 @@ function renderApprovePreview(row) {
                 '<input type="number" class="form-control form-control-sm text-center approve-qty-input js-approve-qty" min="1"' + (csmMaxQty > 0 ? (' max="' + escapeHtml(String(csmMaxQty)) + '"') : '') + ' step="1" value="' + escapeHtml(String(qty)) + '" data-module="CSM" data-max="' + escapeHtml(String(csmMaxQty)) + '">' +
                 '<div class="text-muted small text-center">max ' + escapeHtml(String(Math.max(csmMaxQty, 0))) + '</div>' +
             '</div>';
-        return '<tr data-req-id="' + escapeHtml(reqId ? String(reqId) : '') + '" data-module="' + escapeHtml(moduleType) + '" data-max-qty="' + escapeHtml(String(csmMaxQty)) + '">' +
+        const fulfillInputHtml = wishRequest
+            ? '<input type="text" class="form-control form-control-sm js-fulfill-item-code" placeholder="Enter CSM item code" value="">'
+            : '<span class="text-muted small">-</span>';
+        return '<tr data-req-id="' + escapeHtml(reqId ? String(reqId) : '') + '" data-module="' + escapeHtml(moduleType) + '" data-max-qty="' + escapeHtml(String(csmMaxQty)) + '" data-item-code="' + escapeHtml(rawCode) + '" data-wish-request="' + (wishRequest ? '1' : '0') + '">' +
             '<td class="text-center">' + escapeHtml(reqId ? String(reqId) : '-') + '</td>' +
             '<td class="text-center">' + imageHtml + '</td>' +
-            '<td><span class="badge bg-light text-dark border">' + code + '</span></td>' +
+            '<td><span class="badge bg-light text-dark border">' + code + '</span>' + (wishRequest ? '<div class="small text-warning mt-1">Wish item request</div>' : '') + '</td>' +
             '<td>' + desc + '</td>' +
             '<td class="text-center">' + qtyInputHtml + '</td>' +
             '<td>' + requester + '</td>' +
+            '<td>' + fulfillInputHtml + '</td>' +
             '<td><textarea class="form-control form-control-sm approve-reason-input js-approve-reason" rows="1" placeholder="Optional reason" disabled></textarea></td>' +
             '<td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger js-approve-row-remove" title="Exclude from approve"><i class="bi bi-x-lg"></i></button></td>' +
         '</tr>';
@@ -655,10 +682,22 @@ function collectApproveDecisions() {
         const moduleType = String($row.attr('data-module') || '').toUpperCase();
         const maxQty = safeNumber($row.attr('data-max-qty'), 0);
         const qty = safeNumber($row.find('.js-approve-qty').val(), 0);
+        const originalItemCode = String($row.attr('data-item-code') || '').trim();
+        const requireFulfillItemCode = String($row.attr('data-wish-request') || '0') === '1';
+        const fulfillItemCode = requireFulfillItemCode
+            ? String($row.find('.js-fulfill-item-code').val() || '').trim()
+            : originalItemCode;
         if (excluded) {
             decisions.rejectItems.push({ id: id, reason: reason });
         } else {
-            decisions.approveItems.push({ id: id, qty: qty, moduleType: moduleType, maxQty: maxQty });
+            decisions.approveItems.push({
+                id: id,
+                qty: qty,
+                moduleType: moduleType,
+                maxQty: maxQty,
+                fulfillItemCode: fulfillItemCode,
+                requireFulfillItemCode: requireFulfillItemCode
+            });
         }
     });
     return decisions;
@@ -680,7 +719,14 @@ function buildApproveItemsFromIds(ids) {
         let qty = safeNumber(row.qty_requested, 1);
         if (moduleType === 'AST') qty = 1;
         if (qty <= 0) qty = 1;
-        items.push({ id: reqId, qty: qty, moduleType: moduleType, maxQty: maxQty });
+        items.push({
+            id: reqId,
+            qty: qty,
+            moduleType: moduleType,
+            maxQty: maxQty,
+            fulfillItemCode: isWishItemCode(row.item_code) ? '' : String(row.item_code || ''),
+            requireFulfillItemCode: isWishItemCode(row.item_code)
+        });
     });
     return items;
 }
@@ -703,10 +749,18 @@ function validateApproveItems(approveItems) {
             return { ok: false, message: 'AST requisition #' + id + ' must have Qty 1.' };
         }
         if (moduleType === 'CSM') {
-            if (maxQty <= 0) {
+            const fulfillItemCode = String(item.fulfillItemCode || '').trim();
+            const requireFulfillItemCode = !!item.requireFulfillItemCode;
+            if (requireFulfillItemCode && isWishItemCode(fulfillItemCode)) {
+                return { ok: false, message: 'Enter a valid CSM item code for wish-item requisition #' + id + '.' };
+            }
+            if (requireFulfillItemCode && !fulfillItemCode) {
+                return { ok: false, message: 'Enter the CSM item code that will fulfill requisition #' + id + '.' };
+            }
+            if (maxQty <= 0 && !requireFulfillItemCode) {
                 return { ok: false, message: 'No available quantity for CSM requisition #' + id + '.' };
             }
-            if (qty > maxQty) {
+            if (!requireFulfillItemCode && qty > maxQty) {
                 return { ok: false, message: 'Qty for requisition #' + id + ' exceeds available quantity (' + maxQty + ').' };
             }
         }
@@ -786,18 +840,27 @@ function initReqTable() {
             const encodedKey = encodeURIComponent(String(value || ''));
 
             let actionsHtml = '';
-            if (groupStatus === 'pending' || groupStatus === 'reviewed') {
+            if (CAN_MANAGE_REQUISITION && (groupStatus === 'pending' || groupStatus === 'reviewed')) {
                 actionsHtml = '' +
+                    (groupStatus === 'pending'
+                        ? '<button class="btn btn-sm btn-outline-info btn-batch-review" data-batch="' + encodedKey + '">Mark Reviewed</button>'
+                        : '') +
                     '<button class="btn btn-sm btn-success btn-batch-approve" data-batch="' + encodedKey + '">Approve Group</button>' +
                     '<button class="btn btn-sm btn-danger btn-batch-disapprove" data-batch="' + encodedKey + '">Disapprove Group</button>';
-            } else if (groupStatus === 'for_claiming' || groupStatus === 'approved') {
+            } else if (CAN_MANAGE_REQUISITION && (groupStatus === 'for_claiming' || groupStatus === 'approved')) {
                 actionsHtml = '' +
                     '<button class="btn btn-sm btn-outline-secondary btn-batch-back-storage" data-batch="' + encodedKey + '">Back Group to Storage</button>';
             }
             if (!CAN_MANAGE_REQUISITION) {
-                if (REQ_TYPE === 'AST' && (groupStatus === 'for_claiming' || groupStatus === 'approved')) {
+                if (CAN_REVIEW_REQUISITION && groupStatus === 'pending') {
+                    actionsHtml = '' +
+                        '<button class="btn btn-sm btn-outline-info btn-batch-review" data-batch="' + encodedKey + '">Review Stock</button>' +
+                        '<button class="btn btn-sm btn-danger btn-batch-disapprove" data-batch="' + encodedKey + '">Disapprove Group</button>';
+                } else if (CAN_ISSUE_APPROVED_REQUESTS && (groupStatus === 'for_claiming' || groupStatus === 'approved')) {
                     actionsHtml = '' +
                         '<button class="btn btn-sm btn-primary btn-batch-issue-request" data-batch="' + encodedKey + '">Issue This Request</button>';
+                } else if (groupStatus === 'reviewed') {
+                    actionsHtml = '<span class="badge bg-info text-dark">Awaiting Admin Approval</span>';
                 } else {
                     actionsHtml = '';
                 }
@@ -937,7 +1000,12 @@ function initReqTable() {
         $btn.prop('disabled', true).text('Processing...');
 
         runBatchAction(approveItems, function(item, done) {
-            $.post(PROCESS_URL, { action: 'approve_requisition', requisition_id: item.id, qty_requested: item.qty }, function(res) {
+            $.post(PROCESS_URL, {
+                action: 'approve_requisition',
+                requisition_id: item.id,
+                qty_requested: item.qty,
+                fulfill_item_code: item.fulfillItemCode || ''
+            }, function(res) {
                 done(!!(res && res.success), (res && res.message) ? res.message : 'Approval failed.');
             }, 'json').fail(function(xhr) {
                 const msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Server error while approving.';
@@ -985,6 +1053,40 @@ function initReqTable() {
                     $('#approveMsg').removeClass('d-none').text(firstErr);
                 }
             });
+        });
+    });
+
+    $('#reqTable').on('click', '.btn-batch-review', function() {
+        const encoded = String($(this).data('batch') || '');
+        const batchKey = decodeURIComponent(encoded);
+        const rows = getBatchRowsByKey(batchKey);
+        const ids = getBatchReqIds(rows);
+        if (!ids.length) {
+            error_notif('No requisition selected for review.');
+            return;
+        }
+        const $btn = $(this);
+        $btn.prop('disabled', true).text('Reviewing...');
+        runBatchAction(ids, function(id, done) {
+            $.post(PROCESS_URL, { action: 'review_requisition', requisition_id: id }, function(res) {
+                done(!!(res && res.success), (res && res.message) ? res.message : 'Review failed.');
+            }, 'json').fail(function(xhr) {
+                const msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Server error while reviewing.';
+                done(false, msg);
+            });
+        }, function(result) {
+            $btn.prop('disabled', false).text(CAN_MANAGE_REQUISITION ? 'Mark Reviewed' : 'Review Stock');
+            loadReqData();
+            if (result.successCount > 0 && !result.failed.length) {
+                success_notif(result.successCount + ' request(s) reviewed.');
+                return;
+            }
+            if (result.successCount > 0) {
+                error_notif(result.successCount + ' request(s) reviewed. ' + result.failed.length + ' failed.');
+                return;
+            }
+            const firstErr = result.failed[0] ? result.failed[0].message : 'Review failed.';
+            error_notif(firstErr);
         });
     });
 
@@ -1086,7 +1188,9 @@ function initReqTable() {
             if (typeof error_notif === 'function') error_notif('Request group key is missing.');
             return;
         }
-        const redirectUrl = BASE_URL + 'admin/modules/nonconsumable/ast_issuance.php?request_group=' + encodeURIComponent(batchKey);
+        const redirectUrl = REQ_TYPE === 'CSM'
+            ? (BASE_URL + 'admin/modules/consumable/csm_issuance.php?request_group=' + encodeURIComponent(batchKey))
+            : (BASE_URL + 'admin/modules/nonconsumable/ast_issuance.php?request_group=' + encodeURIComponent(batchKey));
         window.location.href = redirectUrl;
     });
 

@@ -171,6 +171,7 @@
                     'csm_manage_invtest': 'Add New Item',
                     'csm_available_items': 'Available Items',
                     'csm_qrcode': 'QR Code',
+                    'csm_issuance': 'Issuance',
                     'csm_physical_checking': 'Physical Checking'
                 };
                 crumbs.push({ label: mapCsm[file] || titleize(file), url: '' });

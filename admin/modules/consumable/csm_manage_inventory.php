@@ -1529,7 +1529,7 @@ function getSelectedRulesPayload() {
 function initTable() {
     inventoryTable = new Tabulator('#csm-inventory-table', {
         ajaxURL: PROCESS_URL,
-        ajaxParams: { action: 'list_recent_added' },
+        ajaxParams: { action: 'list_inventory' },
         ajaxConfig: 'POST',
         layout: 'fitColumns',
         renderVertical: 'basic',
@@ -1733,7 +1733,7 @@ function initTable() {
 function refreshTable() {
     if (!inventoryTable) return;
 
-    inventoryTable.setData(PROCESS_URL, { action: 'list_recent_added' }, 'POST').then(function() {
+    inventoryTable.setData(PROCESS_URL, { action: 'list_inventory' }, 'POST').then(function() {
         applyInventoryFilters();
     }).catch(function(err) {
         showInvMessage('Server error while loading inventory.');
