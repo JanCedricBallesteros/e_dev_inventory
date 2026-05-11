@@ -40,6 +40,52 @@ function json_response($data, $code = 200) {
     exit();
 }
 
+function fr_store_reason_image($field = 'reason_image') {
+    if (!isset($_FILES[$field]) || !is_array($_FILES[$field])) {
+        return '';
+    }
+    $file = $_FILES[$field];
+    if ((int)($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+        return '';
+    }
+    if ((int)($file['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) {
+        return '';
+    }
+    $tmp = (string)($file['tmp_name'] ?? '');
+    if ($tmp === '' || !is_uploaded_file($tmp)) {
+        return '';
+    }
+
+    $maxBytes = 5 * 1024 * 1024;
+    $size = (int)($file['size'] ?? 0);
+    if ($size <= 0 || $size > $maxBytes) {
+        return '';
+    }
+
+    $ext = strtolower(pathinfo((string)($file['name'] ?? ''), PATHINFO_EXTENSION));
+    $allowedExt = array('jpg', 'jpeg', 'png', 'webp');
+    if (!in_array($ext, $allowedExt, true)) {
+        return '';
+    }
+
+    $rootPath = dirname(__DIR__, 2);
+    $relDir = 'upload/return_reasons';
+    $absDir = $rootPath . DIRECTORY_SEPARATOR . 'upload' . DIRECTORY_SEPARATOR . 'return_reasons';
+    if (!is_dir($absDir)) {
+        @mkdir($absDir, 0775, true);
+    }
+    if (!is_dir($absDir) || !is_writable($absDir)) {
+        return '';
+    }
+
+    $newName = 'reason_' . date('Ymd_His') . '_' . substr(bin2hex(random_bytes(8)), 0, 12) . '.' . $ext;
+    $absFile = $absDir . DIRECTORY_SEPARATOR . $newName;
+    if (!move_uploaded_file($tmp, $absFile)) {
+        return '';
+    }
+    return $relDir . '/' . $newName;
+}
+
 function fr_table_exists($table) {
     $res = call_mysql_query("SHOW TABLES LIKE '" . _esc($table) . "'");
     return $res && mysqli_num_rows($res) > 0;
@@ -645,6 +691,12 @@ try {
             $assignment_id = _int(_post('assignment_id'), 0);
             $new_status = strtoupper(_post('status'));
             $remarks = _post('remarks');
+            $reasonImage = fr_store_reason_image('reason_image');
+            if ($reasonImage !== '') {
+                $imgTag = '[reason_image:' . $reasonImage . ']';
+                $remarks = trim($remarks);
+                $remarks = ($remarks !== '' ? ($remarks . ' ') : '') . $imgTag;
+            }
             $allowed = array('REPORTED', 'RETURN_REQUESTED');
             if ($uid <= 0) json_response(array('success' => false, 'message' => 'Invalid user.'), 403);
             if ($assignment_id <= 0 || !in_array($new_status, $allowed, true)) {

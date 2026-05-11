@@ -322,6 +322,66 @@ fr_get_personal_facility(true);
 
 try {
     switch ($action) {
+        case 'list_return_requests':
+            $status = strtoupper(_post('status', 'PENDING'));
+            $whereStatus = "a.status = 'RETURN_REQUESTED'";
+            if ($status === 'PROCESSED') {
+                $whereStatus = "a.status = 'RETURNED'";
+            } elseif ($status === 'ALL') {
+                $whereStatus = "a.status IN ('RETURN_REQUESTED','RETURNED')";
+            }
+
+            $hasManagedBy = fr_column_exists('facility_records_assignments', 'managed_by_user_id');
+            $sql = "SELECT
+                        a.assignment_id,
+                        a.module_type,
+                        a.item_code,
+                        a.item_description,
+                        a.qty,
+                        a.unit,
+                        a.status,
+                        a.issued_at,
+                        a.returned_at,
+                        a.remarks,
+                        a.updated_by,
+                        f.facility_code,
+                        f.facility_name,
+                        fu.unit_code,
+                        fu.unit_name,
+                        CONCAT(COALESCE(u1.f_name,''), ' ', COALESCE(u1.l_name,'')) AS issued_to_name,
+                        CONCAT(COALESCE(u2.f_name,''), ' ', COALESCE(u2.l_name,'')) AS accountable_name,
+                        " . ($hasManagedBy ? "CONCAT(COALESCE(u3.f_name,''), ' ', COALESCE(u3.l_name,''))" : "''") . " AS managed_by_name,
+                        CONCAT(COALESCE(uu.f_name,''), ' ', COALESCE(uu.l_name,'')) AS requested_by_name,
+                        (
+                            SELECT h.old_status
+                            FROM facility_records_history h
+                            WHERE h.assignment_id = a.assignment_id
+                              AND h.new_status = 'RETURN_REQUESTED'
+                            ORDER BY h.history_id DESC
+                            LIMIT 1
+                        ) AS previous_status
+                    FROM facility_records_assignments a
+                    LEFT JOIN facility_records_facilities f ON f.facility_id = a.facility_id
+                    LEFT JOIN facility_records_units fu ON fu.unit_id = a.unit_id
+                    LEFT JOIN users u1 ON u1.user_id = a.issued_to_user_id
+                    LEFT JOIN users u2 ON u2.user_id = a.accountable_user_id
+                    " . ($hasManagedBy ? "LEFT JOIN users u3 ON u3.user_id = a.managed_by_user_id" : "") . "
+                    LEFT JOIN users uu ON uu.user_id = a.updated_by
+                    WHERE {$whereStatus}
+                    ORDER BY
+                        CASE WHEN a.status = 'RETURN_REQUESTED' THEN 0 ELSE 1 END,
+                        a.updated_at DESC,
+                        a.assignment_id DESC";
+            $res = call_mysql_query($sql);
+            $rows = array();
+            if ($res) {
+                while ($row = call_mysql_fetch_array($res)) {
+                    $rows[] = $row;
+                }
+            }
+            json_response(array('success' => true, 'data' => $rows));
+            break;
+
         case 'locate_assignment':
             $item_code = trim((string)_post('item_code'));
             if ($item_code === '') {
@@ -1271,6 +1331,106 @@ try {
             call_mysql_query("COMMIT");
             activity_log_new("FACILITY ASSIGNMENT STATUS", "SUCCESS", array('assignment_id' => $assignment_id, 'old_status' => $old_status, 'new_status' => $new_status));
             json_response(array('success' => true, 'message' => 'Assignment status updated.'));
+            break;
+
+        case 'process_return_request':
+            global $s_user_id;
+            $assignment_id = _int(_post('assignment_id'), 0);
+            $decision = strtoupper(_post('decision'));
+            $remarks = _post('remarks');
+            if ($assignment_id <= 0 || !in_array($decision, array('APPROVE', 'REJECT'), true)) {
+                json_response(array('success' => false, 'message' => 'Invalid request payload.'), 422);
+            }
+
+            $res = call_mysql_query("SELECT assignment_id, module_type, source_item_id, qty, status
+                                     FROM facility_records_assignments
+                                     WHERE assignment_id = {$assignment_id}
+                                     LIMIT 1");
+            $row = $res ? call_mysql_fetch_array($res) : null;
+            if (!$row) {
+                json_response(array('success' => false, 'message' => 'Assignment not found.'), 404);
+            }
+            $old_status = strtoupper((string)$row['status']);
+            if ($old_status !== 'RETURN_REQUESTED') {
+                json_response(array('success' => false, 'message' => 'This item is not waiting for return approval.'), 422);
+            }
+
+            $new_status = 'RETURNED';
+            if ($decision === 'REJECT') {
+                $histRes = call_mysql_query("SELECT old_status
+                                             FROM facility_records_history
+                                             WHERE assignment_id = {$assignment_id}
+                                               AND new_status = 'RETURN_REQUESTED'
+                                             ORDER BY history_id DESC
+                                             LIMIT 1");
+                $histRow = $histRes ? call_mysql_fetch_array($histRes) : null;
+                $fallback = strtoupper((string)($histRow['old_status'] ?? 'ACTIVE'));
+                $new_status = in_array($fallback, array('ACTIVE', 'REPORTED'), true) ? $fallback : 'ACTIVE';
+            }
+
+            call_mysql_query("START TRANSACTION");
+            $existingRemarks = trim((string)($row['remarks'] ?? ''));
+            $adminNote = trim((string)$remarks);
+            $finalRemarks = $existingRemarks;
+            if ($adminNote !== '') {
+                $stamp = '[admin_decision:' . ($decision === 'APPROVE' ? 'APPROVED' : 'REJECTED') . '] ' . $adminNote;
+                $finalRemarks = trim($existingRemarks . ($existingRemarks !== '' ? "\n" : '') . $stamp);
+            }
+
+            $ok = call_mysql_query("UPDATE facility_records_assignments
+                                    SET status = '" . _esc($new_status) . "',
+                                        returned_at = " . ($new_status === 'RETURNED' ? "NOW()" : "NULL") . ",
+                                        remarks = " . ($finalRemarks !== '' ? "'" . _esc($finalRemarks) . "'" : "remarks") . ",
+                                        updated_by = " . (int)$s_user_id . "
+                                    WHERE assignment_id = {$assignment_id}
+                                    LIMIT 1");
+            if (!$ok) {
+                call_mysql_query("ROLLBACK");
+                json_response(array('success' => false, 'message' => 'Failed to process return request.'), 500);
+            }
+
+            if ($new_status === 'RETURNED') {
+                $module_type = strtoupper((string)$row['module_type']);
+                $source_item_id = (int)$row['source_item_id'];
+                $qty = (float)$row['qty'];
+                if ($module_type === 'AST') {
+                    $invOk = call_mysql_query("UPDATE ast_inventory
+                                               SET is_available = 1
+                                               WHERE item_id = {$source_item_id}
+                                               LIMIT 1");
+                    if (!$invOk) {
+                        call_mysql_query("ROLLBACK");
+                        json_response(array('success' => false, 'message' => 'Failed to update AST inventory.'), 500);
+                    }
+                } elseif ($module_type === 'CSM') {
+                    $invOk = call_mysql_query("UPDATE csm_inventory
+                                               SET current_unit_quantity = current_unit_quantity + " . (float)$qty . "
+                                               WHERE inventory_id = {$source_item_id}
+                                               LIMIT 1");
+                    if (!$invOk) {
+                        call_mysql_query("ROLLBACK");
+                        json_response(array('success' => false, 'message' => 'Failed to update CSM inventory.'), 500);
+                    }
+                }
+            }
+
+            $actionLabel = $decision === 'APPROVE' ? 'RETURN_APPROVED' : 'RETURN_REJECTED';
+            $histOk = call_mysql_query("INSERT INTO facility_records_history (assignment_id, action, old_status, new_status, remarks, actor_user_id)
+                                        VALUES ({$assignment_id}, '{$actionLabel}', '" . _esc($old_status) . "', '" . _esc($new_status) . "', " . ($remarks !== '' ? "'" . _esc($remarks) . "'" : "NULL") . ", " . (int)$s_user_id . ")");
+            if (!$histOk) {
+                call_mysql_query("ROLLBACK");
+                json_response(array('success' => false, 'message' => 'Failed to record return history.'), 500);
+            }
+            call_mysql_query("COMMIT");
+
+            activity_log_new("FACILITY RETURN REQUEST", "SUCCESS", array(
+                'assignment_id' => $assignment_id,
+                'decision' => $decision,
+                'old_status' => $old_status,
+                'new_status' => $new_status
+            ));
+
+            json_response(array('success' => true, 'message' => ($decision === 'APPROVE' ? 'Return request approved.' : 'Return request rejected.')));
             break;
 
         default:

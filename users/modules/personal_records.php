@@ -79,11 +79,36 @@ if (!(role_has("USER") || role_has("USERS"))) {
     </main>
 
     <?php include_once FOOTER_PATH; ?>
+
+    <div class="modal fade" id="statusActionModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="statusActionTitle">Confirm Action</h5>
+                    <button type="button" class="btn-close" id="statusModalCloseX" data-dismiss="modal" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-2" id="statusActionText"></p>
+                    <label for="statusActionRemarks" class="form-label fw-semibold mb-1">Remarks (optional)</label>
+                    <textarea id="statusActionRemarks" class="form-control" rows="3" placeholder="Add context for this request..."></textarea>
+                    <label for="statusActionImage" class="form-label fw-semibold mb-1 mt-3">Reason Image (optional)</label>
+                    <input type="file" id="statusActionImage" class="form-control" accept="image/*">
+                    <div class="form-text">This will be visible to admins handling your request.</div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary btn-sm" id="statusModalCancelBtn" data-dismiss="modal" data-bs-dismiss="modal">Cancel</button>
+                    <button class="btn btn-primary btn-sm" id="confirmStatusActionBtn">Confirm</button>
+                </div>
+            </div>
+        </div>
+    </div>
 </body>
 <?php include_once DOMAIN_PATH . '/global/include_bottom.php'; ?>
 <script>
 const PROCESS_URL = <?php echo json_encode(BASE_URL . 'users/modules/facility_records_process.php'); ?>;
 let myAssignments = [];
+let pendingAction = null;
+let statusActionModal = null;
 
 function togglePageMsg(msg) {
     const el = $('#pageMsg');
@@ -117,6 +142,9 @@ function renderTable() {
         return;
     }
     filtered.forEach(function(a) {
+        const currentStatus = String(a.status || '').toUpperCase();
+        const lockReturn = currentStatus === 'RETURNED' || currentStatus === 'RETURN_REQUESTED';
+        const lockReport = currentStatus === 'RETURNED';
         const loc = [a.facility_code || '', a.unit_code || ''].filter(Boolean).join(' / ');
         tbody.append(`
             <tr>
@@ -129,8 +157,8 @@ function renderTable() {
                 <td>${a.issued_at || ''}</td>
                 <td>
                     <div class="d-flex gap-1 flex-wrap">
-                        <button class="btn btn-outline-warning btn-sm btn-report" data-id="${a.assignment_id}">Report</button>
-                        <button class="btn btn-outline-primary btn-sm btn-return" data-id="${a.assignment_id}">Return Request</button>
+                        <button class="btn btn-outline-warning btn-sm btn-report" data-id="${a.assignment_id}" ${lockReport ? 'disabled' : ''}>Report</button>
+                        <button class="btn btn-outline-primary btn-sm btn-return" data-id="${a.assignment_id}" ${lockReturn ? 'disabled' : ''}>Return Request</button>
                     </div>
                 </td>
             </tr>
@@ -158,38 +186,69 @@ function loadAssignments() {
     });
 }
 
-function updateStatus(assignmentId, status, label) {
-    if (!assignmentId) return;
-    const ok = confirm(`Confirm ${label.toLowerCase()}?`);
-    if (!ok) return;
-    $.post(PROCESS_URL, { action: 'update_status', assignment_id: assignmentId, status: status }, function(res) {
+function submitStatusAction() {
+    if (!pendingAction || !pendingAction.assignmentId || !pendingAction.status) return;
+    const fd = new FormData();
+    fd.append('action', 'update_status');
+    fd.append('assignment_id', pendingAction.assignmentId);
+    fd.append('status', pendingAction.status);
+    fd.append('remarks', ($('#statusActionRemarks').val() || '').trim());
+    const imgInput = document.getElementById('statusActionImage');
+    if (imgInput && imgInput.files && imgInput.files[0]) {
+        fd.append('reason_image', imgInput.files[0]);
+    }
+
+    $.ajax({
+        url: PROCESS_URL,
+        method: 'POST',
+        data: fd,
+        processData: false,
+        contentType: false,
+        dataType: 'json'
+    }).done(function(res) {
         if (!res || res.success !== true) {
             togglePageMsg((res && res.message) || 'Failed to update status.');
             return;
         }
+        if (statusActionModal) { $('#statusActionModal').modal('hide'); }
         togglePageMsg('');
         loadAssignments();
-    }, 'json').fail(function(xhr) {
+    }).fail(function(xhr) {
         const msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Server error while updating status.';
         togglePageMsg(msg);
     });
 }
 
+function openStatusActionModal(assignmentId, status, label) {
+    if (!assignmentId) return;
+    pendingAction = { assignmentId: assignmentId, status: status, label: label };
+    $('#statusActionTitle').text('Confirm ' + label);
+    $('#statusActionText').text('Are you sure you want to set this item as ' + label.toLowerCase() + '?');
+    $('#statusActionRemarks').val('');
+    $('#statusActionImage').val('');
+    $('#statusActionModal').modal('show');
+}
+
 $(document).ready(function() {
+    statusActionModal = $('#statusActionModal');
     loadAssignments();
 
     $('#refreshBtn').on('click', loadAssignments);
     $('#statusFilter').on('change', loadAssignments);
     $('#searchInput').on('input', renderTable);
+    $('#confirmStatusActionBtn').on('click', submitStatusAction);
+    $('#statusModalCloseX, #statusModalCancelBtn').on('click', function(){
+        $('#statusActionModal').modal('hide');
+    });
 
     $('#personalTable').on('click', '.btn-report', function() {
         const id = $(this).data('id');
-        updateStatus(id, 'REPORTED', 'report');
+        openStatusActionModal(id, 'REPORTED', 'Report');
     });
 
     $('#personalTable').on('click', '.btn-return', function() {
         const id = $(this).data('id');
-        updateStatus(id, 'RETURN_REQUESTED', 'return request');
+        openStatusActionModal(id, 'RETURN_REQUESTED', 'Return Request');
     });
 });
 </script>
