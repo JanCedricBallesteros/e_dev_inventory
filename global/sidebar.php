@@ -371,12 +371,7 @@ if (role_has("USER") || role_has("USERS")) {
                             <p>User Information<?php echo sidebar_badge_html($superAdminStaffNoAccessTotal, 'badge-warning'); ?></p>
                         </a>
                     </li>
-                    <li class="nav-item <?php echo navigation_active("school_info"); ?>">
-                        <a href="<?php echo BASE_URL . "superadmin/pages/school_info.php"; ?>">
-                            <i class="fas fa-school"></i>
-                            <p>School Information</p>
-                        </a>
-                    </li>
+                    <?php // Hidden temporarily for presentation: School Information nav item ?>
                     <li class="nav-item <?php echo navigation_active("activity_logs"); ?>">
                         <a href="<?php echo BASE_URL . "superadmin/pages/activity_logs.php"; ?>">
                             <i class="fas fa-history"></i>

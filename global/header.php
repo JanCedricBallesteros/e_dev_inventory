@@ -218,7 +218,7 @@ $topbarSearchItems = [];
 
 if (role_has("SUPER_ADMIN")) {
     topbar_add_search_item($topbarSearchItems, 'User Information', BASE_URL . 'superadmin/pages/user_information.php', 'users staff access employment status teaching non teaching permanent cos job order', 'Super Admin');
-    topbar_add_search_item($topbarSearchItems, 'School Information', BASE_URL . 'superadmin/pages/school_info.php', 'school report forms information', 'Super Admin');
+    // Hidden temporarily for presentation: School Information search item
     topbar_add_search_item($topbarSearchItems, 'Activity Logs', BASE_URL . 'superadmin/pages/activity_logs.php', 'activity logs actions audit history', 'Super Admin');
     topbar_add_search_item($topbarSearchItems, 'User Logs', BASE_URL . 'superadmin/pages/user_logs.php', 'login logout sign in sign out session', 'Super Admin');
     topbar_add_search_item($topbarSearchItems, 'File Logs', BASE_URL . 'superadmin/pages/file_logs.php', 'files uploads exports backup archive delete', 'Super Admin');
