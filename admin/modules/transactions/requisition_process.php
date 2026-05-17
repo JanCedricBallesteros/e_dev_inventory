@@ -228,6 +228,15 @@ function csm_inventory_first_existing_column($candidates, $fallback = '')
     return $fallback;
 }
 
+function csm_inventory_select_expr($candidates, $alias, $fallback = "''")
+{
+    $column = csm_inventory_first_existing_column($candidates, '');
+    if ($column === '') {
+        return "{$fallback} AS {$alias}";
+    }
+    return "{$column} AS {$alias}";
+}
+
 function is_wish_requisition_code($itemCode)
 {
     $code = strtoupper(trim((string)$itemCode));
@@ -298,12 +307,7 @@ try {
             $type = strtoupper(_post('type'));
             $status = strtolower(_post('status'));
             $search = _post('search');
-            $csmQtyColumn = '';
-            if (table_column_exists('csm_inventory', 'current_unit_quantity')) {
-                $csmQtyColumn = 'current_unit_quantity';
-            } elseif (table_column_exists('csm_inventory', 'quantity')) {
-                $csmQtyColumn = 'quantity';
-            }
+            $csmQtyColumn = csm_inventory_first_existing_column(array('current_unit_quantity', 'current_quantity', 'quantity'));
             $csmAvailableExpr = $csmQtyColumn !== '' ? "csm_inv.{$csmQtyColumn}" : "r.qty_requested";
             if (!in_array($type, ['AST', 'CSM'], true)) {
                 $type = 'AST';
@@ -660,9 +664,11 @@ try {
                 }
                 $itemCodeEsc = _esc($resolvedItemCode);
                 $csmQtyColumn = csm_inventory_first_existing_column(array('current_unit_quantity', 'current_quantity', 'quantity'));
+                $csmDescExpr = csm_inventory_select_expr(array('item_description', 'item_name'), 'inventory_description');
+                $csmStatusExpr = table_column_exists('csm_inventory', 'status') ? 'status' : "'' AS status";
                 $availableQty = (int)($req['qty_requested'] ?? 0);
                 if ($csmQtyColumn !== '') {
-                    $csmRes = call_mysql_query("SELECT {$csmQtyColumn} AS available_qty, status, item_description, item_name
+                    $csmRes = call_mysql_query("SELECT {$csmQtyColumn} AS available_qty, {$csmStatusExpr}, {$csmDescExpr}
                                                FROM csm_inventory
                                                WHERE inventory_system_item_code = '{$itemCodeEsc}'
                                                LIMIT 1");
@@ -671,7 +677,7 @@ try {
                         json_response(['success' => false, 'message' => 'CSM item not found.'], 404);
                     }
                     $csmStatus = strtolower((string)($csmRow['status'] ?? ''));
-                    if ($csmStatus !== '' && $csmStatus !== 'available') {
+                    if ($csmStatus !== '' && $csmStatus !== 'available' && $csmStatus !== '1') {
                         json_response(['success' => false, 'message' => 'CSM item is not available.'], 422);
                     }
                     $availableQty = (int)($csmRow['available_qty'] ?? 0);
@@ -684,7 +690,7 @@ try {
                 }
                 if ($resolvedItemCode !== strtoupper(trim((string)($req['item_code'] ?? '')))) {
                     $req['resolved_item_code'] = $resolvedItemCode;
-                    $req['resolved_item_description'] = $csmRow['item_description'] ?: ($csmRow['item_name'] ?? ($req['item_description'] ?? ''));
+                    $req['resolved_item_description'] = $csmRow['inventory_description'] ?: ($req['item_description'] ?? '');
                 }
             }
 
@@ -1095,11 +1101,12 @@ try {
                 $moduleType = 'CSM';
                 $csmQtyColumn = csm_inventory_first_existing_column(array('current_unit_quantity', 'current_quantity', 'quantity'));
                 $csmUnitColumn = csm_inventory_first_existing_column(array('unit'), '');
+                $csmDescExpr = csm_inventory_select_expr(array('item_description', 'item_name'), 'inventory_description');
                 if ($csmQtyColumn === '') {
                     call_mysql_query("ROLLBACK");
                     json_response(['success' => false, 'message' => 'CSM inventory quantity column is missing.'], 500);
                 }
-                $invRes = call_mysql_query("SELECT inventory_id, inventory_system_item_code, item_description, item_name, {$csmQtyColumn} AS available_qty" .
+                $invRes = call_mysql_query("SELECT inventory_id, inventory_system_item_code, {$csmDescExpr}, {$csmQtyColumn} AS available_qty" .
                                            ($csmUnitColumn !== '' ? ", {$csmUnitColumn} AS item_unit" : ", '' AS item_unit") . "
                                             FROM csm_inventory
                                             WHERE inventory_system_item_code = '{$itemCode}' LIMIT 1");
@@ -1114,7 +1121,7 @@ try {
                     json_response(['success' => false, 'message' => 'CSM quantity is not enough for claim.'], 422);
                 }
                 $sourceItemId = (int)$inv['inventory_id'];
-                $itemDescription = $inv['item_description'] ?: ($inv['item_name'] ?? $itemDescription);
+                $itemDescription = $inv['inventory_description'] ?: $itemDescription;
                 $itemUnit = (string)($inv['item_unit'] ?? '');
                 $decOk = call_mysql_query("UPDATE csm_inventory
                                            SET {$csmQtyColumn} = {$csmQtyColumn} - {$qtyRequested}
